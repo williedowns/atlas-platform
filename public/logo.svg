@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 64">
+  <!-- Shield badge mark -->
+  <path d="M8 6 L32 2 L56 6 L56 34 C56 46 32 56 32 56 C32 56 8 46 8 34 Z" fill="#00929C"/>
+  <!-- Stylized A in shield -->
+  <polyline points="20,46 32,20 44,46" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="24" y1="38" x2="40" y2="38" stroke="white" stroke-width="3" stroke-linecap="round"/>
+  <!-- Wordmark: Atlas -->
+  <text x="70" y="30" font-family="Georgia, serif" font-weight="700" font-size="24" fill="#00929C">Atlas</text>
+  <!-- Tagline: SPAS &amp; SWIM SPAS -->
+  <text x="70" y="48" font-family="Arial, sans-serif" font-weight="600" font-size="11" fill="#00929C" letter-spacing="2">SPAS &amp; SWIM SPAS</text>
+</svg>
