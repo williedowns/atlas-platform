@@ -239,10 +239,10 @@ export default async function ContractDetailPage({
 
         {/* Actions */}
         <div className="space-y-3 pt-2">
-          {contract.status === "signed" && contract.deposit_paid === 0 && (
+          {contract.balance_due > 0 && contract.status !== "cancelled" && (
             <Link href={`/contracts/${id}/collect-payment`}>
               <Button variant="success" size="xl" className="w-full">
-                Collect Deposit
+                {contract.deposit_paid > 0 ? "Add Payment" : "Collect Deposit"}
               </Button>
             </Link>
           )}

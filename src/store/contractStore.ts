@@ -29,8 +29,8 @@ export interface ContractDraft {
   // Financing (multiple entries supported)
   financing: ContractFinancing[];
 
-  // Payment
-  payment_method?: string;
+  // Payment splits (multiple allowed)
+  deposit_splits: DepositSplit[];
   surcharge_enabled: boolean;
   surcharge_rate: number;
 
@@ -43,10 +43,17 @@ export interface ContractDraft {
   discount_total: number;
   surcharge_amount: number;
   total: number;
-  deposit_amount: number;
+  deposit_amount: number; // sum of all deposit_splits amounts
 
   // Notes
   notes?: string;
+}
+
+export interface DepositSplit {
+  amount: number;
+  method: string;
+  check_number?: string;
+  bank_name?: string;
 }
 
 interface ContractStore {
@@ -62,8 +69,8 @@ interface ContractStore {
   removeFinancing: (index: number) => void;
   setTax: (taxAmount: number, taxRate: number) => void;
   setSurcharge: (enabled: boolean, rate: number) => void;
-  setDepositAmount: (amount: number) => void;
-  setPaymentMethod: (method: string) => void;
+  addDepositSplit: (split: DepositSplit) => void;
+  removeDepositSplit: (index: number) => void;
   setNotes: (notes: string) => void;
   computeTotals: () => void;
   resetDraft: () => void;
@@ -73,6 +80,7 @@ const initialDraft: ContractDraft = {
   line_items: [],
   discounts: [],
   financing: [],
+  deposit_splits: [],
   surcharge_enabled: false,
   surcharge_rate: 0.035,
   tax_amount: 0,
@@ -97,9 +105,8 @@ function computeTotalsFromDraft(draft: ContractDraft): Partial<ContractDraft> {
     ? Math.round(subtotal * draft.surcharge_rate * 100) / 100
     : 0;
   const total = Math.max(0, subtotal - discount_total + draft.tax_amount + surcharge_amount);
-  const deposit_amount = draft.deposit_amount > 0
-    ? draft.deposit_amount
-    : Math.ceil(total * 0.3 * 100) / 100;
+  const splitsArr = Array.isArray(draft.deposit_splits) ? draft.deposit_splits : [];
+  const deposit_amount = splitsArr.reduce((sum, s) => sum + s.amount, 0);
 
   return { subtotal, discount_total, surcharge_amount, total, deposit_amount };
 }
@@ -209,11 +216,21 @@ export const useContractStore = create<ContractStore>()(
         });
       },
 
-      setDepositAmount: (deposit_amount) =>
-        set((state) => ({ draft: { ...state.draft, deposit_amount } })),
+      addDepositSplit: (split) =>
+        set((state) => {
+          const newDraft = {
+            ...state.draft,
+            deposit_splits: [...(Array.isArray(state.draft.deposit_splits) ? state.draft.deposit_splits : []), split],
+          };
+          return { draft: { ...newDraft, ...computeTotalsFromDraft(newDraft) } };
+        }),
 
-      setPaymentMethod: (payment_method) =>
-        set((state) => ({ draft: { ...state.draft, payment_method } })),
+      removeDepositSplit: (index) =>
+        set((state) => {
+          const deposit_splits = (Array.isArray(state.draft.deposit_splits) ? state.draft.deposit_splits : []).filter((_, i) => i !== index);
+          const newDraft = { ...state.draft, deposit_splits };
+          return { draft: { ...newDraft, ...computeTotalsFromDraft(newDraft) } };
+        }),
 
       setNotes: (notes) =>
         set((state) => ({ draft: { ...state.draft, notes } })),
@@ -226,7 +243,7 @@ export const useContractStore = create<ContractStore>()(
       resetDraft: () => set({ draft: initialDraft }),
     }),
     {
-      name: "atlas-contract-draft-v2",
+      name: "atlas-contract-draft-v3",
       partialize: (state) => ({ draft: state.draft }),
     }
   )

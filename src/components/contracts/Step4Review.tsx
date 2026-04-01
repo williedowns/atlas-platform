@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { useContractStore } from "@/store/contractStore";
+import type { DepositSplit } from "@/store/contractStore";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -25,38 +26,42 @@ interface Step4ReviewProps {
 }
 
 export default function Step4Review({ onNext }: Step4ReviewProps) {
-  const { draft, updateLineItemSerial, setDepositAmount, setPaymentMethod, setNotes } =
-    useContractStore();
+  const { draft, addDepositSplit, removeDepositSplit, updateLineItemSerial, setNotes } = useContractStore();
 
   const contractNumber = useMemo(() => generateContractNumber(), []);
   const today = useMemo(() => formatDate(new Date()), []);
-  const minDeposit = useMemo(() => calculateMinDeposit(draft.total), [draft.total]);
+  const suggestedDeposit = useMemo(() => calculateMinDeposit(draft.total), [draft.total]);
 
-  const [depositInput, setDepositInput] = useState<string>(
-    (draft.deposit_amount > 0 ? draft.deposit_amount : minDeposit).toFixed(2)
-  );
+  // Split builder state
+  const [splitAmount, setSplitAmount] = useState("");
+  const [splitMethod, setSplitMethod] = useState<string>("credit_card");
+  const [checkNumber, setCheckNumber] = useState("");
+  const [bankName, setBankName] = useState("");
 
-  const handleDepositChange = (value: string) => {
-    setDepositInput(value);
-    const parsed = parseFloat(value);
-    if (!isNaN(parsed)) {
-      const clamped = Math.max(parsed, minDeposit);
-      setDepositAmount(clamped);
-    }
-  };
+  const splits = Array.isArray(draft.deposit_splits) ? draft.deposit_splits : [];
+  const totalSplits = splits.reduce((sum, s) => sum + s.amount, 0);
+  const remaining = Math.max(0, draft.total - totalSplits);
 
-  const handleDepositBlur = () => {
-    const parsed = parseFloat(depositInput);
-    if (isNaN(parsed) || parsed < minDeposit) {
-      setDepositInput(minDeposit.toFixed(2));
-      setDepositAmount(minDeposit);
-    } else {
-      setDepositInput(parsed.toFixed(2));
-      setDepositAmount(parsed);
-    }
-  };
+  const splitAmountNum = parseFloat(splitAmount) || 0;
+  const canAddSplit = splitAmountNum > 0;
+  const canProceed = splits.length > 0;
 
-  const canProceed = !!draft.payment_method;
+  function handleAddSplit() {
+    if (!canAddSplit) return;
+    const split: DepositSplit = {
+      amount: splitAmountNum,
+      method: splitMethod,
+      ...(splitMethod === "ach" && checkNumber ? { check_number: checkNumber } : {}),
+      ...(splitMethod === "ach" && bankName ? { bank_name: bankName } : {}),
+    };
+    addDepositSplit(split);
+    setSplitAmount("");
+    setCheckNumber("");
+    setBankName("");
+  }
+
+  const methodLabel = (method: string) =>
+    PAYMENT_METHODS.find((m) => m.value === method)?.label ?? method.replace(/_/g, " ");
 
   return (
     <div className="flex flex-col gap-6 pb-8">
@@ -284,58 +289,118 @@ export default function Step4Review({ onNext }: Step4ReviewProps) {
               </div>
             </div>
 
-            <div className="flex justify-between text-base font-semibold pt-1">
-              <span>Deposit Required (30%)</span>
-              <span>{formatCurrency(minDeposit)}</span>
+            <div className="flex justify-between text-sm text-slate-500 pt-1">
+              <span>Suggested deposit (30%)</span>
+              <span>{formatCurrency(suggestedDeposit)}</span>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* ── Deposit Amount ─────────────────────────────────── */}
+      {/* ── Deposits ───────────────────────────────────────── */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-lg">Deposit Amount</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col gap-2">
-            <Input
-              label="Deposit to Collect"
-              type="number"
-              min={minDeposit}
-              step="0.01"
-              value={depositInput}
-              onChange={(e) => handleDepositChange(e.target.value)}
-              onBlur={handleDepositBlur}
-            />
-            <p className="text-xs text-slate-500">
-              Minimum deposit: {formatCurrency(minDeposit)} (30% of total)
-            </p>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-lg">Deposits to Collect</CardTitle>
+            {splits.length > 0 && (
+              <span className="text-sm font-semibold text-[#00929C]">
+                {formatCurrency(totalSplits)} collected
+              </span>
+            )}
           </div>
-        </CardContent>
-      </Card>
-
-      {/* ── Payment Method ─────────────────────────────────── */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-lg">Payment Method</CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 gap-3">
-            {PAYMENT_METHODS.map((method) => (
-              <button
-                key={method.value}
-                type="button"
-                onClick={() => setPaymentMethod(method.value)}
-                className={`h-14 rounded-full text-base font-semibold transition-all touch-manipulation ${
-                  draft.payment_method === method.value
-                    ? "bg-[#00929C] text-white shadow-md"
-                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                }`}
-              >
-                {method.label}
-              </button>
-            ))}
+        <CardContent className="space-y-4">
+          {/* Added splits */}
+          {splits.length > 0 && (
+            <div className="space-y-2">
+              {splits.map((split, i) => (
+                <div
+                  key={i}
+                  className="flex items-center justify-between bg-[#00929C]/5 border border-[#00929C]/20 rounded-xl px-4 py-3"
+                >
+                  <div>
+                    <p className="font-semibold text-slate-900">{formatCurrency(split.amount)}</p>
+                    <p className="text-xs text-slate-500">
+                      {methodLabel(split.method)}
+                      {split.check_number ? ` · Check #${split.check_number}` : ""}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeDepositSplit(i)}
+                    className="w-8 h-8 flex items-center justify-center rounded-lg text-red-400 hover:bg-red-50"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
+
+              <div className="flex justify-between text-sm pt-1 px-1">
+                <span className="text-slate-500">Balance due at delivery</span>
+                <span className="font-semibold text-amber-700">{formatCurrency(remaining)}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Add split form */}
+          <div className="space-y-3 pt-1">
+            <Input
+              label={splits.length === 0 ? "Deposit Amount ($)" : "Add Another ($)"}
+              type="number"
+              min="0.01"
+              step="0.01"
+              value={splitAmount}
+              onChange={(e) => setSplitAmount(e.target.value)}
+              placeholder={remaining > 0 ? remaining.toFixed(2) : "0.00"}
+            />
+
+            <div className="grid grid-cols-2 gap-2">
+              {PAYMENT_METHODS.map((m) => (
+                <button
+                  key={m.value}
+                  type="button"
+                  onClick={() => setSplitMethod(m.value)}
+                  className={`h-12 rounded-full text-sm font-semibold transition-all touch-manipulation ${
+                    splitMethod === m.value
+                      ? "bg-[#00929C] text-white shadow-md"
+                      : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                  }`}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+
+            {splitMethod === "ach" && (
+              <div className="space-y-2">
+                <Input
+                  label="Check # (optional)"
+                  type="text"
+                  value={checkNumber}
+                  onChange={(e) => setCheckNumber(e.target.value)}
+                  placeholder="Check number"
+                />
+                <Input
+                  label="Bank Name (optional)"
+                  type="text"
+                  value={bankName}
+                  onChange={(e) => setBankName(e.target.value)}
+                  placeholder="Bank name"
+                />
+              </div>
+            )}
+
+            <Button
+              variant="outline"
+              size="lg"
+              className="w-full"
+              disabled={!canAddSplit}
+              onClick={handleAddSplit}
+            >
+              + Add {splitAmount ? formatCurrency(parseFloat(splitAmount) || 0) : "Payment"}
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -369,7 +434,7 @@ export default function Step4Review({ onNext }: Step4ReviewProps) {
 
       {!canProceed && (
         <p className="text-center text-sm text-slate-400">
-          Please select a payment method to continue
+          Add at least one deposit payment to continue
         </p>
       )}
     </div>

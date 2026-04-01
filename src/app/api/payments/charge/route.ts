@@ -74,13 +74,14 @@ export async function POST(req: Request) {
       })
       .eq("id", payment!.id);
 
-    // Update contract
+    // Update contract — accumulate deposit_paid
+    const newDepositPaid = (contract.deposit_paid ?? 0) + Number(amount);
     await supabase
       .from("contracts")
       .update({
         status: "deposit_collected",
-        deposit_paid: amount,
-        balance_due: Math.max(0, contract.total - amount),
+        deposit_paid: newDepositPaid,
+        balance_due: Math.max(0, contract.total - newDepositPaid),
         intuit_payment_id: chargeResult.id,
       })
       .eq("id", contract_id);
@@ -118,12 +119,13 @@ export async function POST(req: Request) {
     .update({ status: "completed", processed_at: new Date().toISOString() })
     .eq("id", payment!.id);
 
+  const newDepositPaidManual = (contract.deposit_paid ?? 0) + Number(amount);
   await supabase
     .from("contracts")
     .update({
       status: "deposit_collected",
-      deposit_paid: amount,
-      balance_due: Math.max(0, contract.total - amount),
+      deposit_paid: newDepositPaidManual,
+      balance_due: Math.max(0, contract.total - newDepositPaidManual),
     })
     .eq("id", contract_id);
 
