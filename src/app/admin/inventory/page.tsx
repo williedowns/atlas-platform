@@ -2,9 +2,9 @@ export const dynamic = "force-dynamic";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { getStatusColor, getUnitTypeLabel, getCabinetName, getModelDisplayName, INVENTORY_STATUSES } from "@/lib/inventory-constants";
+import { INVENTORY_STATUSES } from "@/lib/inventory-constants";
+import { InventorySearchTable } from "@/components/inventory/InventorySearchTable";
 
 export default async function AdminInventoryPage({
   searchParams,
@@ -163,110 +163,8 @@ export default async function AdminInventoryPage({
           ))}
         </div>
 
-        {/* Unit table */}
-        {filtered.length === 0 ? (
-          <div className="text-center py-12 text-slate-400">
-            <p className="text-lg font-medium">No units match this filter</p>
-          </div>
-        ) : (
-          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50">
-                    <th className="text-left py-3 px-4 font-medium text-slate-500">Model</th>
-                    <th className="text-left py-3 px-4 font-medium text-slate-500">Serial / Order #</th>
-                    <th className="text-left py-3 px-4 font-medium text-slate-500">Config</th>
-                    <th className="text-left py-3 px-4 font-medium text-slate-500">Customer / Delivery</th>
-                    <th className="text-left py-3 px-4 font-medium text-slate-500">Location</th>
-                    <th className="text-left py-3 px-4 font-medium text-slate-500">Status</th>
-                    <th className="py-3 px-4"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filtered.map((unit) => {
-                    const product = unit.product as any;
-                    const location = unit.location as any;
-                    const show = unit.show as any;
-                    const u = unit as any;
-
-                    // Delivery team badge — colors match the spreadsheet KEY tab
-                    const deliveryBadge = u.delivery_team === "atlas"
-                      ? <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-cyan-100 text-cyan-700">Atlas Del</span>
-                      : u.delivery_team === "fierce"
-                      ? <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-purple-100 text-purple-700">Fierce Del</span>
-                      : u.delivery_team === "houston_aaron"
-                      ? <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-orange-100 text-orange-700">HOU/Aaron</span>
-                      : null;
-
-                    return (
-                      <tr key={unit.id} className="hover:bg-slate-50">
-                        <td className="py-3 px-4">
-                          <p className="font-medium text-slate-900 truncate max-w-[180px]">
-                            {product?.name ?? getModelDisplayName(u.model_code)}
-                          </p>
-                          <p className="text-xs text-slate-400">{getUnitTypeLabel(unit.unit_type)}</p>
-                        </td>
-                        <td className="py-3 px-4 font-mono text-sm text-slate-700">
-                          {unit.serial_number ?? unit.order_number ?? "—"}
-                        </td>
-                        <td className="py-3 px-4 text-xs text-slate-600">
-                          {unit.shell_color && <p>{unit.shell_color}</p>}
-                          {unit.cabinet_color && <p>{getCabinetName(unit.cabinet_color)}</p>}
-                          {!unit.shell_color && !unit.cabinet_color && <span className="text-slate-300">—</span>}
-                        </td>
-                        <td className="py-3 px-4">
-                          {u.customer_name && (
-                            <p className="text-sm font-medium text-slate-900 truncate max-w-[160px]">
-                              {u.scheduled_owes && <span className="text-amber-500 mr-1">⚠</span>}
-                              {u.customer_name}
-                            </p>
-                          )}
-                          {u.fin_balance && u.fin_balance !== "PIF" && (
-                            <p className="text-xs text-amber-600 font-medium">{u.fin_balance}</p>
-                          )}
-                          {u.fin_balance === "PIF" && (
-                            <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-green-100 text-green-700">PIF</span>
-                          )}
-                          {u.foundation_financing && (
-                            <span className="ml-1 text-xs px-2 py-0.5 rounded-full font-medium bg-blue-100 text-blue-700">FF</span>
-                          )}
-                          {u.delivery_info && (
-                            <p className="text-xs text-slate-400 truncate max-w-[160px] mt-0.5">{u.delivery_info}</p>
-                          )}
-                          {deliveryBadge}
-                        </td>
-                        <td className="py-3 px-4 text-sm text-slate-600">
-                          {show?.name ? (
-                            <span className="text-[#00929C]">📍 {show.name}</span>
-                          ) : location?.name ? (
-                            location.name
-                          ) : "—"}
-                          {unit.sub_location && (
-                            <p className="text-xs text-slate-400">{unit.sub_location}</p>
-                          )}
-                        </td>
-                        <td className="py-3 px-4">
-                          <Badge variant={getStatusColor(unit.status)}>
-                            {INVENTORY_STATUSES.find((s) => s.value === unit.status)?.label ?? unit.status}
-                          </Badge>
-                        </td>
-                        <td className="py-3 px-4">
-                          <Link
-                            href={`/admin/inventory/${unit.id}`}
-                            className="text-[#00929C] text-sm font-medium hover:underline"
-                          >
-                            Edit →
-                          </Link>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+        {/* Searchable unit table */}
+        <InventorySearchTable units={filtered} />
       </main>
     </div>
   );
