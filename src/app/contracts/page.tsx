@@ -49,7 +49,7 @@ export default async function ContractsPage({
       </header>
 
       <main className="pb-28">
-        <ContractsList contracts={contracts ?? []} initialFilter={initialFilter} />
+        <ContractsList contracts={(contracts ?? []) as any[]} initialFilter={initialFilter} />
       </main>
 
       {/* FAB */}

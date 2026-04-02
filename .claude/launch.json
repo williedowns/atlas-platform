@@ -1,0 +1,18 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Atlas Platform (dev)",
+      "runtimeExecutable": "/bin/sh",
+      "runtimeArgs": ["-c", "cd /Users/williedowns/Documents/method/atlas-platform && /Users/williedowns/.bun/bin/bun run dev"],
+      "port": 3000,
+      "autoPort": false
+    },
+    {
+      "name": "Atlas Platform (prod preview)",
+      "runtimeExecutable": "/Users/williedowns/.bun/bin/bun",
+      "runtimeArgs": ["run", "start"],
+      "port": 3000
+    }
+  ]
+}

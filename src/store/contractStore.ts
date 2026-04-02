@@ -8,6 +8,7 @@ import type {
   Product,
   Show,
   Location,
+  UnitType,
 } from "@/types";
 
 export interface ContractDraft {
@@ -187,7 +188,7 @@ export const useContractStore = create<ContractStore>()(
                 quantity: 1,
                 inventory_unit_id: unit.id,
                 serial_number: unit.serial_number ?? undefined,
-                unit_type: unit.unit_type ?? undefined,
+                unit_type: (unit.unit_type ?? undefined) as UnitType | undefined,
                 shell_color: unit.shell_color ?? undefined,
                 cabinet_color: unit.cabinet_color ?? undefined,
               },

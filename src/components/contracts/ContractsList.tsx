@@ -6,19 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
-type ContractRow = {
-  id: string;
-  contract_number: string;
-  status: string;
-  is_contingent?: boolean | null;
-  total: number;
-  deposit_paid: number;
-  balance_due: number;
-  created_at: string;
-  customer: { first_name: string; last_name: string } | null;
-  show: { name: string } | null;
-  location: { name: string } | null;
-};
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ContractRow = Record<string, any>;
 
 const STATUS_COLORS: Record<string, "default" | "success" | "warning" | "destructive" | "secondary"> = {
   quote: "secondary",

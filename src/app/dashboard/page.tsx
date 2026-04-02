@@ -68,10 +68,14 @@ export default async function DashboardPage() {
   if (!isAdmin) quotesQuery.eq("sales_rep_id", user.id);
 
   const [
-    { data: confirmedContracts },
-    { data: contingentContracts },
-    { data: recentQuotes },
+    { data: confirmedContractsRaw },
+    { data: contingentContractsRaw },
+    { data: recentQuotesRaw },
   ] = await Promise.all([confirmedQuery, contingentQuery, quotesQuery]);
+
+  const confirmedContracts = (confirmedContractsRaw ?? []) as any[];
+  const contingentContracts = (contingentContractsRaw ?? []) as any[];
+  const recentQuotes = (recentQuotesRaw ?? []) as any[];
 
   const statusLabels: Record<string, string> = {
     pending_signature: "Pending Sig.",

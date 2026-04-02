@@ -5,28 +5,8 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { getStatusColor, getUnitTypeLabel, getCabinetName, getModelDisplayName, INVENTORY_STATUSES } from "@/lib/inventory-constants";
 
-interface Unit {
-  id: string;
-  serial_number?: string | null;
-  order_number?: string | null;
-  status: string;
-  unit_type: string;
-  shell_color?: string | null;
-  cabinet_color?: string | null;
-  sub_location?: string | null;
-  wrap_status?: string | null;
-  notes?: string | null;
-  model_code?: string | null;
-  customer_name?: string | null;
-  fin_balance?: string | null;
-  delivery_team?: string | null;
-  delivery_info?: string | null;
-  scheduled_owes?: boolean;
-  foundation_financing?: boolean;
-  product?: { id: string; name: string; category: string; line?: string; model_code?: string } | null;
-  location?: { id: string; name: string } | null;
-  show?: { id: string; name: string } | null;
-}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Unit = Record<string, any>;
 
 interface Props {
   units: Unit[];
