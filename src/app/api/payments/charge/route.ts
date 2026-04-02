@@ -22,6 +22,12 @@ export async function POST(req: Request) {
   }
 
   const totalCharge = Number(amount) + Number(surcharge_amount ?? 0);
+  // Only GreenSky/WF (deduct_from_balance !== false) offset the balance; Foundation carries
+  const financedAtSale = Array.isArray(contract.financing)
+    ? (contract.financing as { financed_amount?: number; deduct_from_balance?: boolean }[])
+        .filter((f) => f.deduct_from_balance !== false)
+        .reduce((sum, f) => sum + (f.financed_amount ?? 0), 0)
+    : 0;
 
   // Create payment record (pending)
   const { data: payment } = await supabase
@@ -81,7 +87,7 @@ export async function POST(req: Request) {
       .update({
         status: "deposit_collected",
         deposit_paid: newDepositPaid,
-        balance_due: Math.max(0, contract.total - newDepositPaid),
+        balance_due: Math.max(0, contract.total - financedAtSale - newDepositPaid),
         intuit_payment_id: chargeResult.id,
       })
       .eq("id", contract_id);

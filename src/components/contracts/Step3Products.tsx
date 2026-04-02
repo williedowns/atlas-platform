@@ -8,6 +8,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { formatCurrency } from "@/lib/utils";
 import type { Product, DiscountType, ContractDiscount } from "@/types";
+import { isSpaProduct } from "@/lib/inventory-constants";
+import { InventoryUnitPicker } from "@/components/contracts/InventoryUnitPicker";
 
 interface Step3ProductsProps {
   onNext: () => void;
@@ -136,9 +138,14 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
   const [discountAmount, setDiscountAmount] = useState("");
   const [taxCalculating, setTaxCalculating] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
+  const [editingPriceIdx, setEditingPriceIdx] = useState<number | null>(null);
+  const [editingPriceVal, setEditingPriceVal] = useState("");
 
-  const { addLineItem, removeLineItem, addDiscount, removeDiscount, setTax } = useContractStore();
+  const { addLineItem, addLineItemWithUnit, removeLineItem, addDiscount, removeDiscount, setTax, updateLineItemPrice, updateLineItemColors } = useContractStore();
   const draft = useContractStore((s) => s.draft);
+
+  // Inventory unit picker state
+  const [pickerProduct, setPickerProduct] = useState<{ product: Product; price: number } | null>(null);
   const taxTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -191,6 +198,14 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
     const flashKey = product.id + "-" + (waived ? "waived" : price);
     setAddedFlash(flashKey);
     setTimeout(() => setAddedFlash(null), 800);
+  }
+
+  function handleSpaAdd(product: Product, price: number) {
+    if (isSpaProduct(product.category ?? "")) {
+      setPickerProduct({ product, price });
+    } else {
+      handleAddProduct(product, price);
+    }
   }
 
   function handleAddDiscount() {
@@ -273,15 +288,59 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
             <div className="space-y-2">
               {draft.line_items.map((item, index) => (
                 <div key={`${item.product_id}-${index}`} className="flex items-center justify-between gap-3">
-                  <span className="text-base font-medium text-slate-900 flex-1 truncate">{item.product_name}</span>
+                  <div className="flex-1 min-w-0">
+                    <span className="text-base font-medium text-slate-900 block truncate">{item.product_name}</span>
+                    {(item.inventory_unit_id || item.shell_color || item.cabinet_color) && (
+                      <span className="text-xs text-slate-500">
+                        {item.serial_number ? `S/N: ${item.serial_number}` : item.inventory_unit_id ? "Unit selected" : ""}
+                        {item.shell_color ? `${item.serial_number || item.inventory_unit_id ? " · " : ""}${item.shell_color}` : ""}
+                        {item.cabinet_color ? ` · ${item.cabinet_color} cabinet` : ""}
+                        {item.unit_type ? ` · ${item.unit_type.replace(/_/g, " ")}` : ""}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Price — tap to edit */}
                   {item.waived ? (
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <span className="text-xs font-bold text-slate-400 line-through">{formatCurrency(item.msrp)}</span>
                       <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">FREE</span>
                     </div>
+                  ) : editingPriceIdx === index ? (
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      autoFocus
+                      value={editingPriceVal}
+                      onChange={(e) => setEditingPriceVal(e.target.value)}
+                      onBlur={() => {
+                        const parsed = parseFloat(editingPriceVal);
+                        if (!isNaN(parsed) && parsed >= 0) updateLineItemPrice(index, parsed);
+                        setEditingPriceIdx(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                        if (e.key === "Escape") setEditingPriceIdx(null);
+                      }}
+                      className="w-24 h-9 px-2 rounded-lg border-2 border-[#00929C] bg-white text-sm font-semibold text-right focus:outline-none touch-manipulation"
+                    />
                   ) : (
-                    <span className="text-base font-semibold text-slate-900 whitespace-nowrap">{formatCurrency(item.sell_price)}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingPriceIdx(index);
+                        setEditingPriceVal(item.sell_price.toFixed(2));
+                      }}
+                      className="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-slate-100 active:bg-slate-200 transition-colors touch-manipulation group"
+                    >
+                      <span className="text-base font-semibold text-slate-900 whitespace-nowrap">{formatCurrency(item.sell_price)}</span>
+                      <svg className="w-3.5 h-3.5 text-slate-400 group-hover:text-[#00929C] flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                      </svg>
+                    </button>
                   )}
+
                   <button
                     type="button"
                     onClick={() => removeLineItem(index)}
@@ -363,7 +422,7 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
                       <div className="flex gap-2 flex-shrink-0">
                         <button
                           type="button"
-                          onClick={() => handleAddProduct(product, product.msrp)}
+                          onClick={() => handleSpaAdd(product, product.msrp)}
                           className={`h-11 px-4 rounded-lg text-sm font-bold transition-all touch-manipulation active:scale-[0.97] ${
                             addedFlash === product.id + "-" + product.msrp
                               ? "bg-emerald-500 text-white"
@@ -375,7 +434,7 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
                         {product.floor_price != null && product.floor_price > 0 && (
                           <button
                             type="button"
-                            onClick={() => handleAddProduct(product, product.floor_price!)}
+                            onClick={() => handleSpaAdd(product, product.floor_price!)}
                             className={`h-11 px-4 rounded-lg text-sm font-bold transition-all touch-manipulation active:scale-[0.97] ${
                               addedFlash === product.id + "-" + product.floor_price
                                 ? "bg-emerald-500 text-white"
@@ -587,6 +646,32 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
           <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
         </svg>
       </Button>
+
+      {/* Inventory unit picker overlay */}
+      {pickerProduct && (
+        <InventoryUnitPicker
+          productCategory={pickerProduct.product.category ?? ""}
+          showId={draft.show_id ?? null}
+          locationId={draft.location_id ?? null}
+          onSelect={(unit) => {
+            const { product, price } = pickerProduct;
+            addLineItemWithUnit(product, price, unit);
+            const flashKey = product.id + "-" + price;
+            setAddedFlash(flashKey);
+            setTimeout(() => setAddedFlash(null), 800);
+            setPickerProduct(null);
+          }}
+          onSkip={(shell, cabinet) => {
+            const { product, price } = pickerProduct;
+            addLineItem(product, price, false, shell, cabinet);
+            const flashKey = product.id + "-" + price;
+            setAddedFlash(flashKey);
+            setTimeout(() => setAddedFlash(null), 800);
+            setPickerProduct(null);
+          }}
+          onClose={() => setPickerProduct(null)}
+        />
+      )}
     </div>
   );
 }

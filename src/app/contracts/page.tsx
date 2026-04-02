@@ -5,7 +5,14 @@ import { createClient } from "@/lib/supabase/server";
 import { ContractsList } from "@/components/contracts/ContractsList";
 import { Button } from "@/components/ui/button";
 
-export default async function ContractsPage() {
+export default async function ContractsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string>>;
+}) {
+  const params = await searchParams;
+  const initialFilter = (params.filter as any) ?? "all";
+
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
@@ -21,13 +28,13 @@ export default async function ContractsPage() {
   let query = supabase
     .from("contracts")
     .select(`
-      id, contract_number, status, total, deposit_paid, balance_due, created_at,
+      id, contract_number, status, is_contingent, total, deposit_paid, balance_due, created_at,
       customer:customers(first_name, last_name),
       show:shows(name),
       location:locations(name)
     `)
     .order("created_at", { ascending: false })
-    .limit(100);
+    .limit(200);
 
   if (!isAdmin) {
     query = query.eq("sales_rep_id", user.id);
@@ -42,7 +49,7 @@ export default async function ContractsPage() {
       </header>
 
       <main className="pb-28">
-        <ContractsList contracts={contracts ?? []} />
+        <ContractsList contracts={contracts ?? []} initialFilter={initialFilter} />
       </main>
 
       {/* FAB */}

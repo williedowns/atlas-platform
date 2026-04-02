@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { ContingentToggle } from "@/components/contracts/ContingentToggle";
 
 const STATUS_COLORS: Record<string, "default" | "success" | "warning" | "destructive" | "secondary"> = {
   draft: "secondary",
@@ -66,9 +67,23 @@ export default async function ContractDetailPage({
             <h1 className="text-lg font-bold">{contract.contract_number}</h1>
             <p className="text-[#00929C] text-xs">{formatDate(contract.created_at)}</p>
           </div>
+          {contract.is_contingent && (
+            <Badge variant="warning" className="text-xs">Contingent</Badge>
+          )}
           <Badge variant={STATUS_COLORS[contract.status] ?? "secondary"} className="text-xs">
             {contract.status.replace(/_/g, " ")}
           </Badge>
+          <a
+            href={`/api/contracts/${contract.id}/pdf`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+            title="Print / PDF"
+          >
+            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+            </svg>
+          </a>
         </div>
       </header>
 
@@ -240,17 +255,23 @@ export default async function ContractDetailPage({
         {/* Actions */}
         <div className="space-y-3 pt-2">
           {contract.balance_due > 0 && contract.status !== "cancelled" && (
-            <Link href={`/contracts/${id}/collect-payment`}>
+            <Link href={`/contracts/${id}/collect-payment`} className="block">
               <Button variant="success" size="xl" className="w-full">
                 {contract.deposit_paid > 0 ? "Add Payment" : "Collect Deposit"}
               </Button>
             </Link>
           )}
-          <Link href={`/api/contracts/${id}/pdf`} target="_blank">
+          <Link href={`/api/contracts/${id}/pdf`} target="_blank" className="block">
             <Button variant="outline" size="lg" className="w-full">
               Download PDF
             </Button>
           </Link>
+          {!["quote", "draft", "cancelled"].includes(contract.status) && (
+            <ContingentToggle
+              contractId={contract.id}
+              isContingent={contract.is_contingent ?? false}
+            />
+          )}
         </div>
       </main>
     </div>

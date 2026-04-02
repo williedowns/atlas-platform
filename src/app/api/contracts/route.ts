@@ -52,7 +52,12 @@ export async function POST(req: Request) {
   }
 
   const contractNumber = generateContractNumber();
-  const balanceDue = Math.max(0, total - deposit_amount);
+  const financingArr = Array.isArray(financing) ? financing : [];
+  // Only GreenSky/WF (deduct_from_balance !== false) reduce balance at POS; Foundation carries to balance
+  const financedAtSale = financingArr
+    .filter((f: { deduct_from_balance?: boolean }) => f.deduct_from_balance !== false)
+    .reduce((sum: number, f: { financed_amount?: number }) => sum + (f.financed_amount ?? 0), 0);
+  const balanceDue = Math.max(0, total - financedAtSale - deposit_amount);
 
   // Create contract in DB
   const { data: contract, error } = await supabase
@@ -62,8 +67,8 @@ export async function POST(req: Request) {
       status: "signed",
       customer_id: customerId,
       sales_rep_id: user.id,
-      show_id: show_id ?? null,
-      location_id,
+      show_id: (show_id && !show_id.startsWith("store-")) ? show_id : null,
+      location_id: location_id ?? null,
       line_items,
       discounts,
       financing,

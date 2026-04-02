@@ -115,22 +115,22 @@ export default async function AnalyticsPage({
   let query = supabase
     .from("contracts")
     .select(`
-      id, contract_number, total, deposit_paid, balance_due, status, created_at,
+      id, contract_number, total, deposit_paid, balance_due, status, is_contingent, created_at,
       customer:customers(first_name, last_name),
       show:shows(id, name, start_date, end_date),
       location:locations(id, name, type),
       sales_rep:profiles(id, full_name),
       line_items
     `)
-    .not("status", "eq", "cancelled");
+    .not("status", "in", '("cancelled","quote","draft")');
 
   if (range.gte) query = query.gte("created_at", range.gte);
   if (range.lte) query = query.lt("created_at", range.lte);
 
   let priorQuery = supabase
     .from("contracts")
-    .select("total, deposit_paid")
-    .not("status", "eq", "cancelled");
+    .select("total, deposit_paid, is_contingent")
+    .not("status", "in", '("cancelled","quote","draft")');
 
   if (priorRange.gte) priorQuery = priorQuery.gte("created_at", priorRange.gte);
   if (priorRange.lte) priorQuery = priorQuery.lt("created_at", priorRange.lte);
@@ -154,14 +154,20 @@ export default async function AnalyticsPage({
   const outstandingRows = outstanding ?? [];
 
   // ── KPIs ────────────────────────────────────────────────────────────────────
-  const totalRevenue = rows.reduce((s, c) => s + (c.total ?? 0), 0);
+  const confirmedRows = rows.filter((c) => !(c as any).is_contingent);
+  const contingentRows = rows.filter((c) => (c as any).is_contingent);
+
+  const confirmedRevenue = confirmedRows.reduce((s, c) => s + (c.total ?? 0), 0);
+  const contingentRevenue = contingentRows.reduce((s, c) => s + (c.total ?? 0), 0);
+  const totalRevenue = confirmedRevenue + contingentRevenue;
   const totalDeposits = rows.reduce((s, c) => s + (c.deposit_paid ?? 0), 0);
-  const contractCount = rows.length;
-  const avgDeal = contractCount > 0 ? totalRevenue / contractCount : 0;
+  const contractCount = confirmedRows.length;
+  const contingentCount = contingentRows.length;
+  const avgDeal = contractCount > 0 ? confirmedRevenue / contractCount : 0;
 
   const priorRevenue = priorRows.reduce((s, c) => s + (c.total ?? 0), 0);
   const priorDeposits = priorRows.reduce((s, c) => s + (c.deposit_paid ?? 0), 0);
-  const priorCount = priorRows.length;
+  const priorCount = priorRows.filter((c) => !(c as any).is_contingent).length;
 
   const revDelta = priorRevenue > 0 ? ((totalRevenue - priorRevenue) / priorRevenue) * 100 : null;
   const depDelta = priorDeposits > 0 ? ((totalDeposits - priorDeposits) / priorDeposits) * 100 : null;
@@ -288,7 +294,7 @@ export default async function AnalyticsPage({
         {/* ── KPI Strip ── */}
         <div className="grid grid-cols-2 gap-3">
           <KpiCard
-            label="Total Revenue"
+            label="Gross Revenue"
             value={formatCurrency(totalRevenue)}
             delta={revDelta}
             accent="teal"
@@ -311,6 +317,27 @@ export default async function AnalyticsPage({
             accent="amber"
           />
         </div>
+
+        {/* ── Revenue Breakdown ── */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Revenue Breakdown</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <div className="flex justify-between items-center py-1 border-b border-slate-100">
+              <span className="text-slate-600">Confirmed Contracts ({contractCount})</span>
+              <span className="font-semibold text-[#00929C]">{formatCurrency(confirmedRevenue)}</span>
+            </div>
+            <div className="flex justify-between items-center py-1 border-b border-slate-100">
+              <span className="text-amber-600">Contingent Contracts ({contingentCount})</span>
+              <span className="font-semibold text-amber-600">{formatCurrency(contingentRevenue)}</span>
+            </div>
+            <div className="flex justify-between items-center pt-1 font-bold">
+              <span className="text-slate-900">Total Gross Revenue</span>
+              <span className="text-slate-900">{formatCurrency(totalRevenue)}</span>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* ── Sales Rep Leaderboard ── */}
         <Card>

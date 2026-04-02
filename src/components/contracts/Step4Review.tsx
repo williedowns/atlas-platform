@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { useContractStore } from "@/store/contractStore";
 import type { DepositSplit } from "@/store/contractStore";
 import { Button } from "@/components/ui/button";
@@ -26,11 +27,36 @@ interface Step4ReviewProps {
 }
 
 export default function Step4Review({ onNext }: Step4ReviewProps) {
+  const router = useRouter();
   const { draft, addDepositSplit, removeDepositSplit, updateLineItemSerial, setNotes } = useContractStore();
 
   const contractNumber = useMemo(() => generateContractNumber(), []);
   const today = useMemo(() => formatDate(new Date()), []);
   const suggestedDeposit = useMemo(() => calculateMinDeposit(draft.total), [draft.total]);
+
+  const [savingQuote, setSavingQuote] = useState(false);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
+
+  async function handleSaveQuote() {
+    setSavingQuote(true);
+    setQuoteError(null);
+    try {
+      const res = await fetch("/api/quotes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(draft),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error ?? "Failed to save quote");
+      }
+      const { quote_id } = await res.json();
+      router.push(`/quotes/${quote_id}`);
+    } catch (err: any) {
+      setQuoteError(err.message ?? "Something went wrong");
+      setSavingQuote(false);
+    }
+  }
 
   // Split builder state
   const [splitAmount, setSplitAmount] = useState("");
@@ -40,7 +66,18 @@ export default function Step4Review({ onNext }: Step4ReviewProps) {
 
   const splits = Array.isArray(draft.deposit_splits) ? draft.deposit_splits : [];
   const totalSplits = splits.reduce((sum, s) => sum + s.amount, 0);
-  const remaining = Math.max(0, draft.total - totalSplits);
+
+  // Only GreenSky/WF (deduct_from_balance !== false) reduce balance at POS
+  // Foundation carries to balance and is NOT deducted here
+  const financingArr = Array.isArray(draft.financing) ? draft.financing : [];
+  const financedAtSale = financingArr
+    .filter((f) => f.deduct_from_balance !== false)
+    .reduce((sum, f) => sum + f.financed_amount, 0);
+  const foundationTotal = financingArr
+    .filter((f) => f.deduct_from_balance === false)
+    .reduce((sum, f) => sum + f.financed_amount, 0);
+
+  const remaining = Math.max(0, draft.total - financedAtSale - totalSplits);
 
   const splitAmountNum = parseFloat(splitAmount) || 0;
   const canAddSplit = splitAmountNum > 0;
@@ -264,11 +301,23 @@ export default function Step4Review({ onNext }: Step4ReviewProps) {
               ) : null;
             })()}
 
-            <div className="flex justify-between">
+            <div className="flex justify-between items-center">
               <span className="text-slate-600">
                 Tax ({(draft.tax_rate * 100).toFixed(2)}%)
               </span>
-              <span className="font-medium">{formatCurrency(draft.tax_amount)}</span>
+              <div className="flex items-center gap-2">
+                {draft.tax_exempt && (
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+                    EXEMPT
+                  </span>
+                )}
+                <span className={`font-medium ${draft.tax_exempt ? "line-through text-slate-400" : ""}`}>
+                  {formatCurrency(draft.tax_amount)}
+                </span>
+                {draft.tax_exempt && (
+                  <span className="font-medium text-emerald-700">{formatCurrency(0)}</span>
+                )}
+              </div>
             </div>
 
             {draft.surcharge_enabled && draft.surcharge_amount > 0 && (
@@ -310,13 +359,43 @@ export default function Step4Review({ onNext }: Step4ReviewProps) {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Added splits */}
+          {/* Financing deductions — GreenSky/WF only (paper contract style) */}
+          {financedAtSale > 0 && (
+            <div className="space-y-2">
+              {financingArr
+                .filter((f) => f.deduct_from_balance !== false)
+                .map((f, i) => (
+                  <div key={i} className="flex items-center justify-between bg-[#00929C]/5 border border-[#00929C]/20 rounded-xl px-4 py-3">
+                    <div>
+                      <p className="font-semibold text-slate-900">{f.financer_name}</p>
+                      <p className="text-xs text-slate-500">Financed at POS — deducted from balance</p>
+                    </div>
+                    <span className="font-semibold text-[#00929C]">{formatCurrency(f.financed_amount)}</span>
+                  </div>
+                ))}
+            </div>
+          )}
+
+          {/* Foundation — carries to balance notice */}
+          {foundationTotal > 0 && (
+            <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+              <div>
+                <p className="font-semibold text-slate-900">
+                  {financingArr.filter((f) => f.deduct_from_balance === false).map((f) => f.financer_name).join(", ")}
+                </p>
+                <p className="text-xs text-amber-700">Run after sale — carries to balance due</p>
+              </div>
+              <span className="font-semibold text-amber-700">{formatCurrency(foundationTotal)}</span>
+            </div>
+          )}
+
+          {/* Added deposit splits */}
           {splits.length > 0 && (
             <div className="space-y-2">
               {splits.map((split, i) => (
                 <div
                   key={i}
-                  className="flex items-center justify-between bg-[#00929C]/5 border border-[#00929C]/20 rounded-xl px-4 py-3"
+                  className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl px-4 py-3"
                 >
                   <div>
                     <p className="font-semibold text-slate-900">{formatCurrency(split.amount)}</p>
@@ -336,11 +415,16 @@ export default function Step4Review({ onNext }: Step4ReviewProps) {
                   </button>
                 </div>
               ))}
+            </div>
+          )}
 
-              <div className="flex justify-between text-sm pt-1 px-1">
-                <span className="text-slate-500">Balance due at delivery</span>
-                <span className="font-semibold text-amber-700">{formatCurrency(remaining)}</span>
-              </div>
+          {/* Balance due at delivery */}
+          {(splits.length > 0 || financedAtSale > 0) && (
+            <div className="border-t border-slate-200 pt-3 flex justify-between items-center">
+              <span className="font-semibold text-slate-700">Balance due at delivery</span>
+              <span className={`text-lg font-bold ${remaining === 0 ? "text-emerald-600" : "text-amber-700"}`}>
+                {formatCurrency(remaining)}
+              </span>
             </div>
           )}
 
@@ -421,20 +505,53 @@ export default function Step4Review({ onNext }: Step4ReviewProps) {
         </CardContent>
       </Card>
 
-      {/* ── Continue Button ────────────────────────────────── */}
+      {/* ── Actions ────────────────────────────────────────── */}
+      {quoteError && (
+        <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3">
+          <p className="text-sm text-red-700">{quoteError}</p>
+        </div>
+      )}
+
+      {/* Save Quote — always available once there are line items */}
+      <Button
+        variant="outline"
+        size="xl"
+        className="w-full text-lg border-[#00929C] text-[#00929C] hover:bg-[#00929C]/5"
+        disabled={savingQuote || draft.line_items.length === 0}
+        onClick={handleSaveQuote}
+      >
+        {savingQuote ? (
+          <span className="flex items-center gap-2">
+            <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+            </svg>
+            Saving Quote…
+          </span>
+        ) : (
+          <>
+            <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+            </svg>
+            Save Quote
+          </>
+        )}
+      </Button>
+
+      {/* Continue to Contract — requires at least one deposit */}
       <Button
         variant="accent"
         size="xl"
         className="w-full text-lg"
-        disabled={!canProceed}
+        disabled={!canProceed || savingQuote}
         onClick={onNext}
       >
-        Proceed to Signature &rarr;
+        Sign &amp; Pay Now &rarr;
       </Button>
 
       {!canProceed && (
         <p className="text-center text-sm text-slate-400">
-          Add at least one deposit payment to continue
+          Add at least one deposit to sign &amp; pay, or save as a quote to print
         </p>
       )}
     </div>

@@ -54,21 +54,10 @@ export default function Step1Show({ onNext }: Step1ShowProps) {
   }, []);
 
   function handleSelectShow(show: Show) {
-    // Use linked location if available, otherwise build one from the show's own address
-    const location: Location = (show.location as Location) ?? {
-      id: show.location_id ?? show.id,
-      name: show.venue_name,
-      type: "show",
-      address: show.address,
-      city: show.city,
-      state: show.state,
-      zip: show.zip,
-      phone: null,
-      cc_surcharge_enabled: false,
-      cc_surcharge_rate: 0.035,
-      floor_price_enabled: true,
-      active: true,
-    };
+    // Only pass a real DB location (one with a valid locations-table ID).
+    // If the show has no linked location record, pass null so location_id stays
+    // null in the contract and doesn't violate the FK constraint.
+    const location = (show.location as Location) ?? null;
     setSelectedId(show.id);
     setShow(show, location);
     onNext();

@@ -10,7 +10,6 @@ import { formatCurrency } from "@/lib/utils";
 export default async function DashboardPage() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-
   if (!user) redirect("/login");
 
   const { data: profile } = await supabase
@@ -19,57 +18,105 @@ export default async function DashboardPage() {
     .eq("id", user.id)
     .single();
 
-  // Today's contracts for this rep (or all if admin/manager)
   const isAdmin = profile?.role === "admin" || profile?.role === "manager";
-
-  const contractsQuery = supabase
-    .from("contracts")
-    .select(`
-      *,
-      customer:customers(first_name, last_name),
-      show:shows(name)
-    `)
-    .order("created_at", { ascending: false })
-    .limit(10);
-
-  if (!isAdmin) {
-    contractsQuery.eq("sales_rep_id", user.id);
-  }
-
-  const { data: contracts } = await contractsQuery;
-
-  // Today's stats
   const today = new Date().toISOString().split("T")[0];
-  const { data: todayContracts } = await supabase
-    .from("contracts")
-    .select("total, deposit_paid, status")
-    .gte("created_at", `${today}T00:00:00`)
-    .not("status", "eq", "cancelled");
 
-  const todayRevenue = todayContracts?.reduce((sum, c) => sum + (c.total || 0), 0) ?? 0;
-  const todayDeposits = todayContracts?.reduce((sum, c) => sum + (c.deposit_paid || 0), 0) ?? 0;
+  // ── Today's stats: confirmed (non-contingent) contracts with deposits ──────
+  const { data: todayStats } = await supabase
+    .from("contracts")
+    .select("total, deposit_paid, status, is_contingent")
+    .gte("created_at", `${today}T00:00:00`)
+    .not("status", "in", '("quote","draft","cancelled")')
+    .eq("is_contingent", false)
+    .gt("deposit_paid", 0);
+
+  const todayRevenue = todayStats?.reduce((s, c) => s + (c.total ?? 0), 0) ?? 0;
+  const todayDeposits = todayStats?.reduce((s, c) => s + (c.deposit_paid ?? 0), 0) ?? 0;
+  const todayCount = todayStats?.length ?? 0;
+
+  // ── Recent confirmed contracts (non-contingent, with deposit) ─────────────
+  const confirmedQuery = supabase
+    .from("contracts")
+    .select("id, contract_number, status, total, deposit_paid, is_contingent, created_at, customer:customers(first_name, last_name), show:shows(name)")
+    .not("status", "in", '("quote","draft","cancelled")')
+    .eq("is_contingent", false)
+    .gt("deposit_paid", 0)
+    .order("created_at", { ascending: false })
+    .limit(5);
+
+  if (!isAdmin) confirmedQuery.eq("sales_rep_id", user.id);
+
+  // ── Recent contingent contracts ───────────────────────────────────────────
+  const contingentQuery = supabase
+    .from("contracts")
+    .select("id, contract_number, status, total, deposit_paid, is_contingent, created_at, customer:customers(first_name, last_name), show:shows(name)")
+    .not("status", "in", '("quote","draft","cancelled")')
+    .eq("is_contingent", true)
+    .order("created_at", { ascending: false })
+    .limit(5);
+
+  if (!isAdmin) contingentQuery.eq("sales_rep_id", user.id);
+
+  // ── Recent quotes ─────────────────────────────────────────────────────────
+  const quotesQuery = supabase
+    .from("contracts")
+    .select("id, contract_number, status, total, created_at, customer:customers(first_name, last_name), show:shows(name)")
+    .eq("status", "quote")
+    .order("created_at", { ascending: false })
+    .limit(5);
+
+  if (!isAdmin) quotesQuery.eq("sales_rep_id", user.id);
+
+  const [
+    { data: confirmedContracts },
+    { data: contingentContracts },
+    { data: recentQuotes },
+  ] = await Promise.all([confirmedQuery, contingentQuery, quotesQuery]);
+
+  const statusLabels: Record<string, string> = {
+    pending_signature: "Pending Sig.",
+    signed: "Signed",
+    deposit_collected: "Deposit Paid",
+    in_production: "In Production",
+    ready_for_delivery: "Ready",
+    delivered: "Delivered",
+  };
 
   const statusColors: Record<string, "default" | "success" | "warning" | "destructive" | "secondary"> = {
-    draft: "secondary",
     pending_signature: "warning",
-    signed: "accent" as "default",
+    signed: "default",
     deposit_collected: "success",
     in_production: "default",
     ready_for_delivery: "warning",
     delivered: "success",
-    cancelled: "destructive",
   };
 
-  const statusLabels: Record<string, string> = {
-    draft: "Draft",
-    pending_signature: "Pending Signature",
-    signed: "Signed",
-    deposit_collected: "Deposit Collected",
-    in_production: "In Production",
-    ready_for_delivery: "Ready for Delivery",
-    delivered: "Delivered",
-    cancelled: "Cancelled",
-  };
+  function ContractRow({ contract, href }: { contract: any; href: string }) {
+    return (
+      <li>
+        <Link
+          href={href}
+          className="flex items-center justify-between px-5 py-4 hover:bg-slate-50 active:bg-slate-100 transition-colors"
+        >
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-slate-900 truncate">
+              {contract.customer?.first_name} {contract.customer?.last_name}
+            </p>
+            <p className="text-sm text-slate-500 truncate">
+              {contract.contract_number}
+              {contract.show?.name ? ` · ${contract.show.name}` : ""}
+            </p>
+          </div>
+          <div className="flex flex-col items-end gap-1 ml-3">
+            <p className="font-semibold text-slate-900">{formatCurrency(contract.total)}</p>
+            <Badge variant={statusColors[contract.status] ?? "secondary"}>
+              {statusLabels[contract.status] ?? contract.status}
+            </Badge>
+          </div>
+        </Link>
+      </li>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -88,8 +135,9 @@ export default async function DashboardPage() {
         </Link>
       </header>
 
-      <main className="px-5 py-6 space-y-4 max-w-2xl mx-auto pb-24">
-        {/* Today's Stats */}
+      <main className="px-5 py-6 space-y-3 max-w-2xl mx-auto pb-24">
+
+        {/* ── Today's Stats ── */}
         <div className="grid grid-cols-2 gap-3">
           <Card>
             <CardContent className="p-4">
@@ -106,23 +154,23 @@ export default async function DashboardPage() {
           <Card>
             <CardContent className="p-4">
               <p className="text-xs text-slate-500 uppercase tracking-wide font-medium">Contracts Today</p>
-              <p className="text-2xl font-bold text-slate-900 mt-1">{todayContracts?.length ?? 0}</p>
+              <p className="text-2xl font-bold text-slate-900 mt-1">{todayCount}</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
-              <p className="text-xs text-slate-500 uppercase tracking-wide font-medium">Pending Signatures</p>
+              <p className="text-xs text-slate-500 uppercase tracking-wide font-medium">Contingent Today</p>
               <p className="text-2xl font-bold text-amber-600 mt-1">
-                {todayContracts?.filter(c => c.status === "pending_signature").length ?? 0}
+                {contingentContracts?.filter(c => c.created_at?.startsWith(today)).length ?? 0}
               </p>
             </CardContent>
           </Card>
         </div>
 
-        {/* Analytics shortcut — admin/manager only */}
+        {/* ── Analytics shortcut — admin/manager only ── */}
         {isAdmin && (
-          <Link href="/analytics">
-            <Card className="border-[#00929C]/30 bg-gradient-to-r from-[#00929C]/5 to-transparent hover:border-[#00929C]/60 transition-colors">
+          <Link href="/analytics" className="block">
+            <Card className="hover:bg-slate-50 transition-colors">
               <CardContent className="p-4 flex items-center justify-between">
                 <div>
                   <p className="font-semibold text-slate-900">Analytics Dashboard</p>
@@ -136,42 +184,88 @@ export default async function DashboardPage() {
           </Link>
         )}
 
-        {/* Recent Contracts */}
+        {/* ── Section 1: Recent Contracts ── */}
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle>Recent Contracts</CardTitle>
-              <Link href="/contracts" className="text-sm text-[#00929C] font-medium">View all</Link>
+              <Link href="/contracts?filter=contracts" className="text-sm text-[#00929C] font-medium">View all</Link>
             </div>
           </CardHeader>
           <CardContent className="p-0">
-            {!contracts?.length ? (
-              <div className="px-6 pb-6 text-center text-slate-500 py-8">
-                <p className="text-lg">No contracts yet today.</p>
-                <p className="text-sm mt-1">Tap &ldquo;New Contract&rdquo; to get started.</p>
+            {!confirmedContracts?.length ? (
+              <div className="px-5 pb-6 pt-2 text-center text-slate-500">
+                <p className="text-sm">No confirmed contracts yet.</p>
               </div>
             ) : (
               <ul className="divide-y divide-slate-100">
-                {contracts.map((contract) => (
-                  <li key={contract.id}>
+                {confirmedContracts.map((c) => (
+                  <ContractRow key={c.id} contract={c} href={`/contracts/${c.id}`} />
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* ── Section 2: Contingent Contracts ── */}
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CardTitle>Recent Contingent Contracts</CardTitle>
+                <Badge variant="warning" className="text-xs">Pending Conditions</Badge>
+              </div>
+              <Link href="/contracts?filter=contingent" className="text-sm text-[#00929C] font-medium">View all</Link>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            {!contingentContracts?.length ? (
+              <div className="px-5 pb-6 pt-2 text-center text-slate-500">
+                <p className="text-sm">No contingent contracts.</p>
+              </div>
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {contingentContracts.map((c) => (
+                  <ContractRow key={c.id} contract={c} href={`/contracts/${c.id}`} />
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* ── Section 3: Recent Quotes ── */}
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle>Recent Quotes</CardTitle>
+              <Link href="/contracts?filter=quote" className="text-sm text-[#00929C] font-medium">View all</Link>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            {!recentQuotes?.length ? (
+              <div className="px-5 pb-6 pt-2 text-center text-slate-500">
+                <p className="text-sm">No quotes yet.</p>
+              </div>
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {recentQuotes.map((c) => (
+                  <li key={c.id}>
                     <Link
-                      href={`/contracts/${contract.id}`}
-                      className="flex items-center justify-between px-6 py-4 hover:bg-slate-50 active:bg-slate-100 transition-colors"
+                      href={`/quotes/${c.id}`}
+                      className="flex items-center justify-between px-5 py-4 hover:bg-slate-50 active:bg-slate-100 transition-colors"
                     >
                       <div className="flex-1 min-w-0">
                         <p className="font-semibold text-slate-900 truncate">
-                          {contract.customer?.first_name} {contract.customer?.last_name}
+                          {c.customer?.first_name} {c.customer?.last_name}
                         </p>
                         <p className="text-sm text-slate-500 truncate">
-                          {contract.contract_number}
-                          {contract.show?.name ? ` · ${contract.show.name}` : ""}
+                          {c.contract_number}
+                          {c.show?.name ? ` · ${c.show.name}` : ""}
                         </p>
                       </div>
                       <div className="flex flex-col items-end gap-1 ml-3">
-                        <p className="font-semibold text-slate-900">{formatCurrency(contract.total)}</p>
-                        <Badge variant={statusColors[contract.status] ?? "secondary"}>
-                          {statusLabels[contract.status] ?? contract.status}
-                        </Badge>
+                        <p className="font-semibold text-slate-900">{formatCurrency(c.total)}</p>
+                        <Badge variant="secondary">Quote</Badge>
                       </div>
                     </Link>
                   </li>
@@ -180,6 +274,7 @@ export default async function DashboardPage() {
             )}
           </CardContent>
         </Card>
+
       </main>
 
       {/* Bottom Nav */}

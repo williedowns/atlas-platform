@@ -1,0 +1,98 @@
+import { createClient } from "@/lib/supabase/server";
+import { NextResponse } from "next/server";
+import { getCategoryForModelCode } from "@/lib/inventory-constants";
+
+export async function GET(req: Request) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const url = new URL(req.url);
+  const status = url.searchParams.get("status");
+  const locationId = url.searchParams.get("location_id");
+  const showId = url.searchParams.get("show_id");
+  const productId = url.searchParams.get("product_id");
+  const category = url.searchParams.get("category");
+  // When true, don't filter by location — return matching units from all locations
+  const allLocations = url.searchParams.get("all_locations") === "true";
+
+  let query = supabase
+    .from("inventory_units")
+    .select(`
+      id, serial_number, order_number, status, unit_type,
+      shell_color, cabinet_color, wrap_status, sub_location, model_code,
+      product:products(id, name, category, line, model_code),
+      location:locations(id, name, city, state),
+      show:shows(id, name, venue_name)
+    `)
+    .order("created_at", { ascending: false });
+
+  if (status) {
+    const statuses = status.split(",");
+    if (statuses.length > 1) query = query.in("status", statuses);
+    else query = query.eq("status", status);
+  }
+  // Only apply location/show filter when not browsing all locations
+  if (!allLocations) {
+    if (locationId) query = query.eq("location_id", locationId);
+    else if (showId) query = query.eq("show_id", showId);
+  }
+  if (productId) query = query.eq("product_id", productId);
+
+  const { data, error } = await query.limit(500);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // Filter by category after fetch.
+  // Primary: match via joined product.category
+  // Fallback: match unit's own model_code via prefix mapping (for units with no product_id)
+  let rows = data ?? [];
+  if (category) {
+    rows = rows.filter((u: any) => {
+      if (u.product?.category) return u.product.category === category;
+      return getCategoryForModelCode((u as any).model_code) === category;
+    });
+  }
+
+  return NextResponse.json(rows);
+}
+
+export async function POST(req: Request) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
+  if (!["admin", "manager"].includes(profile?.role ?? "")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const body = await req.json();
+  const {
+    product_id, serial_number, order_number, status, unit_type,
+    shell_color, cabinet_color, wrap_status, sub_location,
+    location_id, show_id, received_date, notes,
+  } = body;
+
+  const { data, error } = await supabase
+    .from("inventory_units")
+    .insert({
+      product_id: product_id || null,
+      serial_number: serial_number || null,
+      order_number: order_number || null,
+      status: status ?? "at_location",
+      unit_type: unit_type ?? "stock",
+      shell_color: shell_color || null,
+      cabinet_color: cabinet_color || null,
+      wrap_status: wrap_status ?? "WR",
+      sub_location: sub_location || null,
+      location_id: location_id || null,
+      show_id: show_id || null,
+      received_date: received_date || null,
+      notes: notes || null,
+    })
+    .select()
+    .single();
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json(data, { status: 201 });
+}

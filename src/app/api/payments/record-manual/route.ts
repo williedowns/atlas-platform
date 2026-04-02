@@ -14,7 +14,7 @@ export async function POST(req: Request) {
 
   const { data: contract, error: contractError } = await supabase
     .from("contracts")
-    .select("total, deposit_paid")
+    .select("total, deposit_paid, financing")
     .eq("id", contract_id)
     .single();
 
@@ -42,14 +42,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: paymentError.message }, { status: 500 });
   }
 
-  // Accumulate deposit_paid
+  // Accumulate deposit_paid — only GreenSky/WF offsets balance at POS; Foundation carries
+  const financedAtSale = Array.isArray(contract.financing)
+    ? (contract.financing as { financed_amount?: number; deduct_from_balance?: boolean }[])
+        .filter((f) => f.deduct_from_balance !== false)
+        .reduce((sum, f) => sum + (f.financed_amount ?? 0), 0)
+    : 0;
   const newDepositPaid = (contract.deposit_paid ?? 0) + Number(amount);
   await supabase
     .from("contracts")
     .update({
       status: "deposit_collected",
       deposit_paid: newDepositPaid,
-      balance_due: Math.max(0, contract.total - newDepositPaid),
+      balance_due: Math.max(0, contract.total - financedAtSale - newDepositPaid),
     })
     .eq("id", contract_id);
 

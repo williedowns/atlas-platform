@@ -37,6 +37,8 @@ export interface ContractDraft {
   // Tax (from Avalara)
   tax_amount: number;
   tax_rate: number;
+  /** Customer has a Texas tax exemption certificate on file */
+  tax_exempt: boolean;
 
   // Computed totals
   subtotal: number;
@@ -56,18 +58,30 @@ export interface DepositSplit {
   bank_name?: string;
 }
 
+interface InventoryUnitDetails {
+  id: string;
+  serial_number?: string | null;
+  unit_type?: string | null;
+  shell_color?: string | null;
+  cabinet_color?: string | null;
+}
+
 interface ContractStore {
   draft: ContractDraft;
-  setShow: (show: Show, location: Location) => void;
+  setShow: (show: Show, location: Location | null) => void;
   setCustomer: (customer: Customer) => void;
-  addLineItem: (product: Product, price: number, waived?: boolean) => void;
+  addLineItem: (product: Product, price: number, waived?: boolean, shell_color?: string, cabinet_color?: string) => void;
+  addLineItemWithUnit: (product: Product, price: number, unit: InventoryUnitDetails) => void;
   removeLineItem: (index: number) => void;
   updateLineItemSerial: (index: number, serial: string) => void;
+  updateLineItemPrice: (index: number, price: number) => void;
+  updateLineItemColors: (index: number, shell_color: string | undefined, cabinet_color: string | undefined) => void;
   addDiscount: (discount: ContractDiscount) => void;
   removeDiscount: (index: number) => void;
   addFinancing: (entry: ContractFinancing) => void;
   removeFinancing: (index: number) => void;
   setTax: (taxAmount: number, taxRate: number) => void;
+  setTaxExempt: (exempt: boolean) => void;
   setSurcharge: (enabled: boolean, rate: number) => void;
   addDepositSplit: (split: DepositSplit) => void;
   removeDepositSplit: (index: number) => void;
@@ -85,6 +99,7 @@ const initialDraft: ContractDraft = {
   surcharge_rate: 0.035,
   tax_amount: 0,
   tax_rate: 0,
+  tax_exempt: false,
   subtotal: 0,
   discount_total: 0,
   surcharge_amount: 0,
@@ -104,7 +119,9 @@ function computeTotalsFromDraft(draft: ContractDraft): Partial<ContractDraft> {
   const surcharge_amount = draft.surcharge_enabled
     ? Math.round(subtotal * draft.surcharge_rate * 100) / 100
     : 0;
-  const total = Math.max(0, subtotal - discount_total + draft.tax_amount + surcharge_amount);
+  // Tax exempt zeroes out tax for this sale
+  const effectiveTax = draft.tax_exempt ? 0 : (draft.tax_amount ?? 0);
+  const total = Math.max(0, subtotal - discount_total + effectiveTax + surcharge_amount);
   const splitsArr = Array.isArray(draft.deposit_splits) ? draft.deposit_splits : [];
   const deposit_amount = splitsArr.reduce((sum, s) => sum + s.amount, 0);
 
@@ -120,19 +137,21 @@ export const useContractStore = create<ContractStore>()(
         set((state) => ({
           draft: {
             ...state.draft,
-            show_id: show.id,
+            // "store-{uuid}" is a synthetic ID used for display only — don't persist as FK
+            show_id: show.id.startsWith("store-") ? undefined : show.id,
             show,
-            location_id: location.id,
-            location,
-            surcharge_enabled: location.cc_surcharge_enabled,
-            surcharge_rate: location.cc_surcharge_rate,
+            // Only use a real location ID (one that exists in the locations table)
+            location_id: location?.id ?? undefined,
+            location: location ?? undefined,
+            surcharge_enabled: location?.cc_surcharge_enabled ?? false,
+            surcharge_rate: location?.cc_surcharge_rate ?? 0.035,
           },
         })),
 
       setCustomer: (customer) =>
         set((state) => ({ draft: { ...state.draft, customer } })),
 
-      addLineItem: (product, price, waived = false) => {
+      addLineItem: (product, price, waived = false, shell_color?, cabinet_color?) => {
         set((state) => {
           const newDraft = {
             ...state.draft,
@@ -145,6 +164,32 @@ export const useContractStore = create<ContractStore>()(
                 sell_price: waived ? 0 : price,
                 quantity: 1,
                 ...(waived ? { waived: true } : {}),
+                ...(shell_color ? { shell_color } : {}),
+                ...(cabinet_color ? { cabinet_color } : {}),
+              },
+            ],
+          };
+          return { draft: { ...newDraft, ...computeTotalsFromDraft(newDraft) } };
+        });
+      },
+
+      addLineItemWithUnit: (product, price, unit) => {
+        set((state) => {
+          const newDraft = {
+            ...state.draft,
+            line_items: [
+              ...state.draft.line_items,
+              {
+                product_id: product.id,
+                product_name: product.name,
+                msrp: product.msrp,
+                sell_price: price,
+                quantity: 1,
+                inventory_unit_id: unit.id,
+                serial_number: unit.serial_number ?? undefined,
+                unit_type: unit.unit_type ?? undefined,
+                shell_color: unit.shell_color ?? undefined,
+                cabinet_color: unit.cabinet_color ?? undefined,
               },
             ],
           };
@@ -164,6 +209,25 @@ export const useContractStore = create<ContractStore>()(
         set((state) => {
           const line_items = state.draft.line_items.map((item, i) =>
             i === index ? { ...item, serial_number } : item
+          );
+          return { draft: { ...state.draft, line_items } };
+        });
+      },
+
+      updateLineItemPrice: (index, price) => {
+        set((state) => {
+          const line_items = state.draft.line_items.map((item, i) =>
+            i === index ? { ...item, sell_price: price, waived: false } : item
+          );
+          const newDraft = { ...state.draft, line_items };
+          return { draft: { ...newDraft, ...computeTotalsFromDraft(newDraft) } };
+        });
+      },
+
+      updateLineItemColors: (index, shell_color, cabinet_color) => {
+        set((state) => {
+          const line_items = state.draft.line_items.map((item, i) =>
+            i === index ? { ...item, shell_color, cabinet_color } : item
           );
           return { draft: { ...state.draft, line_items } };
         });
@@ -209,6 +273,13 @@ export const useContractStore = create<ContractStore>()(
         });
       },
 
+      setTaxExempt: (tax_exempt) => {
+        set((state) => {
+          const newDraft = { ...state.draft, tax_exempt };
+          return { draft: { ...newDraft, ...computeTotalsFromDraft(newDraft) } };
+        });
+      },
+
       setSurcharge: (surcharge_enabled, surcharge_rate) => {
         set((state) => {
           const newDraft = { ...state.draft, surcharge_enabled, surcharge_rate };
@@ -243,7 +314,7 @@ export const useContractStore = create<ContractStore>()(
       resetDraft: () => set({ draft: initialDraft }),
     }),
     {
-      name: "atlas-contract-draft-v3",
+      name: "atlas-contract-draft-v4",
       partialize: (state) => ({ draft: state.draft }),
     }
   )

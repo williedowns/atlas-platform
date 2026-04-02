@@ -59,7 +59,7 @@ export default async function ShowsPage() {
           ) : (
             <div className="space-y-3">
               {upcoming.map((show) => (
-                <Link key={show.id} href={`/shows/${show.id}`}>
+                <Link key={show.id} href={`/shows/${show.id}`} className="block">
                   <Card className="active:bg-slate-50 hover:shadow-md transition-shadow cursor-pointer">
                     <CardContent className="p-4">
                       <div className="flex items-start justify-between">

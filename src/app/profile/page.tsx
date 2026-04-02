@@ -75,7 +75,7 @@ export default function ProfilePage() {
 
         {/* Admin link */}
         {profile?.role === "admin" && (
-          <Link href="/admin">
+          <Link href="/admin" className="block">
             <Card className="cursor-pointer hover:shadow-md transition-shadow">
               <CardContent className="p-4 flex items-center justify-between">
                 <div className="flex items-center gap-3">

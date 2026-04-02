@@ -52,12 +52,17 @@ export interface Show {
 
 // ─── Products ─────────────────────────────────────────────────────────────────
 
+// ─── Products (extended) ──────────────────────────────────────────────────────
+
 export interface Product {
   id: string;
   qbo_item_id: string;
   name: string;
   sku: string;
   category: string;
+  line?: string;       // "Clarity", "H2X", "Twilight Series", etc.
+  model_code?: string; // "C Bal 7", "X T19D", etc.
+  has_serial?: boolean;
   msrp: number;
   floor_price?: number;
   description?: string;
@@ -71,24 +76,58 @@ export interface Product {
 export type InventoryStatus =
   | "on_order"
   | "in_factory"
+  | "in_transit"
   | "at_location"
+  | "at_show"
   | "allocated"
-  | "sold"
   | "delivered";
+
+export type UnitType =
+  | "stock"
+  | "factory_build"
+  | "floor_model"
+  | "blem"
+  | "wet_model";
 
 export interface InventoryUnit {
   id: string;
-  serial_number: string;
-  product_id: string;
+  serial_number?: string | null;
+  order_number?: string | null; // W-prefix factory order number
+  product_id?: string | null;
   product?: Product;
-  location_id?: string;
+  location_id?: string | null;
   location?: Location;
+  show_id?: string | null;
+  show?: Show;
   status: InventoryStatus;
-  contract_id?: string;
-  delivery_work_order_id?: string;
-  notes?: string;
+  unit_type: UnitType;
+  shell_color?: string | null;
+  cabinet_color?: string | null;
+  wrap_status?: "WR" | "UN" | null;
+  sub_location?: string | null;
+  received_date?: string | null;
+  msrp_override?: number | null;
+  contract_id?: string | null;
+  delivery_work_order_id?: string | null;
+  notes?: string | null;
+  model_code?: string | null;        // raw model code from spreadsheet
+  delivery_team?: "atlas" | "fierce" | "houston_aaron" | null;
+  customer_name?: string | null;     // legacy: sold units not yet in contracts
+  fin_balance?: string | null;       // legacy: remaining finance balance
   created_at: string;
   updated_at: string;
+}
+
+export interface InventoryTransfer {
+  id: string;
+  unit_id: string;
+  from_location_id?: string | null;
+  to_location_id?: string | null;
+  from_show_id?: string | null;
+  to_show_id?: string | null;
+  transferred_by?: string | null;
+  notes?: string | null;
+  created_at: string;
 }
 
 // ─── Customers ────────────────────────────────────────────────────────────────
@@ -150,6 +189,8 @@ export interface ContractFinancing {
   plan_description?: string;
   approval_number?: string;
   financed_amount: number;
+  /** true = deducted from balance at POS (GreenSky, Wells Fargo); false = carries to balance (Foundation) */
+  deduct_from_balance?: boolean;
 }
 
 export interface FinancingProvider {
@@ -172,7 +213,14 @@ export interface FinancingPlan {
 export interface ContractLineItem {
   product_id: string;
   product_name: string;
+  // Physical unit identification (when linked to inventory)
+  inventory_unit_id?: string;
   serial_number?: string;
+  unit_type?: UnitType;      // stock, floor_model, blem, etc.
+  shell_color?: string;
+  cabinet_color?: string;
+  line?: string;             // product line for display on contract
+  model_code?: string;
   msrp: number;
   sell_price: number; // floor or negotiated price; 0 if waived
   quantity: number;
