@@ -4,7 +4,40 @@ import { createCharge, createToken } from "@/lib/payments/intuit";
 import { createQBODepositInvoice } from "@/lib/qbo/client";
 import { logAction } from "@/lib/audit";
 
+// ── Simple in-process rate limiter ────────────────────────────────────────────
+// NOTE: This is process-level only — on serverless (Vercel) each cold-start
+// gets a fresh Map. It still stops accidental double-taps and rapid retry loops
+// within the same warm process (the common case for a POS app).
+const RATE_WINDOW_MS = 60_000; // 1 minute
+const RATE_MAX = 15;            // 15 charges per IP per minute
+const rateLimitMap = new Map<string, number[]>();
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const timestamps = (rateLimitMap.get(ip) ?? []).filter((t) => now - t < RATE_WINDOW_MS);
+  if (timestamps.length >= RATE_MAX) return true;
+  timestamps.push(now);
+  rateLimitMap.set(ip, timestamps);
+  return false;
+}
+
+function getClientIp(req: Request): string {
+  return (
+    req.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
+    req.headers.get("x-real-ip") ??
+    "unknown"
+  );
+}
+
 export async function POST(req: Request) {
+  const ip = getClientIp(req);
+  if (isRateLimited(ip)) {
+    return NextResponse.json(
+      { error: "Too many payment attempts. Please wait a moment and try again." },
+      { status: 429 }
+    );
+  }
+
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

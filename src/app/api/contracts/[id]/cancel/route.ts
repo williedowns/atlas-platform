@@ -50,7 +50,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (unitIds.length > 0) {
     const { error: invError } = await supabase
       .from("inventory_units")
-      .update({ status: "available", contract_id: null })
+      .update({ status: "at_location", contract_id: null })
       .in("id", unitIds);
 
     if (!invError) unitsReturned = unitIds.length;

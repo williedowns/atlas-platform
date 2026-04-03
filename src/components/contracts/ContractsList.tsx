@@ -34,6 +34,7 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 type FilterType = "all" | "contracts" | "contingent" | "quote" | "deposit_collected" | "delivered";
+type DateFilter = "all" | "today" | "week" | "month";
 
 const FILTERS: { label: string; value: FilterType }[] = [
   { label: "All", value: "all" },
@@ -43,6 +44,30 @@ const FILTERS: { label: string; value: FilterType }[] = [
   { label: "Deposit Paid", value: "deposit_collected" },
   { label: "Delivered", value: "delivered" },
 ];
+
+const DATE_FILTERS: { label: string; value: DateFilter }[] = [
+  { label: "All Time", value: "all" },
+  { label: "Today", value: "today" },
+  { label: "This Week", value: "week" },
+  { label: "This Month", value: "month" },
+];
+
+function getDateFilterStart(df: DateFilter): Date | null {
+  if (df === "all") return null;
+  const now = new Date();
+  if (df === "today") {
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  }
+  if (df === "week") {
+    const day = now.getDay(); // 0 = Sunday
+    const diff = now.getDate() - day;
+    return new Date(now.getFullYear(), now.getMonth(), diff);
+  }
+  if (df === "month") {
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  }
+  return null;
+}
 
 function isConfirmedContract(c: ContractRow): boolean {
   return !c.is_contingent && c.status !== "quote" && c.status !== "draft" && c.status !== "cancelled";
@@ -65,6 +90,7 @@ export function ContractsList({
 }) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterType>(initialFilter);
+  const [dateFilter, setDateFilter] = useState<DateFilter>("all");
 
   const matchesSearch = (c: ContractRow) => {
     if (!search) return true;
@@ -107,9 +133,16 @@ export function ContractsList({
     );
   };
 
+  const dateStart = getDateFilterStart(dateFilter);
+  const matchesDate = (c: ContractRow) => {
+    if (!dateStart) return true;
+    return c.created_at && new Date(c.created_at) >= dateStart;
+  };
+
   // For non-"all" filters, flat list
   const filtered = contracts.filter((c) => {
     if (!matchesSearch(c)) return false;
+    if (!matchesDate(c)) return false;
     if (filter === "contracts") return isConfirmedContract(c);
     if (filter === "contingent") return isContingentContract(c);
     if (filter === "quote") return isQuote(c);
@@ -119,9 +152,9 @@ export function ContractsList({
   });
 
   // For "all" filter, split into sections
-  const confirmedList = contracts.filter((c) => matchesSearch(c) && isConfirmedContract(c));
-  const contingentList = contracts.filter((c) => matchesSearch(c) && isContingentContract(c));
-  const quoteList = contracts.filter((c) => matchesSearch(c) && isQuote(c));
+  const confirmedList = contracts.filter((c) => matchesSearch(c) && matchesDate(c) && isConfirmedContract(c));
+  const contingentList = contracts.filter((c) => matchesSearch(c) && matchesDate(c) && isContingentContract(c));
+  const quoteList = contracts.filter((c) => matchesSearch(c) && matchesDate(c) && isQuote(c));
 
   function ContractItem({ c }: { c: ContractRow }) {
     const href = isQuote(c) ? `/quotes/${c.id}` : `/contracts/${c.id}`;
@@ -199,7 +232,7 @@ export function ContractsList({
         />
       </div>
 
-      {/* Filter chips */}
+      {/* Status filter chips */}
       <div className="flex gap-2 px-4 py-3 overflow-x-auto bg-white border-b border-slate-100 scrollbar-hide">
         {FILTERS.map((f) => (
           <button
@@ -215,6 +248,34 @@ export function ContractsList({
           </button>
         ))}
       </div>
+
+      {/* Date quick filter chips */}
+      <div className="flex gap-2 px-4 py-2 overflow-x-auto bg-white border-b border-slate-100 scrollbar-hide">
+        <span className="text-xs text-slate-400 font-medium self-center whitespace-nowrap">Date:</span>
+        {DATE_FILTERS.map((f) => (
+          <button
+            key={f.value}
+            onClick={() => setDateFilter(f.value)}
+            className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
+              dateFilter === f.value
+                ? "bg-[#010F21] text-white"
+                : "bg-slate-100 text-slate-600"
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      {/* 200-row limit warning */}
+      {contracts.length >= 200 && (
+        <div className="mx-4 mt-3 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
+          <svg className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+          <p className="text-xs text-amber-700">Showing the 200 most recent contracts. Older contracts may not be visible — use search to find them.</p>
+        </div>
+      )}
 
       {/* Content */}
       {showSections ? (
