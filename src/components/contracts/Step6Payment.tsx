@@ -16,6 +16,7 @@ const METHOD_LABEL: Record<string, string> = {
   debit_card: "Debit Card",
   ach: "ACH / Check",
   cash: "Cash",
+  financing: "Financing (GreenSky / WF)",
 };
 
 export default function Step6Payment() {
@@ -51,10 +52,11 @@ export default function Step6Payment() {
   const [accountName, setAccountName] = useState("");
 
   const currentSplit = splits[currentSplitIdx];
-  const isCard = currentSplit?.method === "credit_card" || currentSplit?.method === "debit_card";
+  const isCard = currentSplit?.method === "credit_card" || currentSplit?.method === "debit_card" || currentSplit?.method === "financing";
+  const isFinancing = currentSplit?.method === "financing";
   const isAch = currentSplit?.method === "ach";
   const surchargeAmount =
-    currentSplit?.method === "credit_card" && draft.surcharge_enabled
+    currentSplit?.method === "credit_card" && draft.surcharge_enabled && !isFinancing
       ? Math.round(currentSplit.amount * draft.surcharge_rate * 100) / 100
       : 0;
   const totalToCharge = (currentSplit?.amount ?? 0) + surchargeAmount;
@@ -302,6 +304,11 @@ export default function Step6Payment() {
             {/* ── Card Fields ── */}
             {isCard && (
               <div className="space-y-3 pt-1 border-t border-slate-100">
+                {isFinancing && (
+                  <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2">
+                    <p className="text-xs text-emerald-700 font-medium">Run the GreenSky / WF financing card through the reader or enter the card details below.</p>
+                  </div>
+                )}
                 <Input
                   label="Card Number *"
                   type="tel"
@@ -406,6 +413,8 @@ export default function Step6Payment() {
             >
               {state === "processing"
                 ? "Processing…"
+                : isFinancing
+                ? `Process Financing ${formatCurrency(totalToCharge)}`
                 : isCard
                 ? `Charge ${formatCurrency(totalToCharge)}`
                 : isAch

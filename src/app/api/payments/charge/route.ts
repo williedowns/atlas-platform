@@ -57,7 +57,7 @@ export async function POST(req: Request) {
     .select()
     .single();
 
-  if (method === "credit_card" || method === "debit_card") {
+  if (method === "credit_card" || method === "debit_card" || method === "financing") {
     // Tokenize raw card fields if no pre-existing token provided
     let resolvedToken = card_token ?? card_present_token;
     if (!resolvedToken && card_number) {

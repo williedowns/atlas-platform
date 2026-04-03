@@ -12,6 +12,7 @@ const PAYMENT_METHODS = [
   { value: "debit_card", label: "Debit Card" },
   { value: "ach", label: "ACH / eCheck" },
   { value: "cash", label: "Cash / Check" },
+  { value: "financing", label: "Financing (GreenSky / WF)" },
 ] as const;
 
 type PaymentState = "idle" | "processing" | "success" | "error";
@@ -67,13 +68,14 @@ export function CollectPaymentForm({
   const [successNote, setSuccessNote] = useState<string | null>(null);
 
   const amount = Math.min(Math.max(0, parseFloat(amountInput) || 0), balanceDue);
+  const isFinancing = method === "financing";
   const surchargeAmount =
-    method === "credit_card" && surchargeEnabled
+    method === "credit_card" && surchargeEnabled && !isFinancing
       ? Math.round(amount * surchargeRate * 100) / 100
       : 0;
   const totalToCharge = amount + surchargeAmount;
 
-  const isCard = method === "credit_card" || method === "debit_card";
+  const isCard = method === "credit_card" || method === "debit_card" || isFinancing;
   const isAch = method === "ach";
   const isCash = method === "cash";
 
@@ -310,9 +312,14 @@ export function CollectPaymentForm({
       {isCard && (
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-lg">Card Details</CardTitle>
+            <CardTitle className="text-lg">{isFinancing ? "Financing Card Details" : "Card Details"}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {isFinancing && (
+              <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2">
+                <p className="text-xs text-emerald-700 font-medium">Run the GreenSky / WF financing card through the reader or enter the card details below.</p>
+              </div>
+            )}
             <Input
               label="Card Number *"
               type="tel"

@@ -178,8 +178,8 @@ export default function Step4Financing({ onNext }: Step4FinancingProps) {
         </div>
       )}
 
-      {/* Texas Tax Exemption toggle — shown when GreenSky/WF financing is present in Texas */}
-      {hasInstantFinancing && isTexasLocation && (
+      {/* Texas Tax Exemption toggle — shown for any Texas location */}
+      {isTexasLocation && (
         <Card className={`border-2 transition-all ${draft.tax_exempt ? "border-emerald-400 bg-emerald-50" : "border-slate-200"}`}>
           <CardContent className="p-4">
             <button
