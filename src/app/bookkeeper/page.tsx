@@ -6,6 +6,7 @@ import { formatCurrency } from "@/lib/utils";
 import TaxExemptTracker from "@/components/bookkeeper/TaxExemptTracker";
 import ReconciliationView from "@/components/bookkeeper/ReconciliationView";
 import SalesByEventList from "@/components/bookkeeper/SalesByEventList";
+import CancellationRefundTracker from "@/components/bookkeeper/CancellationRefundTracker";
 
 export default async function BookkeeperPage() {
   const supabase = await createClient();
@@ -40,6 +41,20 @@ export default async function BookkeeperPage() {
     .limit(500);
 
   const contracts = (contractsRaw ?? []) as any[];
+
+  // ── Cancelled contracts with deposits pending refund ──
+  const { data: cancelledWithDeposits } = await supabase
+    .from("contracts")
+    .select(`
+      id, contract_number, notes, deposit_paid, created_at, line_items,
+      customer:customers(first_name, last_name),
+      show:shows(name),
+      location:locations(name)
+    `)
+    .eq("status", "cancelled")
+    .gt("deposit_paid", 0)
+    .order("created_at", { ascending: false })
+    .limit(100);
 
   // ── Check if migration 010 has been run (column existence probe) ──
   // Query a single row from contracts regardless of status to detect the column.
@@ -179,6 +194,11 @@ export default async function BookkeeperPage() {
         {hasMigration ? (
           <TaxExemptTracker contracts={taxTracked} />
         ) : null}
+
+        {/* ── Cancellation Refund Tracker ── */}
+        {(cancelledWithDeposits ?? []).length > 0 && (
+          <CancellationRefundTracker contracts={cancelledWithDeposits as any[]} />
+        )}
 
         {/* ── Deposit Reconciliation (Summary + Transaction Detail) ── */}
         <ReconciliationView contracts={contracts} />
