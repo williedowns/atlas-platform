@@ -48,14 +48,12 @@ export async function GET(req: Request) {
     location:locations(name)
   `;
 
-  // ── All payments (every method) ───────────────────────────────────────────
+  // ── All payments — date filter done in JS so null processed_at falls back to created_at ──
   const { data: allPayments, error: paymentsError } = await supabase
     .from("payments")
-    .select(`id, amount, method, card_brand, card_last4, processed_at, status, contract:contracts(${contractSelect})`)
+    .select(`id, amount, method, card_brand, card_last4, processed_at, created_at, status, contract:contracts(${contractSelect})`)
     .in("status", ["completed", "pending"])
-    .gte("processed_at", `${dateFrom}T00:00:00`)
-    .lte("processed_at", `${dateTo}T23:59:59`)
-    .order("processed_at", { ascending: true });
+    .order("created_at", { ascending: true });
 
   if (paymentsError) return NextResponse.json({ error: paymentsError.message }, { status: 500 });
 
@@ -100,13 +98,21 @@ export async function GET(req: Request) {
 
   const rows: ReportRow[] = [];
 
+  const fromTs = `${dateFrom}T00:00:00`;
+  const toTs   = `${dateTo}T23:59:59`;
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   for (const p of (allPayments ?? []) as any[]) {
+    // Use processed_at when set, fall back to created_at so payments with
+    // null processed_at (e.g. some manual records) still appear
+    const effectiveDate: string = p.processed_at ?? p.created_at;
+    if (!effectiveDate || effectiveDate < fromTs || effectiveDate > toTs) continue;
+
     const { customer, salesLocation, productSummary, isFullPayment } = extractContractFields(p);
     const contract = Array.isArray(p.contract) ? p.contract[0] : p.contract;
     rows.push({
       payment_id: p.id,
-      date: p.processed_at,
+      date: effectiveDate,
       customer_name: customer ? `${customer.first_name} ${customer.last_name}` : "—",
       product_size: productSummary || "—",
       sales_location: salesLocation,
