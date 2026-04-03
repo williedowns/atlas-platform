@@ -24,6 +24,8 @@ const METHOD_BADGE: Record<string, string> = {
   "Debit Card":  "bg-indigo-50 text-indigo-700",
   "ACH":         "bg-violet-50 text-violet-700",
   "Financing":   "bg-emerald-50 text-emerald-700",
+  "Cash":        "bg-slate-100 text-slate-600",
+  "Check":       "bg-slate-100 text-slate-600",
 };
 
 function todayStr() {

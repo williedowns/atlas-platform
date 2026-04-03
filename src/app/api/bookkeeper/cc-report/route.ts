@@ -48,41 +48,16 @@ export async function GET(req: Request) {
     location:locations(name)
   `;
 
-  // ── 1. Credit card + debit card payments ──────────────────────────────────
-  const { data: cardPayments, error: cardError } = await supabase
+  // ── All payments (every method) ───────────────────────────────────────────
+  const { data: allPayments, error: paymentsError } = await supabase
     .from("payments")
     .select(`id, amount, method, card_brand, card_last4, processed_at, status, contract:contracts(${contractSelect})`)
-    .in("method", ["credit_card", "debit_card"])
-    .eq("status", "completed")
-    .gte("processed_at", `${dateFrom}T00:00:00`)
-    .lte("processed_at", `${dateTo}T23:59:59`)
-    .order("processed_at", { ascending: true });
-
-  if (cardError) return NextResponse.json({ error: cardError.message }, { status: 500 });
-
-  // ── 2. ACH payments ───────────────────────────────────────────────────────
-  const { data: achPayments, error: achError } = await supabase
-    .from("payments")
-    .select(`id, amount, method, card_brand, card_last4, processed_at, status, contract:contracts(${contractSelect})`)
-    .eq("method", "ach")
     .in("status", ["completed", "pending"])
     .gte("processed_at", `${dateFrom}T00:00:00`)
     .lte("processed_at", `${dateTo}T23:59:59`)
     .order("processed_at", { ascending: true });
 
-  if (achError) return NextResponse.json({ error: achError.message }, { status: 500 });
-
-  // ── 3. Financing payments (method = "financing", via Intuit) ───────────────
-  const { data: financingPayments, error: finPayError } = await supabase
-    .from("payments")
-    .select(`id, amount, method, card_brand, card_last4, processed_at, status, contract:contracts(${contractSelect})`)
-    .eq("method", "financing")
-    .eq("status", "completed")
-    .gte("processed_at", `${dateFrom}T00:00:00`)
-    .lte("processed_at", `${dateTo}T23:59:59`)
-    .order("processed_at", { ascending: true });
-
-  if (finPayError) return NextResponse.json({ error: finPayError.message }, { status: 500 });
+  if (paymentsError) return NextResponse.json({ error: paymentsError.message }, { status: 500 });
 
   // ── 4. At-show financing from contracts (GreenSky/WF deduct_from_balance entries) ──
   const { data: financedContracts, error: fcError } = await supabase
@@ -114,11 +89,19 @@ export async function GET(req: Request) {
     provider: string | null;
   };
 
+  const METHOD_LABEL: Record<string, string> = {
+    credit_card: "Credit Card",
+    debit_card:  "Debit Card",
+    ach:         "ACH",
+    financing:   "Financing",
+    cash:        "Cash",
+    check:       "Check",
+  };
+
   const rows: ReportRow[] = [];
 
-  // Map card + debit payments
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  for (const p of (cardPayments ?? []) as any[]) {
+  for (const p of (allPayments ?? []) as any[]) {
     const { customer, salesLocation, productSummary, isFullPayment } = extractContractFields(p);
     const contract = Array.isArray(p.contract) ? p.contract[0] : p.contract;
     rows.push({
@@ -129,53 +112,11 @@ export async function GET(req: Request) {
       sales_location: salesLocation,
       payment_type: isFullPayment ? "Paid in Full" : "Down Payment",
       amount: p.amount,
-      method_type: p.method === "debit_card" ? "Debit Card" : "Credit Card",
-      card_type: p.card_brand ?? (p.method === "debit_card" ? "Debit" : "Credit"),
-      card_last4: p.card_last4 ?? null,
-      contract_number: contract?.contract_number ?? "—",
-      provider: null,
-    });
-  }
-
-  // Map ACH payments
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  for (const p of (achPayments ?? []) as any[]) {
-    const { customer, salesLocation, productSummary, isFullPayment } = extractContractFields(p);
-    const contract = Array.isArray(p.contract) ? p.contract[0] : p.contract;
-    rows.push({
-      payment_id: p.id,
-      date: p.processed_at,
-      customer_name: customer ? `${customer.first_name} ${customer.last_name}` : "—",
-      product_size: productSummary || "—",
-      sales_location: salesLocation,
-      payment_type: isFullPayment ? "Paid in Full" : "Down Payment",
-      amount: p.amount,
-      method_type: "ACH",
-      card_type: null,
-      card_last4: null,
-      contract_number: contract?.contract_number ?? "—",
-      provider: null,
-    });
-  }
-
-  // Map financing payments (Intuit-processed)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  for (const p of (financingPayments ?? []) as any[]) {
-    const { customer, salesLocation, productSummary, isFullPayment } = extractContractFields(p);
-    const contract = Array.isArray(p.contract) ? p.contract[0] : p.contract;
-    rows.push({
-      payment_id: p.id,
-      date: p.processed_at,
-      customer_name: customer ? `${customer.first_name} ${customer.last_name}` : "—",
-      product_size: productSummary || "—",
-      sales_location: salesLocation,
-      payment_type: isFullPayment ? "Paid in Full" : "Down Payment",
-      amount: p.amount,
-      method_type: "Financing",
+      method_type: METHOD_LABEL[p.method] ?? p.method ?? "Unknown",
       card_type: p.card_brand ?? null,
       card_last4: p.card_last4 ?? null,
       contract_number: contract?.contract_number ?? "—",
-      provider: "Financing",
+      provider: p.method === "financing" ? "Financing" : null,
     });
   }
 
