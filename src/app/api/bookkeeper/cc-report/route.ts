@@ -189,7 +189,9 @@ export async function GET(req: Request) {
         r.sales_location.toLowerCase().includes(search) ||
         r.product_size.toLowerCase().includes(search) ||
         (r.method_type ?? "").toLowerCase().includes(search) ||
-        (r.provider ?? "").toLowerCase().includes(search)
+        (r.provider ?? "").toLowerCase().includes(search) ||
+        r.amount.toFixed(2).includes(search) ||
+        r.amount.toString().includes(search)
       )
     : rows;
 
