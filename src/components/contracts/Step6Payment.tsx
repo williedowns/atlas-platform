@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, generateContractNumber } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
 
 type OverallState = "pending" | "processing" | "success" | "error";
 
@@ -37,23 +38,86 @@ export default function Step6Payment() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [contractId, setContractId] = useState<string | null>(null);
 
+  // ── Card fields ───────────────────────────────────────────
+  const [cardNumber, setCardNumber] = useState("");
+  const [cardExpiry, setCardExpiry] = useState("");
+  const [cardCvc, setCardCvc] = useState("");
+  const [cardZip, setCardZip] = useState("");
+
+  // ── ACH fields ────────────────────────────────────────────
+  const [routingNumber, setRoutingNumber] = useState("");
+  const [accountNumber, setAccountNumber] = useState("");
+  const [accountType, setAccountType] = useState<"PERSONAL_CHECKING" | "PERSONAL_SAVINGS" | "BUSINESS_CHECKING">("PERSONAL_CHECKING");
+  const [accountName, setAccountName] = useState("");
+
   const currentSplit = splits[currentSplitIdx];
   const isCard = currentSplit?.method === "credit_card" || currentSplit?.method === "debit_card";
+  const isAch = currentSplit?.method === "ach";
   const surchargeAmount =
     currentSplit?.method === "credit_card" && draft.surcharge_enabled
       ? Math.round(currentSplit.amount * draft.surcharge_rate * 100) / 100
       : 0;
   const totalToCharge = (currentSplit?.amount ?? 0) + surchargeAmount;
 
+  const handleExpiryChange = (val: string) => {
+    const digits = val.replace(/\D/g, "").slice(0, 4);
+    setCardExpiry(digits.length >= 3 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : digits);
+  };
+
+  const cardReady = isCard &&
+    cardNumber.replace(/\s/g, "").length >= 13 &&
+    cardExpiry.length === 5 &&
+    cardCvc.length >= 3;
+
+  const achReady = isAch &&
+    routingNumber.length === 9 &&
+    accountNumber.length >= 4 &&
+    accountName.trim().length >= 2;
+
+  const canCharge = isCard ? cardReady : isAch ? achReady : true;
+
   async function processCurrentSplit(cId: string) {
     if (!currentSplit) return;
     setState("processing");
     setErrorMessage(null);
 
-    const endpoint = isCard ? "/api/payments/charge" : "/api/payments/record-manual";
-    const body = isCard
-      ? { contract_id: cId, amount: currentSplit.amount, surcharge_amount: surchargeAmount, method: currentSplit.method }
-      : { contract_id: cId, amount: currentSplit.amount, method: currentSplit.method, check_number: currentSplit.check_number, bank_name: currentSplit.bank_name };
+    let endpoint: string;
+    let body: Record<string, unknown>;
+
+    if (isCard) {
+      const [expMonth, expYear] = cardExpiry.split("/");
+      endpoint = "/api/payments/charge";
+      body = {
+        contract_id: cId,
+        amount: currentSplit.amount,
+        surcharge_amount: surchargeAmount,
+        method: currentSplit.method,
+        card_number: cardNumber.replace(/\s/g, ""),
+        card_exp_month: Number(expMonth),
+        card_exp_year: 2000 + Number(expYear),
+        card_cvc: cardCvc,
+        card_postal_code: cardZip || undefined,
+      };
+    } else if (isAch) {
+      endpoint = "/api/payments/echeck";
+      body = {
+        contract_id: cId,
+        amount: currentSplit.amount,
+        routing_number: routingNumber,
+        account_number: accountNumber,
+        account_type: accountType,
+        account_holder_name: accountName,
+      };
+    } else {
+      endpoint = "/api/payments/record-manual";
+      body = {
+        contract_id: cId,
+        amount: currentSplit.amount,
+        method: currentSplit.method,
+        check_number: currentSplit.check_number,
+        bank_name: currentSplit.bank_name,
+      };
+    }
 
     const res = await fetch(endpoint, {
       method: "POST",
@@ -75,6 +139,9 @@ export default function Step6Payment() {
     if (newCompleted.length === splits.length) {
       setState("success");
     } else {
+      // Reset card/ACH fields for next split
+      setCardNumber(""); setCardExpiry(""); setCardCvc(""); setCardZip("");
+      setRoutingNumber(""); setAccountNumber(""); setAccountName("");
       setCurrentSplitIdx(currentSplitIdx + 1);
       setState("pending");
     }
@@ -232,11 +299,95 @@ export default function Step6Payment() {
               <span>{formatCurrency(totalToCharge)}</span>
             </div>
 
+            {/* ── Card Fields ── */}
             {isCard && (
-              <div className="flex justify-center py-2">
-                <svg className="w-14 h-14 text-[#00929C] animate-pulse" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5z" />
-                </svg>
+              <div className="space-y-3 pt-1 border-t border-slate-100">
+                <Input
+                  label="Card Number *"
+                  type="tel"
+                  inputMode="numeric"
+                  autoComplete="cc-number"
+                  placeholder="1234 5678 9012 3456"
+                  value={cardNumber}
+                  onChange={(e) => {
+                    const digits = e.target.value.replace(/\D/g, "").slice(0, 16);
+                    setCardNumber(digits.match(/.{1,4}/g)?.join(" ") ?? digits);
+                  }}
+                />
+                <div className="grid grid-cols-2 gap-3">
+                  <Input
+                    label="Expiry (MM/YY) *"
+                    type="tel"
+                    inputMode="numeric"
+                    autoComplete="cc-exp"
+                    placeholder="09/27"
+                    value={cardExpiry}
+                    onChange={(e) => handleExpiryChange(e.target.value)}
+                  />
+                  <Input
+                    label="CVV *"
+                    type="tel"
+                    inputMode="numeric"
+                    autoComplete="cc-csc"
+                    placeholder="123"
+                    maxLength={4}
+                    value={cardCvc}
+                    onChange={(e) => setCardCvc(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                  />
+                </div>
+                <Input
+                  label="Billing ZIP (optional)"
+                  type="tel"
+                  inputMode="numeric"
+                  placeholder="90210"
+                  maxLength={5}
+                  value={cardZip}
+                  onChange={(e) => setCardZip(e.target.value.replace(/\D/g, "").slice(0, 5))}
+                />
+              </div>
+            )}
+
+            {/* ── ACH Fields ── */}
+            {isAch && (
+              <div className="space-y-3 pt-1 border-t border-slate-100">
+                <div className="rounded-lg bg-blue-50 border border-blue-200 px-3 py-2">
+                  <p className="text-xs text-blue-700">ACH payments typically settle within 1-2 business days.</p>
+                </div>
+                <Input
+                  label="Routing Number *"
+                  type="tel"
+                  inputMode="numeric"
+                  placeholder="021000021"
+                  maxLength={9}
+                  value={routingNumber}
+                  onChange={(e) => setRoutingNumber(e.target.value.replace(/\D/g, "").slice(0, 9))}
+                />
+                <Input
+                  label="Account Number *"
+                  type="tel"
+                  inputMode="numeric"
+                  placeholder="Account number"
+                  value={accountNumber}
+                  onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, ""))}
+                />
+                <div>
+                  <label className="text-sm font-medium text-slate-700 block mb-2">Account Type *</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(["PERSONAL_CHECKING", "PERSONAL_SAVINGS", "BUSINESS_CHECKING"] as const).map((t) => (
+                      <button key={t} type="button" onClick={() => setAccountType(t)}
+                        className={`rounded-lg py-2 px-1 text-xs font-semibold transition-all ${accountType === t ? "bg-[#00929C] text-white" : "bg-slate-100 text-slate-700"}`}>
+                        {t === "PERSONAL_CHECKING" ? "Personal Checking" : t === "PERSONAL_SAVINGS" ? "Personal Savings" : "Business Checking"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <Input
+                  label="Account Holder Name *"
+                  type="text"
+                  placeholder="Full name on account"
+                  value={accountName}
+                  onChange={(e) => setAccountName(e.target.value)}
+                />
               </div>
             )}
 
@@ -250,13 +401,15 @@ export default function Step6Payment() {
               variant="success"
               size="xl"
               className="w-full text-lg"
-              disabled={state === "processing"}
+              disabled={state === "processing" || !canCharge}
               onClick={handleStart}
             >
               {state === "processing"
                 ? "Processing…"
                 : isCard
                 ? `Charge ${formatCurrency(totalToCharge)}`
+                : isAch
+                ? `Submit ACH ${formatCurrency(currentSplit.amount)}`
                 : `Record ${formatCurrency(currentSplit.amount)}`}
             </Button>
           </CardContent>
