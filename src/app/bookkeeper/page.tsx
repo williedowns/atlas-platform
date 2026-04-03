@@ -43,21 +43,38 @@ export default async function BookkeeperPage() {
   const contracts = (contractsRaw ?? []) as any[];
 
   // ── Cancelled contracts with deposits pending refund ──
-  // Include payments join so we catch contracts where deposit_paid wasn't updated
-  // on the contract row (e.g. payment stuck in "processing" status) but money was
-  // actually collected. Filter to non-failed payments so test/voided records don't count.
-  const { data: cancelledWithDeposits } = await supabase
+  // Two-step query: fetch cancelled contracts first, then their payments separately.
+  // Avoids FK join ambiguity and RLS issues that can silently return empty arrays.
+  const { data: cancelledRaw } = await supabase
     .from("contracts")
     .select(`
       id, contract_number, notes, deposit_paid, created_at, line_items,
       customer:customers(first_name, last_name),
       show:shows(name),
-      location:locations(name),
-      payments(id, amount, status, method)
+      location:locations(name)
     `)
     .eq("status", "cancelled")
     .order("created_at", { ascending: false })
     .limit(100);
+
+  const cancelledContracts = (cancelledRaw ?? []) as any[];
+
+  // Fetch payments for all cancelled contracts in one query
+  const cancelledIds = cancelledContracts.map((c) => c.id);
+  const { data: cancelledPaymentsRaw } = cancelledIds.length > 0
+    ? await supabase
+        .from("payments")
+        .select("id, contract_id, amount, status, method")
+        .in("contract_id", cancelledIds)
+        .neq("status", "failed")
+    : { data: [] };
+
+  // Attach payments array to each contract
+  const cancelledPayments = (cancelledPaymentsRaw ?? []) as any[];
+  const cancelledWithDeposits = cancelledContracts.map((c) => ({
+    ...c,
+    payments: cancelledPayments.filter((p) => p.contract_id === c.id),
+  }));
 
   // ── Check if migration 010 has been run (column existence probe) ──
   // Query a single row from contracts regardless of status to detect the column.
@@ -199,9 +216,7 @@ export default async function BookkeeperPage() {
         ) : null}
 
         {/* ── Cancellation Refund Tracker ── */}
-        {(cancelledWithDeposits ?? []).length > 0 && (
-          <CancellationRefundTracker contracts={cancelledWithDeposits as any[]} />
-        )}
+        <CancellationRefundTracker contracts={cancelledWithDeposits} />
 
         {/* ── Deposit Reconciliation (Summary + Transaction Detail) ── */}
         <ReconciliationView contracts={contracts} />
