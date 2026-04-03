@@ -96,12 +96,19 @@ export default async function ShowDetailPage({
           </Card>
         </div>
 
-        {/* New Contract CTA */}
-        <Link href="/contracts/new">
-          <Button variant="accent" size="xl" className="w-full text-lg font-bold">
-            + Start New Contract
-          </Button>
-        </Link>
+        {/* CTAs */}
+        <div className="grid grid-cols-2 gap-3">
+          <Link href="/contracts/new" className="col-span-2">
+            <Button variant="accent" size="xl" className="w-full text-lg font-bold">
+              + Start New Contract
+            </Button>
+          </Link>
+          <Link href={`/shows/${id}/checkin`} className="col-span-2">
+            <Button variant="default" size="lg" className="w-full bg-slate-700 hover:bg-slate-800 text-white font-semibold">
+              📋 Check-In Leads
+            </Button>
+          </Link>
+        </div>
 
         {/* Contracts list */}
         <Card>

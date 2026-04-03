@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,6 +18,14 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [githubLoading, setGithubLoading] = useState(false);
 
+  async function handleGitHub() {
+    setGithubLoading(true);
+    await supabase.auth.signInWithOAuth({
+      provider: "github",
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
+    });
+  }
+
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
@@ -30,14 +39,6 @@ export default function LoginPage() {
     } else {
       router.push("/dashboard");
     }
-  }
-
-  async function handleGitHub() {
-    setGithubLoading(true);
-    await supabase.auth.signInWithOAuth({
-      provider: "github",
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
-    });
   }
 
   return (
@@ -55,7 +56,7 @@ export default function LoginPage() {
         <div className="bg-white rounded-2xl p-8 shadow-2xl">
           <h2 className="text-xl font-semibold text-slate-900 mb-6">Sign in</h2>
 
-          {/* GitHub */}
+          {/* GitHub — temporary until email/password is set up */}
           <Button
             type="button"
             variant="secondary"
@@ -111,6 +112,15 @@ export default function LoginPage() {
               Sign In
             </Button>
           </form>
+
+          <div className="mt-4 text-center">
+            <Link
+              href="/auth/forgot-password"
+              className="text-sm text-slate-400 hover:text-[#00929C] transition-colors"
+            >
+              Forgot password?
+            </Link>
+          </div>
         </div>
 
         <p className="text-center text-white/50 text-xs mt-6">

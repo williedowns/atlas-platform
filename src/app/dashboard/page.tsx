@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/utils";
+import LeadsPipeline from "@/components/dashboard/LeadsPipeline";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -69,15 +70,27 @@ export default async function DashboardPage() {
 
   if (!isAdmin) quotesQuery.eq("sales_rep_id", user.id);
 
+  // ── Leads pipeline ────────────────────────────────────────────────────────
+  const leadsQuery = supabase
+    .from("leads")
+    .select("id, first_name, last_name, phone, interest, status, created_at, show:shows(name)")
+    .not("status", "in", '("converted","lost")')
+    .order("created_at", { ascending: false })
+    .limit(30);
+
+  if (!isAdmin) leadsQuery.eq("assigned_to", user.id);
+
   const [
     { data: confirmedContractsRaw },
     { data: contingentContractsRaw },
     { data: recentQuotesRaw },
-  ] = await Promise.all([confirmedQuery, contingentQuery, quotesQuery]);
+    { data: leadsRaw },
+  ] = await Promise.all([confirmedQuery, contingentQuery, quotesQuery, leadsQuery]);
 
   const confirmedContracts = (confirmedContractsRaw ?? []) as any[];
   const contingentContracts = (contingentContractsRaw ?? []) as any[];
   const recentQuotes = (recentQuotesRaw ?? []) as any[];
+  const leads = (leadsRaw ?? []) as any[];
 
   const statusLabels: Record<string, string> = {
     pending_signature: "Pending Sig.",
@@ -189,6 +202,9 @@ export default async function DashboardPage() {
             </Card>
           </Link>
         )}
+
+        {/* ── Leads Pipeline ── */}
+        <LeadsPipeline leads={leads} />
 
         {/* ── Section 1: Recent Contracts ── */}
         <Card>

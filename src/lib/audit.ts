@@ -12,7 +12,9 @@ export type AuditAction =
   | "customer.created"
   | "cert.uploaded"
   | "cert.marked_received"
-  | "contract.refund_marked";
+  | "contract.refund_marked"
+  | "lead.created"
+  | "lead.status_changed";
 
 interface LogActionParams {
   userId: string;
