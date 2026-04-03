@@ -81,15 +81,13 @@ export default function Step6Payment() {
   }
 
   async function handleStart() {
-    // First split — need to get contract ID from session/store
-    // The contract was already created at sign step; we use the stored ID
-    // For now use draft.show_id as placeholder (will be replaced when contract creation is wired)
-    const cId = contractId ?? draft.show_id ?? "";
+    const cId = contractId ?? draft.created_contract_id ?? "";
     if (!cId) {
       setErrorMessage("No contract ID found. Please restart the flow.");
       setState("error");
       return;
     }
+    setContractId(cId);
     await processCurrentSplit(cId);
   }
 

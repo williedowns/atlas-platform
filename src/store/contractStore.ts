@@ -50,6 +50,9 @@ export interface ContractDraft {
 
   // Notes
   notes?: string;
+
+  // Set after contract is created at sign step
+  created_contract_id?: string;
 }
 
 export interface DepositSplit {
@@ -87,6 +90,7 @@ interface ContractStore {
   addDepositSplit: (split: DepositSplit) => void;
   removeDepositSplit: (index: number) => void;
   setNotes: (notes: string) => void;
+  setCreatedContractId: (id: string) => void;
   computeTotals: () => void;
   resetDraft: () => void;
 }
@@ -306,6 +310,9 @@ export const useContractStore = create<ContractStore>()(
 
       setNotes: (notes) =>
         set((state) => ({ draft: { ...state.draft, notes } })),
+
+      setCreatedContractId: (id) =>
+        set((state) => ({ draft: { ...state.draft, created_contract_id: id } })),
 
       computeTotals: () =>
         set((state) => ({

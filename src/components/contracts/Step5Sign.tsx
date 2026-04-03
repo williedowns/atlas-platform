@@ -32,7 +32,7 @@ interface Step5SignProps {
 }
 
 export default function Step5Sign({ onNext }: Step5SignProps) {
-  const { draft } = useContractStore();
+  const { draft, setCreatedContractId } = useContractStore();
   const sigCanvasRef = useRef<any>(null);
 
   const [printedName, setPrintedName] = useState("");
@@ -116,9 +116,10 @@ export default function Step5Sign({ onNext }: Step5SignProps) {
         );
       }
 
-      // Parse response to get contract ID for welcome email
+      // Parse response to get contract ID — save to store for payment step
       const contractData = await contractResponse.json().catch(() => null);
       if (contractData?.id) {
+        setCreatedContractId(contractData.id);
         // Fire-and-forget welcome email
         fetch(`/api/contracts/${contractData.id}/welcome-email`, { method: "POST" })
           .catch(() => {/* non-fatal */});
