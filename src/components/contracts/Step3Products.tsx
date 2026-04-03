@@ -752,6 +752,7 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
       {/* Inventory unit picker overlay */}
       {pickerProduct && (
         <InventoryUnitPicker
+          productId={pickerProduct.product.id}
           productCategory={pickerProduct.product.category ?? ""}
           showId={draft.show_id ?? null}
           locationId={draft.location_id ?? null}

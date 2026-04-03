@@ -21,7 +21,8 @@ interface InventoryUnit {
 }
 
 interface InventoryUnitPickerProps {
-  productCategory: string;   // e.g. "Clarity Series", "H2X Trainer Swim Spas"
+  productId: string;         // exact product UUID — filters to this model only
+  productCategory: string;   // fallback category filter for units without product_id
   showId?: string | null;
   locationId?: string | null;
   onSelect: (unit: InventoryUnit) => void;
@@ -38,6 +39,7 @@ const UNIT_TYPE_BADGES: Record<string, { label: string; color: string }> = {
 };
 
 export function InventoryUnitPicker({
+  productId,
   productCategory,
   showId,
   locationId,
@@ -61,6 +63,9 @@ export function InventoryUnitPicker({
       try {
         const params = new URLSearchParams({
           status: "at_location,at_show",
+          product_id: productId,
+          // Also pass category so the API's post-fetch filter catches any units
+          // that were entered without a product_id link (legacy records)
           category: productCategory,
         });
         if (allLocations) {
@@ -78,7 +83,7 @@ export function InventoryUnitPicker({
       }
     }
     load();
-  }, [productCategory, showId, locationId, allLocations]);
+  }, [productId, productCategory, showId, locationId, allLocations]);
 
   const filtered = units.filter((u) => {
     if (!search) return true;
