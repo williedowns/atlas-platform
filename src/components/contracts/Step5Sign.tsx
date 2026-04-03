@@ -70,30 +70,27 @@ export default function Step5Sign({ onNext }: Step5SignProps) {
         throw new Error("Could not capture signature");
       }
 
-      // Convert data URL to blob
-      const response = await fetch(signatureDataUrl);
-      const blob = await response.blob();
-
-      // Generate a temporary contract ID for storage path
-      const contractId = `draft-${Date.now()}`;
-
-      // Upload signature to Supabase Storage
-      const supabase = createClient();
-      const { error: uploadError } = await supabase.storage
-        .from("signatures")
-        .upload(`${contractId}.png`, blob, {
-          contentType: "image/png",
-          upsert: true,
-        });
-
-      if (uploadError) {
-        throw new Error(`Signature upload failed: ${uploadError.message}`);
+      // Try to upload to Supabase Storage; fall back to embedding as data URL if bucket
+      // is unavailable (e.g. during setup / demo environments).
+      let signatureUrl = signatureDataUrl; // fallback: embed inline
+      try {
+        const blob = await fetch(signatureDataUrl).then((r) => r.blob());
+        const tempId = `draft-${Date.now()}`;
+        const supabase = createClient();
+        const { error: uploadError } = await supabase.storage
+          .from("signatures")
+          .upload(`${tempId}.png`, blob, { contentType: "image/png", upsert: true });
+        if (!uploadError) {
+          const { data: urlData } = supabase.storage
+            .from("signatures")
+            .getPublicUrl(`${tempId}.png`);
+          signatureUrl = urlData.publicUrl;
+        }
+        // If upload fails we silently keep signatureUrl as the base64 data URL —
+        // the signature is still captured in signature_metadata.signed_name.
+      } catch {
+        // non-fatal — proceed with inline data URL
       }
-
-      // Get the public URL
-      const { data: urlData } = supabase.storage
-        .from("signatures")
-        .getPublicUrl(`${contractId}.png`);
 
       // Submit the contract
       const contractResponse = await fetch("/api/contracts", {
@@ -101,7 +98,7 @@ export default function Step5Sign({ onNext }: Step5SignProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...draft,
-          customer_signature_url: urlData.publicUrl,
+          customer_signature_url: signatureUrl,
           signed_name: printedName.trim(),
           signed_at: new Date().toISOString(),
           electronic_consent: true,
@@ -116,12 +113,13 @@ export default function Step5Sign({ onNext }: Step5SignProps) {
         );
       }
 
-      // Parse response to get contract ID — save to store for payment step
+      // Parse response — API returns { contract_id, contract_number }
       const contractData = await contractResponse.json().catch(() => null);
-      if (contractData?.id) {
-        setCreatedContractId(contractData.id);
+      const createdId = contractData?.contract_id ?? contractData?.id;
+      if (createdId) {
+        setCreatedContractId(createdId);
         // Fire-and-forget welcome email
-        fetch(`/api/contracts/${contractData.id}/welcome-email`, { method: "POST" })
+        fetch(`/api/contracts/${createdId}/welcome-email`, { method: "POST" })
           .catch(() => {/* non-fatal */});
       }
 

@@ -37,19 +37,23 @@ export async function GET(req: Request) {
     if (locationId) query = query.eq("location_id", locationId);
     else if (showId) query = query.eq("show_id", showId);
   }
-  if (productId) query = query.eq("product_id", productId);
+  // NOTE: productId is NOT applied as a DB-level filter here — units entered without a
+  // product_id link would be silently excluded before the category fallback could catch them.
+  // Instead both productId and category are handled in the post-fetch filter below.
 
   const { data, error } = await query.limit(500);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // Filter by category after fetch.
-  // Primary: match via joined product.category
-  // Fallback: match unit's own model_code via prefix mapping (for units with no product_id)
+  // Post-fetch filter: exact product match when available, category fallback for legacy units
   let rows = data ?? [];
-  if (category) {
+  if (productId || category) {
     rows = rows.filter((u: any) => {
-      if (u.product?.category) return u.product.category === category;
-      return getCategoryForModelCode((u as any).model_code) === category;
+      if (u.product?.id) {
+        // Unit has a product FK linked — require exact product match
+        return productId ? u.product.id === productId : u.product.category === category;
+      }
+      // Legacy unit with no product link — fall back to category via model_code prefix
+      return category ? getCategoryForModelCode((u as any).model_code) === category : true;
     });
   }
 
