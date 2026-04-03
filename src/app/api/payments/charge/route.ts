@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createCharge } from "@/lib/payments/intuit";
 import { createQBODepositInvoice } from "@/lib/qbo/client";
+import { logAction } from "@/lib/audit";
 
 export async function POST(req: Request) {
   const supabase = await createClient();
@@ -109,6 +110,21 @@ export async function POST(req: Request) {
       }
     }
 
+    // Fire-and-forget audit log
+    logAction({
+      userId: user.id,
+      action: "payment.collected",
+      entityType: "payment",
+      entityId: payment!.id,
+      metadata: {
+        contract_id,
+        amount,
+        method,
+        charge_id: chargeResult.id,
+      },
+      req,
+    });
+
     return NextResponse.json({
       success: true,
       payment_id: payment!.id,
@@ -134,6 +150,20 @@ export async function POST(req: Request) {
       balance_due: Math.max(0, contract.total - newDepositPaidManual),
     })
     .eq("id", contract_id);
+
+  // Fire-and-forget audit log
+  logAction({
+    userId: user.id,
+    action: "payment.collected",
+    entityType: "payment",
+    entityId: payment!.id,
+    metadata: {
+      contract_id,
+      amount,
+      method,
+    },
+    req,
+  });
 
   return NextResponse.json({ success: true, payment_id: payment!.id, amount_charged: amount });
 }

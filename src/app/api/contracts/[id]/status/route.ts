@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { logAction } from "@/lib/audit";
 
 const FORWARD_TRANSITIONS: Record<string, string> = {
   draft: "pending_signature",
@@ -64,6 +65,19 @@ export async function PATCH(
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // Fire-and-forget audit log
+  logAction({
+    userId: user.id,
+    action: "contract.status_changed",
+    entityType: "contract",
+    entityId: id,
+    metadata: {
+      from_status: contract.status,
+      to_status: newStatus,
+    },
+    req,
+  });
 
   return NextResponse.json(updated);
 }
