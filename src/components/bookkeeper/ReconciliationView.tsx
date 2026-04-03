@@ -30,6 +30,12 @@ function todayStr() {
   return new Date().toISOString().split("T")[0];
 }
 
+function thirtyDaysAgoStr() {
+  const d = new Date();
+  d.setDate(d.getDate() - 30);
+  return d.toISOString().split("T")[0];
+}
+
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", {
     month: "2-digit", day: "2-digit", year: "numeric",
@@ -40,9 +46,8 @@ function fmtDate(iso: string) {
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export default function ReconciliationView({ contracts: _ }: { contracts: unknown[] }) {
   const [expanded, setExpanded] = useState(true);
-  const today = todayStr();
-  const [dateFrom, setDateFrom] = useState(today);
-  const [dateTo, setDateTo]     = useState(today);
+  const [dateFrom, setDateFrom] = useState(thirtyDaysAgoStr);
+  const [dateTo, setDateTo]     = useState(todayStr);
   const [search, setSearch]     = useState("");
   const [rows, setRows]         = useState<TransactionRow[]>([]);
   const [total, setTotal]       = useState(0);
