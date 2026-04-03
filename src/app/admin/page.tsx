@@ -24,13 +24,14 @@ export default async function AdminPage() {
 
   if (profile?.role !== "admin") redirect("/dashboard");
 
-  const [{ count: productCount }, { data: locations }, { data: profiles }] = await Promise.all([
+  const [{ count: productCount }, { data: locations }, { data: profiles }, { data: qboToken }] = await Promise.all([
     supabase.from("products").select("*", { count: "exact", head: true }),
     supabase.from("locations").select("*").order("type").order("name"),
     supabase.from("profiles").select("*").order("full_name"),
+    supabase.from("qbo_tokens").select("id").eq("id", 1).single(),
   ]);
 
-  const qboConnected = !!process.env.QBO_ACCESS_TOKEN;
+  const qboConnected = !!qboToken;
   const avalaraConfigured = !!process.env.AVALARA_ACCOUNT_ID;
 
   return (
