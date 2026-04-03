@@ -64,10 +64,9 @@ export function CollectPaymentForm({
     setState("processing");
     setErrorMessage(null);
 
-    const endpoint = isCard ? "/api/payments/charge" : "/api/payments/record-manual";
-    const body = isCard
-      ? { contract_id: contractId, amount, surcharge_amount: surchargeAmount, method }
-      : { contract_id: contractId, amount, method, check_number: checkNumber || undefined, bank_name: bankName || undefined };
+    // All payments recorded manually — card tokenization via Intuit SDK handled separately
+    const endpoint = "/api/payments/record-manual";
+    const body = { contract_id: contractId, amount, method, check_number: checkNumber || undefined, bank_name: bankName || undefined };
 
     const res = await fetch(endpoint, {
       method: "POST",

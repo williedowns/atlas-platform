@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { ContingentToggle } from "@/components/contracts/ContingentToggle";
+import { CancelContractButton } from "@/components/contracts/CancelContractButton";
 
 const STATUS_COLORS: Record<string, "default" | "success" | "warning" | "destructive" | "secondary"> = {
   draft: "secondary",
@@ -291,6 +292,13 @@ export default async function ContractDetailPage({
             <ContingentToggle
               contractId={contract.id}
               isContingent={contract.is_contingent ?? false}
+            />
+          )}
+          {!["cancelled", "delivered"].includes(contract.status) && (
+            <CancelContractButton
+              contractId={contract.id}
+              contractNumber={contract.contract_number}
+              depositPaid={contract.deposit_paid ?? 0}
             />
           )}
         </div>
