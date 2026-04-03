@@ -86,6 +86,7 @@ export async function GET(req: Request) {
     card_last4: string | null;
     contract_number: string;
     provider: string | null;
+    is_refund: boolean;
   };
 
   const METHOD_LABEL: Record<string, string> = {
@@ -136,6 +137,7 @@ export async function GET(req: Request) {
       card_last4: p.card_last4 ?? null,
       contract_number: contract?.contract_number ?? "—",
       provider,
+      is_refund: false,
     });
   }
 
@@ -177,8 +179,53 @@ export async function GET(req: Request) {
         card_last4: null,
         contract_number: c.contract_number ?? "—",
         provider: f.financer_name ?? null,
+        is_refund: false,
       });
     }
+  }
+
+  // ── Tax refunds issued within date range ──
+  const { data: taxRefunds } = await supabase
+    .from("contracts")
+    .select(`
+      id, contract_number, tax_refund_amount, tax_refund_issued_at, tax_refund_notes,
+      line_items,
+      customer:customers(first_name, last_name),
+      show:shows(name),
+      location:locations(name)
+    `)
+    .not("tax_refund_amount", "is", null)
+    .gte("tax_refund_issued_at", `${dateFrom}T00:00:00`)
+    .lte("tax_refund_issued_at", `${dateTo}T23:59:59`);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const c of (taxRefunds ?? []) as any[]) {
+    const customer = Array.isArray(c.customer) ? c.customer[0] : c.customer;
+    const show = Array.isArray(c.show) ? c.show[0] : c.show;
+    const location = Array.isArray(c.location) ? c.location[0] : c.location;
+    const salesLocation = show?.name ?? location?.name ?? "—";
+    const lineItems = Array.isArray(c.line_items) ? c.line_items : [];
+    const productSummary = lineItems
+      .map((li: { product_name: string; quantity?: number }) =>
+        li.quantity && li.quantity > 1 ? `${li.product_name} (x${li.quantity})` : li.product_name
+      )
+      .join(", ");
+    rows.push({
+      payment_id: `refund-${c.id}`,
+      contract_id: c.id,
+      date: c.tax_refund_issued_at,
+      customer_name: customer ? `${customer.first_name} ${customer.last_name}` : "—",
+      product_size: productSummary || "—",
+      sales_location: salesLocation,
+      payment_type: "Tax Refund",
+      amount: -(c.tax_refund_amount as number),
+      method_type: "Tax Refund",
+      card_type: null,
+      card_last4: null,
+      contract_number: c.contract_number ?? "—",
+      provider: c.tax_refund_notes ?? null,
+      is_refund: true,
+    });
   }
 
   // Sort all rows by date ascending

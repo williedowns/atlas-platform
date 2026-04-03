@@ -65,6 +65,7 @@ export async function GET(req: Request) {
     card_last4: string | null;
     contract_number: string;
     provider: string | null;
+    is_refund: boolean;
   };
 
   const rows: PdfRow[] = [];
@@ -94,6 +95,7 @@ export async function GET(req: Request) {
       card_last4: p.card_last4 ?? null,
       contract_number: (Array.isArray(p.contract) ? p.contract[0] : p.contract)?.contract_number ?? "—",
       provider: null,
+      is_refund: false,
     });
   }
 
@@ -197,8 +199,51 @@ export async function GET(req: Request) {
         card_last4: null,
         contract_number: c.contract_number ?? "—",
         provider: f.provider ?? "Financing",
+        is_refund: false,
       });
     }
+  }
+
+  // ── Tax refunds issued within date range ──
+  const { data: taxRefundsPdf } = await supabase
+    .from("contracts")
+    .select(`
+      id, contract_number, tax_refund_amount, tax_refund_issued_at, tax_refund_notes,
+      line_items,
+      customer:customers(first_name, last_name),
+      show:shows(name),
+      location:locations(name)
+    `)
+    .not("tax_refund_amount", "is", null)
+    .gte("tax_refund_issued_at", `${dateFrom}T00:00:00`)
+    .lte("tax_refund_issued_at", `${dateTo}T23:59:59`);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const c of (taxRefundsPdf ?? []) as any[]) {
+    const customer = Array.isArray(c.customer) ? c.customer[0] : c.customer;
+    const show = Array.isArray(c.show) ? c.show[0] : c.show;
+    const location = Array.isArray(c.location) ? c.location[0] : c.location;
+    const salesLocation = show?.name ?? location?.name ?? "—";
+    const lineItems = Array.isArray(c.line_items) ? c.line_items : [];
+    const productSummary = lineItems
+      .map((li: { product_name: string; quantity?: number }) =>
+        li.quantity && li.quantity > 1 ? `${li.product_name} (x${li.quantity})` : li.product_name
+      )
+      .join(", ");
+    rows.push({
+      date: c.tax_refund_issued_at,
+      customer_name: customer ? `${customer.first_name} ${customer.last_name}` : "—",
+      product_size: productSummary || "—",
+      sales_location: salesLocation,
+      payment_type: "Tax Refund",
+      amount: -(c.tax_refund_amount as number),
+      method_type: "Tax Refund",
+      card_type: null,
+      card_last4: null,
+      contract_number: c.contract_number ?? "—",
+      provider: c.tax_refund_notes ?? null,
+      is_refund: true,
+    });
   }
 
   rows.sort((a, b) => a.date.localeCompare(b.date));
@@ -288,16 +333,27 @@ export async function GET(req: Request) {
       doc.setFontSize(8);
     }
 
-    if (rowIdx % 2 === 0) {
+    if (row.is_refund) {
+      doc.setFillColor(255, 240, 240);
+      doc.rect(6, y - 4, W - 12, 7, "F");
+    } else if (rowIdx % 2 === 0) {
       doc.setFillColor(250, 251, 252);
       doc.rect(6, y - 4, W - 12, 7, "F");
     }
 
-    doc.setTextColor(30, 30, 30);
+    if (row.is_refund) {
+      doc.setTextColor(180, 30, 30);
+    } else {
+      doc.setTextColor(30, 30, 30);
+    }
 
     let methodLabel = row.method_type;
     if (row.card_last4) methodLabel += ` ···${row.card_last4}`;
-    else if (row.provider && row.method_type === "Financing") methodLabel = row.provider;
+    else if (row.provider && (row.method_type === "Financing" || row.is_refund)) methodLabel = row.provider;
+
+    const amountLabel = row.is_refund
+      ? `(${formatCurrency(Math.abs(row.amount))})`
+      : formatCurrency(row.amount);
 
     doc.text(formatDate(row.date), cols[0].x, y);
     doc.text(truncate(doc, row.customer_name, cols[1].w - 2), cols[1].x, y);
@@ -305,23 +361,49 @@ export async function GET(req: Request) {
     doc.text(truncate(doc, row.sales_location, cols[3].w - 2), cols[3].x, y);
     doc.text(truncate(doc, row.payment_type, cols[4].w - 2), cols[4].x, y);
     doc.setFont("helvetica", "bold");
-    doc.text(formatCurrency(row.amount), cols[5].x + cols[5].w, y, { align: "right" });
+    doc.text(amountLabel, cols[5].x + cols[5].w, y, { align: "right" });
     doc.setFont("helvetica", "normal");
     doc.text(truncate(doc, methodLabel, cols[6].w - 2), cols[6].x, y);
+    doc.setTextColor(30, 30, 30);
 
     y += 7;
     rowIdx++;
   }
 
-  // Total row
+  // Total rows
   y += 2;
   doc.setDrawColor(1, 15, 33);
   doc.line(6, y, W - 6, y);
   y += 5;
+
+  const grossTotal = filtered.filter(r => !r.is_refund).reduce((s, r) => s + r.amount, 0);
+  const refundsTotal = filtered.filter(r => r.is_refund).reduce((s, r) => s + Math.abs(r.amount), 0);
+  const hasRefunds = refundsTotal > 0;
+
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
   doc.setTextColor(1, 15, 33);
-  doc.text(`TOTAL — ${filtered.length} Transaction${filtered.length !== 1 ? "s" : ""}`, cols[0].x, y);
+
+  if (hasRefunds) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(80, 80, 80);
+    doc.text(`Gross — ${filtered.filter(r => !r.is_refund).length} Payment${filtered.filter(r => !r.is_refund).length !== 1 ? "s" : ""}`, cols[0].x, y);
+    doc.text(formatCurrency(grossTotal), cols[5].x + cols[5].w, y, { align: "right" });
+    y += 5;
+    doc.setTextColor(180, 30, 30);
+    doc.text(`Tax Refunds (${filtered.filter(r => r.is_refund).length})`, cols[0].x, y);
+    doc.text(`(${formatCurrency(refundsTotal)})`, cols[5].x + cols[5].w, y, { align: "right" });
+    y += 2;
+    doc.setDrawColor(180, 30, 30);
+    doc.line(6, y, W - 6, y);
+    y += 5;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(1, 15, 33);
+  }
+
+  doc.text(`${hasRefunds ? "NET TOTAL" : `TOTAL — ${filtered.length} Transaction${filtered.length !== 1 ? "s" : ""}`}`, cols[0].x, y);
   doc.text(formatCurrency(total), cols[5].x + cols[5].w, y, { align: "right" });
 
   doc.setFont("helvetica", "normal");

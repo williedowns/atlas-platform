@@ -19,6 +19,7 @@ interface TransactionRow {
   card_last4: string | null;
   contract_number: string;
   provider: string | null;
+  is_refund: boolean;
 }
 
 const METHOD_BADGE: Record<string, string> = {
@@ -56,6 +57,8 @@ export default function ReconciliationView({ contracts: _ }: { contracts: unknow
   const [search, setSearch]     = useState("");
   const [rows, setRows]         = useState<TransactionRow[]>([]);
   const [total, setTotal]       = useState(0);
+  const [gross, setGross]       = useState(0);
+  const [refundTotal, setRefundTotal] = useState(0);
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState<string | null>(null);
 
@@ -67,8 +70,13 @@ export default function ReconciliationView({ contracts: _ }: { contracts: unknow
       const res  = await fetch(`/api/bookkeeper/cc-report?${p}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to load");
-      setRows(data.rows ?? []);
+      const fetchedRows: TransactionRow[] = data.rows ?? [];
+      setRows(fetchedRows);
       setTotal(data.total ?? 0);
+      const grossAmt = fetchedRows.filter(r => !r.is_refund).reduce((s, r) => s + r.amount, 0);
+      const refundAmt = fetchedRows.filter(r => r.is_refund).reduce((s, r) => s + Math.abs(r.amount), 0);
+      setGross(grossAmt);
+      setRefundTotal(refundAmt);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
@@ -106,7 +114,7 @@ export default function ReconciliationView({ contracts: _ }: { contracts: unknow
         </div>
         <div className="flex items-center gap-3">
           <p className="text-xs text-slate-500">
-            {loading ? "Loading…" : `${rows.length} transaction${rows.length !== 1 ? "s" : ""} · ${formatCurrency(total)}`}
+            {loading ? "Loading…" : `${rows.length} transaction${rows.length !== 1 ? "s" : ""} · Net ${formatCurrency(total)}`}
           </p>
           <svg className={`w-5 h-5 text-slate-400 transition-transform ${expanded ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
@@ -190,45 +198,51 @@ export default function ReconciliationView({ contracts: _ }: { contracts: unknow
                 </thead>
                 <tbody className="divide-y divide-slate-50">
                   {rows.map((row, i) => (
-                    <tr key={row.payment_id} className={i % 2 === 0 ? "bg-white" : "bg-slate-50/50"}>
-                      <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{fmtDate(row.date)}</td>
+                    <tr key={row.payment_id} className={
+                      row.is_refund
+                        ? "bg-red-50/60"
+                        : i % 2 === 0 ? "bg-white" : "bg-slate-50/50"
+                    }>
+                      <td className={`px-4 py-3 whitespace-nowrap ${row.is_refund ? "text-red-600" : "text-slate-600"}`}>{fmtDate(row.date)}</td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         {row.contract_id ? (
                           <Link
                             href={`/contracts/${row.contract_id}`}
                             className="group block hover:text-[#00929C] transition-colors"
                           >
-                            <p className="font-medium text-slate-900 group-hover:text-[#00929C]">{row.customer_name}</p>
-                            <p className="text-xs text-slate-400 group-hover:text-[#00929C]/70">{row.contract_number}</p>
+                            <p className={`font-medium group-hover:text-[#00929C] ${row.is_refund ? "text-red-700" : "text-slate-900"}`}>{row.customer_name}</p>
+                            <p className={`text-xs group-hover:text-[#00929C]/70 ${row.is_refund ? "text-red-400" : "text-slate-400"}`}>{row.contract_number}</p>
                           </Link>
                         ) : (
                           <>
-                            <p className="font-medium text-slate-900">{row.customer_name}</p>
-                            <p className="text-xs text-slate-400">{row.contract_number}</p>
+                            <p className={`font-medium ${row.is_refund ? "text-red-700" : "text-slate-900"}`}>{row.customer_name}</p>
+                            <p className={`text-xs ${row.is_refund ? "text-red-400" : "text-slate-400"}`}>{row.contract_number}</p>
                           </>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-slate-700 max-w-[180px]">
+                      <td className={`px-4 py-3 max-w-[180px] ${row.is_refund ? "text-red-600" : "text-slate-700"}`}>
                         <p className="truncate">{row.product_size}</p>
                       </td>
-                      <td className="px-4 py-3 text-slate-600 whitespace-nowrap max-w-[140px]">
+                      <td className={`px-4 py-3 whitespace-nowrap max-w-[140px] ${row.is_refund ? "text-red-600" : "text-slate-600"}`}>
                         <p className="truncate">{row.sales_location}</p>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                          row.payment_type === "Paid in Full"
-                            ? "bg-emerald-50 text-emerald-700"
-                            : "bg-blue-50 text-blue-700"
+                          row.is_refund
+                            ? "bg-red-100 text-red-700"
+                            : row.payment_type === "Paid in Full"
+                              ? "bg-emerald-50 text-emerald-700"
+                              : "bg-blue-50 text-blue-700"
                         }`}>
                           {row.payment_type}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right font-semibold text-slate-900 whitespace-nowrap">
-                        {formatCurrency(row.amount)}
+                      <td className={`px-4 py-3 text-right font-semibold whitespace-nowrap ${row.is_refund ? "text-red-600" : "text-slate-900"}`}>
+                        {row.is_refund ? `(${formatCurrency(Math.abs(row.amount))})` : formatCurrency(row.amount)}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                          METHOD_BADGE[row.method_type] ?? "bg-slate-100 text-slate-600"
+                          row.is_refund ? "bg-red-100 text-red-700" : METHOD_BADGE[row.method_type] ?? "bg-slate-100 text-slate-600"
                         }`}>
                           {row.method_type === "Financing" && row.provider
                             ? row.provider
@@ -237,14 +251,39 @@ export default function ReconciliationView({ contracts: _ }: { contracts: unknow
                         {row.card_last4 && (
                           <span className="text-slate-400 text-xs ml-1.5">···{row.card_last4}</span>
                         )}
+                        {row.is_refund && row.provider && (
+                          <p className="text-xs text-red-400 mt-0.5 italic">{row.provider}</p>
+                        )}
                       </td>
                     </tr>
                   ))}
                 </tbody>
                 <tfoot>
+                  {refundTotal > 0 && (
+                    <>
+                      <tr className="border-t border-slate-200 bg-slate-50">
+                        <td colSpan={5} className="px-4 py-2 text-xs text-slate-500">
+                          Gross ({rows.filter(r => !r.is_refund).length} payments)
+                        </td>
+                        <td className="px-4 py-2 text-right text-sm font-semibold text-slate-700">
+                          {formatCurrency(gross)}
+                        </td>
+                        <td />
+                      </tr>
+                      <tr className="bg-red-50/40">
+                        <td colSpan={5} className="px-4 py-2 text-xs text-red-600">
+                          Tax Refunds ({rows.filter(r => r.is_refund).length})
+                        </td>
+                        <td className="px-4 py-2 text-right text-sm font-semibold text-red-600">
+                          ({formatCurrency(refundTotal)})
+                        </td>
+                        <td />
+                      </tr>
+                    </>
+                  )}
                   <tr className="border-t-2 border-slate-200 bg-slate-50">
                     <td colSpan={5} className="px-4 py-3 text-sm font-semibold text-slate-700">
-                      Total — {rows.length} transaction{rows.length !== 1 ? "s" : ""}
+                      {refundTotal > 0 ? "Net Total" : `Total — ${rows.length} transaction${rows.length !== 1 ? "s" : ""}`}
                     </td>
                     <td className="px-4 py-3 text-right text-base font-bold text-[#010F21]">
                       {formatCurrency(total)}

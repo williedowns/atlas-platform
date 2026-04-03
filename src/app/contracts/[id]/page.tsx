@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { ContingentToggle } from "@/components/contracts/ContingentToggle";
 import { CancelContractButton } from "@/components/contracts/CancelContractButton";
+import { TaxRefundButton } from "@/components/contracts/TaxRefundButton";
 
 const STATUS_COLORS: Record<string, "default" | "success" | "warning" | "destructive" | "secondary"> = {
   draft: "secondary",
@@ -34,6 +35,7 @@ export default async function ContractDetailPage({
     .from("contracts")
     .select(`
       *,
+      tax_refund_amount, tax_refund_issued_at, tax_refund_notes,
       customer:customers(*),
       show:shows(name, venue_name),
       location:locations(name),
@@ -51,6 +53,7 @@ export default async function ContractDetailPage({
     .single();
 
   const canViewAudit = ["admin", "manager", "bookkeeper"].includes(profile?.role ?? "");
+  const canRecordRefund = ["admin", "manager", "bookkeeper"].includes(profile?.role ?? "");
 
   const { data: payments } = await supabase
     .from("payments")
@@ -299,6 +302,21 @@ export default async function ContractDetailPage({
               contractId={contract.id}
               contractNumber={contract.contract_number}
               depositPaid={contract.deposit_paid ?? 0}
+            />
+          )}
+          {canRecordRefund && (contract.tax_amount > 0 || contract.tax_refund_amount != null) && (
+            <TaxRefundButton
+              contractId={contract.id}
+              taxAmount={contract.tax_amount ?? 0}
+              existingRefund={
+                contract.tax_refund_amount != null
+                  ? {
+                      amount: contract.tax_refund_amount,
+                      issued_at: contract.tax_refund_issued_at,
+                      notes: contract.tax_refund_notes ?? null,
+                    }
+                  : null
+              }
             />
           )}
           <Link href={`/portal/contract/${id}`} target="_blank" className="block">
