@@ -73,8 +73,9 @@ async function qboFetch(path: string, options: RequestInit = {}) {
 // ─── Items (Products) ────────────────────────────────────────────────────────
 
 export async function syncProducts() {
+  // Fetch all active items regardless of type (Inventory, NonInventory, Service)
   const data = await qboFetch(
-    "/query?query=select%20*%20from%20Item%20where%20Type%20%3D%20%27Inventory%27%20MAXRESULTS%20200"
+    "/query?query=select%20*%20from%20Item%20where%20Active%20%3D%20true%20MAXRESULTS%20500"
   );
   return data.QueryResponse?.Item ?? [];
 }

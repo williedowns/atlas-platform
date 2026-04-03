@@ -23,7 +23,8 @@ export async function POST(req: Request) {
   let errors = 0;
 
   for (const item of qboItems) {
-    if (item.Type !== "Inventory" && item.Type !== "NonInventory") continue;
+    // Sync all item types — Inventory, NonInventory, and Service
+    if (!item.Active) continue;
 
     const { error } = await supabase
       .from("products")
