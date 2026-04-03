@@ -21,7 +21,7 @@ export default async function CollectPaymentPage({
     .single();
 
   if (!contract) notFound();
-  if (contract.balance_due <= 0) redirect(`/contracts/${id}`);
+  if ((contract.deposit_paid ?? 0) >= contract.total) redirect(`/contracts/${id}`);
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -46,7 +46,7 @@ export default async function CollectPaymentPage({
           customerName={`${contract.customer?.first_name ?? ""} ${contract.customer?.last_name ?? ""}`.trim()}
           total={contract.total}
           depositPaid={contract.deposit_paid ?? 0}
-          balanceDue={contract.balance_due}
+          balanceDue={Math.max(0, contract.total - (contract.deposit_paid ?? 0))}
           surchargeEnabled={contract.location?.cc_surcharge_enabled ?? false}
           surchargeRate={contract.location?.cc_surcharge_rate ?? 0.035}
         />
