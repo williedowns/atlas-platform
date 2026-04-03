@@ -10,7 +10,7 @@ interface TransactionRow {
   customer_name: string;
   product_size: string;
   sales_location: string;
-  status: string;
+  payment_type: string;
   amount: number;
   method_type: string;
   card_type: string | null;
@@ -28,12 +28,6 @@ const METHOD_BADGE: Record<string, string> = {
   "Check":       "bg-slate-100 text-slate-600",
 };
 
-const STATUS_BADGE: Record<string, string> = {
-  completed:  "bg-emerald-50 text-emerald-700",
-  pending:    "bg-amber-50 text-amber-700",
-  processing: "bg-blue-50 text-blue-700",
-  failed:     "bg-red-50 text-red-700",
-};
 
 function todayStr() {
   return new Date().toISOString().split("T")[0];
@@ -181,7 +175,7 @@ export default function ReconciliationView({ contracts: _ }: { contracts: unknow
                     <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Customer</th>
                     <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Product / Size</th>
                     <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Location</th>
-                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Type</th>
+                    <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Status</th>
                     <th className="text-right px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Amount</th>
                     <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Method</th>
                   </tr>
@@ -201,10 +195,12 @@ export default function ReconciliationView({ contracts: _ }: { contracts: unknow
                         <p className="truncate">{row.sales_location}</p>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
-                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
-                          STATUS_BADGE[row.status] ?? "bg-slate-100 text-slate-600"
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                          row.payment_type === "Paid in Full"
+                            ? "bg-emerald-50 text-emerald-700"
+                            : "bg-blue-50 text-blue-700"
                         }`}>
-                          {row.status}
+                          {row.payment_type}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right font-semibold text-slate-900 whitespace-nowrap">

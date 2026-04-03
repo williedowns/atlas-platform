@@ -78,7 +78,7 @@ export async function GET(req: Request) {
     customer_name: string;
     product_size: string;
     sales_location: string;
-    status: string;
+    payment_type: string;
     amount: number;
     method_type: string;
     card_type: string | null;
@@ -108,7 +108,7 @@ export async function GET(req: Request) {
     const effectiveDate: string = p.processed_at ?? p.created_at;
     if (!effectiveDate || effectiveDate < fromTs || effectiveDate > toTs) continue;
 
-    const { customer, salesLocation, productSummary } = extractContractFields(p);
+    const { customer, salesLocation, productSummary, isFullPayment } = extractContractFields(p);
     const contract = Array.isArray(p.contract) ? p.contract[0] : p.contract;
 
     // For financing payments, pull provider from contract's financing JSONB array
@@ -127,7 +127,7 @@ export async function GET(req: Request) {
       customer_name: customer ? `${customer.first_name} ${customer.last_name}` : "—",
       product_size: productSummary || "—",
       sales_location: salesLocation,
-      status: p.status ?? "completed",
+      payment_type: isFullPayment ? "Paid in Full" : "Down Payment",
       amount: p.amount,
       method_type: METHOD_LABEL[p.method] ?? p.method ?? "Unknown",
       card_type: p.card_brand ?? null,
@@ -167,7 +167,7 @@ export async function GET(req: Request) {
         customer_name: customer ? `${customer.first_name} ${customer.last_name}` : "—",
         product_size: productSummary || "—",
         sales_location: salesLocation,
-        status: "completed",
+        payment_type: "Financing",
         amount: f.financed_amount,
         method_type: "Financing",
         card_type: null,
