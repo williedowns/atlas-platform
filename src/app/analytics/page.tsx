@@ -221,14 +221,13 @@ export default async function AnalyticsPage({
   // ── Locations breakdown ──────────────────────────────────────────────────────
   const locMap = new Map<string, { id: string; name: string; type: string; count: number; revenue: number }>();
   for (const c of rows) {
-    // Contracts sold at a show have show_id but no location_id — fall back to show name
-    const locId = (c.location as { id?: string } | null)?.id
-      ?? `show-${(c.show as { id?: string } | null)?.id ?? "none"}`;
-    const locName = (c.location as { name?: string } | null)?.name
-      ?? (c.show as { name?: string } | null)?.name
-      ?? "Unknown";
-    const locType = (c.location as { type?: string } | null)?.type
-      ?? ((c.show as { id?: string } | null)?.id ? "show" : "store");
+    // Show sales are attributed to the show, not any store location —
+    // a contract can have both show_id and location_id set, but the show wins.
+    const showRef = c.show as { id?: string; name?: string } | null;
+    const locRef = c.location as { id?: string; name?: string; type?: string } | null;
+    const locId = showRef?.id ? `show-${showRef.id}` : (locRef?.id ?? "none");
+    const locName = showRef?.name ?? locRef?.name ?? "Unknown";
+    const locType = showRef?.id ? "show" : (locRef?.type ?? "store");
     const existing = locMap.get(locId) ?? { id: locId, name: locName, type: locType, count: 0, revenue: 0 };
     existing.count += 1;
     existing.revenue += c.total ?? 0;
@@ -244,7 +243,8 @@ export default async function AnalyticsPage({
   for (const c of (allOpps ?? [])) {
     const showId = (c.show as { id?: string } | null)?.id;
     const rawLocId = (c.location as { id?: string } | null)?.id;
-    const derivedLocId = rawLocId ?? (showId ? `show-${showId}` : null);
+    // Mirror locMap: show wins over location when both are set
+    const derivedLocId = showId ? `show-${showId}` : (rawLocId ?? null);
     const isClosed = !["quote", "cancelled"].includes(c.status);
 
     if (showId) {
