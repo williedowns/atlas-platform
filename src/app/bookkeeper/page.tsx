@@ -31,7 +31,8 @@ export default async function BookkeeperPage() {
       total, subtotal, discount_total, tax_amount,
       deposit_paid, balance_due, payment_method,
       line_items, notes, created_at,
-      tax_exempt_cert_received, tax_exempt_cert_received_at,
+      tax_exempt_cert_received, tax_exempt_cert_received_at, tax_exempt_cert_url,
+      tax_refund_amount, tax_refund_issued_at,
       customer:customers(id, first_name, last_name, phone, email),
       show:shows(id, name, start_date, end_date),
       location:locations(id, name),
@@ -116,7 +117,14 @@ export default async function BookkeeperPage() {
     return daysLeft >= 0 && daysLeft <= 7;
   });
 
-  const hasCertAlert = overdueCerts.length > 0 || dueSoonCerts.length > 0;
+  // Contracts where cert was received but tax refund hasn't been issued yet
+  const refundNeededCerts = taxTracked.filter((c) =>
+    c.tax_exempt_cert_received &&
+    (c.tax_amount ?? 0) > 0 &&
+    !c.tax_refund_issued_at
+  );
+
+  const hasCertAlert = overdueCerts.length > 0 || dueSoonCerts.length > 0 || refundNeededCerts.length > 0;
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -140,8 +148,30 @@ export default async function BookkeeperPage() {
 
       <main className="px-4 py-5 space-y-4 max-w-3xl mx-auto pb-28">
 
-        {/* ── Urgent: Tax cert alert ── */}
-        {hasMigration && hasCertAlert && (
+        {/* ── Urgent: Tax refund needed (cert received, refund not yet issued) ── */}
+        {hasMigration && refundNeededCerts.length > 0 && (
+          <div className="rounded-xl p-4 flex items-start gap-3 bg-[#00929C]/8 border border-[#00929C]/30">
+            <div className="w-9 h-9 rounded-full bg-[#00929C]/15 flex items-center justify-center flex-shrink-0 mt-0.5">
+              <svg className="w-5 h-5 text-[#00929C]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div className="flex-1">
+              <p className="font-bold text-[#00929C] text-sm">
+                {refundNeededCerts.length} Tax Refund{refundNeededCerts.length !== 1 ? "s" : ""} Needed
+              </p>
+              <p className="text-xs text-slate-600 mt-0.5">
+                {refundNeededCerts.length === 1
+                  ? "A customer has uploaded their TX exemption certificate. Issue the tax refund in QuickBooks and record it on the contract."
+                  : `${refundNeededCerts.length} customers have uploaded TX exemption certificates. Issue refunds in QuickBooks and record them on each contract.`
+                }
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* ── Tax cert deadline alerts (overdue / due soon) ── */}
+        {hasMigration && (overdueCerts.length > 0 || dueSoonCerts.length > 0) && (
           <div className={`rounded-xl p-4 flex items-start gap-3 ${
             overdueCerts.length > 0
               ? "bg-red-50 border border-red-200"
@@ -168,7 +198,7 @@ export default async function BookkeeperPage() {
                 )}
               </div>
               <p className="text-xs text-slate-500">
-                Customers have 30 days from purchase date to submit Form 01-339 (TX Sales & Use Tax Exemption). See tracker below.
+                Customers have 30 days from purchase date to submit Form 01-339 (TX Sales &amp; Use Tax Exemption). See tracker below.
               </p>
             </div>
           </div>

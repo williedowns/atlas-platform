@@ -32,6 +32,7 @@ export async function POST(req: Request) {
     signed_name,
     electronic_consent,
     consent_timestamp,
+    delivery_diagram,
   } = body;
 
   // Capture legal metadata for signature defensibility
@@ -94,6 +95,7 @@ export async function POST(req: Request) {
       customer_signature_url,
       signed_at: new Date().toISOString(),
       notes,
+      delivery_diagram: delivery_diagram ?? null,
       signature_metadata: {
         ip_address: ip,
         user_agent: userAgent,

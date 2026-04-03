@@ -281,6 +281,52 @@ export default async function ContractDetailPage({
           </Card>
         )}
 
+        {/* Spa Delivery Diagram — only shown when delivery_diagram is set */}
+        {contract.delivery_diagram && (
+          <Card>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <svg className="w-4 h-4 text-[#00929C]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  Spa Delivery Diagram
+                </CardTitle>
+                <Link
+                  href={`/contracts/${id}/delivery-diagram`}
+                  target="_blank"
+                  className="text-xs text-[#00929C] font-semibold hover:underline"
+                >
+                  View / Print →
+                </Link>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0">
+              {(() => {
+                const dd = contract.delivery_diagram as { scenario_id?: number; label?: string; fields?: Record<string, string> };
+                const fieldEntries = dd.fields ? Object.entries(dd.fields).filter(([, v]) => v) : [];
+                return (
+                  <div className="space-y-1.5">
+                    <p className="font-semibold text-slate-900">{dd.label ?? "—"}</p>
+                    {fieldEntries.length > 0 ? (
+                      <ul className="text-sm text-slate-600 space-y-0.5">
+                        {fieldEntries.map(([k, v]) => (
+                          <li key={k}>
+                            <span className="capitalize text-slate-500">{k.replace(/_/g, " ")}:</span>{" "}
+                            <span className="font-medium">{v}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-sm text-slate-400">No measurements recorded</p>
+                    )}
+                  </div>
+                );
+              })()}
+            </CardContent>
+          </Card>
+        )}
+
         {/* Actions */}
         <div className="space-y-3 pt-2">
           {(contract.deposit_paid ?? 0) < contract.total && !["cancelled", "delivered"].includes(contract.status) && (

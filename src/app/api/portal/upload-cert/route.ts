@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { logAction } from "@/lib/audit";
 
 export async function POST(req: Request) {
   const supabase = await createClient();
@@ -14,19 +15,41 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Missing file or contractId" }, { status: 400 });
   }
 
-  // Verify this customer owns this contract
-  const { data: customer } = await supabase
-    .from("customers").select("id").eq("email", user.email ?? "").maybeSingle();
+  // ── Ownership check ────────────────────────────────────────────────────────
+  // Staff members (admin / manager / bookkeeper / etc.) can upload on behalf of any contract.
+  // For portal customers, verify their auth email matches the contract's customer email.
+  const { data: staffProfile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
 
-  if (!customer) return NextResponse.json({ error: "Customer not found" }, { status: 403 });
+  const isStaff = !!staffProfile?.role;
 
+  // Fetch the contract (and its customer's email) to validate ownership
   const { data: contract } = await supabase
-    .from("contracts").select("id, customer_id, contract_number")
-    .eq("id", contractId).eq("customer_id", customer.id).single();
+    .from("contracts")
+    .select("id, contract_number, customer_id, customer:customers(id, email)")
+    .eq("id", contractId)
+    .single();
 
   if (!contract) return NextResponse.json({ error: "Contract not found" }, { status: 404 });
 
-  // Upload to Supabase Storage
+  if (!isStaff) {
+    // For portal customers: verify auth email matches contract customer email (case-insensitive)
+    const customerEmail = (
+      Array.isArray(contract.customer)
+        ? (contract.customer[0] as { email?: string } | null)?.email
+        : (contract.customer as { email?: string } | null)?.email
+    ) ?? "";
+
+    const authEmail = user.email ?? "";
+    if (authEmail.toLowerCase() !== customerEmail.toLowerCase()) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
+  }
+
+  // ── Upload to Supabase Storage ─────────────────────────────────────────────
   const ext = file.name.split(".").pop() ?? "pdf";
   const path = `${contractId}/tax-exemption-cert-${Date.now()}.${ext}`;
   const arrayBuffer = await file.arrayBuffer();
@@ -39,14 +62,31 @@ export async function POST(req: Request) {
   if (uploadError) return NextResponse.json({ error: uploadError.message }, { status: 500 });
 
   const { data: urlData } = supabase.storage.from("tax-certs").getPublicUrl(path);
+  const certUrl = urlData.publicUrl;
 
-  // Mark cert received on contract
+  // ── Update contract ────────────────────────────────────────────────────────
   await supabase.from("contracts").update({
     tax_exempt_cert_received: true,
     tax_exempt_cert_received_at: new Date().toISOString(),
+    // Save cert URL so bookkeeper can view the actual document (migration 018)
+    tax_exempt_cert_url: certUrl,
   }).eq("id", contractId);
 
-  // Notify Lori via Resend (best-effort)
+  // ── Audit log ──────────────────────────────────────────────────────────────
+  logAction({
+    userId: user.id,
+    action: "cert.uploaded",
+    entityType: "contract",
+    entityId: contractId,
+    metadata: {
+      contract_number: (contract as any).contract_number,
+      cert_url: certUrl,
+      uploaded_by: isStaff ? "staff" : "customer",
+    },
+    req,
+  });
+
+  // ── Notify bookkeeper (Resend) ─────────────────────────────────────────────
   const resendKey = process.env.RESEND_API_KEY;
   const loriEmail = process.env.BOOKKEEPER_EMAIL ?? "lori@atlasswimspas.com";
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
@@ -58,11 +98,16 @@ export async function POST(req: Request) {
       body: JSON.stringify({
         from: "Atlas Spas Platform <noreply@atlasswimspas.com>",
         to: loriEmail,
-        subject: `Tax Exemption Cert Received — Contract ${(contract as any).contract_number}`,
-        html: `<p>A tax exemption certificate has been uploaded by the customer for contract <strong>${(contract as any).contract_number}</strong>.</p><p><a href="${appUrl}/bookkeeper">View in Bookkeeper Dashboard</a></p><p>Certificate file: <a href="${urlData.publicUrl}">${urlData.publicUrl}</a></p>`,
+        subject: `⚠️ Tax Refund Needed — Contract ${(contract as any).contract_number}`,
+        html: `
+          <p>A tax exemption certificate has been uploaded for contract <strong>${(contract as any).contract_number}</strong>.</p>
+          <p><strong>Action required:</strong> Please review the certificate and issue the tax refund in QuickBooks.</p>
+          <p><a href="${appUrl}/bookkeeper" style="background:#00929C;color:white;padding:10px 20px;border-radius:8px;text-decoration:none;display:inline-block;margin-top:8px;">Open Bookkeeper Dashboard</a></p>
+          <p style="margin-top:12px;">Certificate file: <a href="${certUrl}">${certUrl}</a></p>
+        `,
       }),
     }).catch(() => {/* non-fatal */});
   }
 
-  return NextResponse.json({ success: true, url: urlData.publicUrl });
+  return NextResponse.json({ success: true, url: certUrl });
 }

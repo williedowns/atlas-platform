@@ -10,8 +10,9 @@ import Step2Customer from "@/components/contracts/Step2Customer";
 import Step3Products from "@/components/contracts/Step3Products";
 import Step4Financing from "@/components/contracts/Step4Financing";
 import Step5Review from "@/components/contracts/Step4Review";
-import Step6Sign from "@/components/contracts/Step5Sign";
-import Step7Payment from "@/components/contracts/Step6Payment";
+import Step6Delivery from "@/components/contracts/StepDelivery";
+import Step7Sign from "@/components/contracts/Step5Sign";
+import Step8Payment from "@/components/contracts/Step6Payment";
 
 const STEPS = [
   { id: 1, label: "Show" },
@@ -19,12 +20,13 @@ const STEPS = [
   { id: 3, label: "Products" },
   { id: 4, label: "Financing" },
   { id: 5, label: "Review" },
-  { id: 6, label: "Sign" },
-  { id: 7, label: "Payment" },
+  { id: 6, label: "Delivery" },
+  { id: 7, label: "Sign" },
+  { id: 8, label: "Payment" },
 ];
 
-// Quote phase = steps 1–5, Contract phase = steps 6–7
-const QUOTE_STEPS = new Set([1, 2, 3, 4, 5]);
+// Quote phase = steps 1–6, Contract phase = steps 7–8
+const QUOTE_STEPS = new Set([1, 2, 3, 4, 5, 6]);
 
 function NewContractContent() {
   const router = useRouter();
@@ -83,7 +85,7 @@ function NewContractContent() {
   }
 
   function next() {
-    setStep((s) => Math.min(s + 1, STEPS.length));
+    setStep((s) => Math.min(s + 1, 8));
   }
 
   function back() {
@@ -167,8 +169,9 @@ function NewContractContent() {
         {step === 3 && <Step3Products onNext={next} />}
         {step === 4 && <Step4Financing onNext={next} />}
         {step === 5 && <Step5Review onNext={next} />}
-        {step === 6 && <Step6Sign onNext={next} />}
-        {step === 7 && <Step7Payment />}
+        {step === 6 && <Step6Delivery onNext={next} />}
+        {step === 7 && <Step7Sign onNext={next} />}
+        {step === 8 && <Step8Payment />}
       </main>
     </div>
   );

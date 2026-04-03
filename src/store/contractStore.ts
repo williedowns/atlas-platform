@@ -51,6 +51,13 @@ export interface ContractDraft {
   // Notes
   notes?: string;
 
+  // Delivery diagram (optional — set in Step 6 before signing)
+  delivery_diagram?: {
+    scenario_id: number;
+    label: string;
+    fields: Record<string, string>;
+  };
+
   // Set after contract is created at sign step
   created_contract_id?: string;
 }
@@ -90,6 +97,7 @@ interface ContractStore {
   addDepositSplit: (split: DepositSplit) => void;
   removeDepositSplit: (index: number) => void;
   setNotes: (notes: string) => void;
+  setDeliveryDiagram: (diagram: ContractDraft["delivery_diagram"]) => void;
   setCreatedContractId: (id: string) => void;
   computeTotals: () => void;
   resetDraft: () => void;
@@ -310,6 +318,9 @@ export const useContractStore = create<ContractStore>()(
 
       setNotes: (notes) =>
         set((state) => ({ draft: { ...state.draft, notes } })),
+
+      setDeliveryDiagram: (delivery_diagram) =>
+        set((state) => ({ draft: { ...state.draft, delivery_diagram } })),
 
       setCreatedContractId: (id) =>
         set((state) => ({ draft: { ...state.draft, created_contract_id: id } })),

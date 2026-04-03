@@ -69,9 +69,20 @@ export default function CertUpload({ contractId, certReceived: initialReceived, 
       </p>
 
       {success ? (
-        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-center">
-          <p className="font-semibold text-emerald-800">Certificate uploaded successfully!</p>
-          <p className="text-sm text-emerald-600 mt-1">Our bookkeeper has been notified and will process your refund shortly.</p>
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 bg-emerald-100 rounded-xl flex items-center justify-center flex-shrink-0">
+              <svg className="w-5 h-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <div>
+              <p className="font-semibold text-emerald-800">Certificate uploaded successfully!</p>
+              <p className="text-sm text-emerald-600 mt-1 leading-relaxed">
+                Our bookkeeper has been notified and will review your certificate and issue your tax refund shortly.
+              </p>
+            </div>
+          </div>
         </div>
       ) : (
         <label className={`flex flex-col items-center justify-center border-2 border-dashed rounded-xl p-6 cursor-pointer transition-colors ${uploading ? "opacity-50 cursor-not-allowed" : "border-slate-300 hover:border-[#00929C] hover:bg-[#00929C]/5"}`}>
