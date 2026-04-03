@@ -33,7 +33,7 @@ const STATUS_LABELS: Record<string, string> = {
   cancelled: "Cancelled",
 };
 
-type FilterType = "all" | "contracts" | "contingent" | "quote" | "deposit_collected" | "delivered";
+type FilterType = "all" | "contracts" | "contingent" | "quote" | "deposit_collected" | "delivered" | "cancelled";
 type DateFilter = "all" | "today" | "week" | "month";
 
 const FILTERS: { label: string; value: FilterType }[] = [
@@ -43,6 +43,7 @@ const FILTERS: { label: string; value: FilterType }[] = [
   { label: "Quotes", value: "quote" },
   { label: "Deposit Paid", value: "deposit_collected" },
   { label: "Delivered", value: "delivered" },
+  { label: "Cancelled", value: "cancelled" },
 ];
 
 const DATE_FILTERS: { label: string; value: DateFilter }[] = [
@@ -91,6 +92,7 @@ export function ContractsList({
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterType>(initialFilter);
   const [dateFilter, setDateFilter] = useState<DateFilter>("all");
+  const [cancelledExpanded, setCancelledExpanded] = useState(false);
 
   const matchesSearch = (c: ContractRow) => {
     if (!search) return true;
@@ -148,6 +150,7 @@ export function ContractsList({
     if (filter === "quote") return isQuote(c);
     if (filter === "deposit_collected") return c.status === "deposit_collected";
     if (filter === "delivered") return c.status === "delivered";
+    if (filter === "cancelled") return c.status === "cancelled";
     return true; // "all"
   });
 
@@ -155,6 +158,7 @@ export function ContractsList({
   const confirmedList = contracts.filter((c) => matchesSearch(c) && matchesDate(c) && isConfirmedContract(c));
   const contingentList = contracts.filter((c) => matchesSearch(c) && matchesDate(c) && isContingentContract(c));
   const quoteList = contracts.filter((c) => matchesSearch(c) && matchesDate(c) && isQuote(c));
+  const cancelledList = contracts.filter((c) => matchesSearch(c) && matchesDate(c) && c.status === "cancelled");
 
   function ContractItem({ c }: { c: ContractRow }) {
     const href = isQuote(c) ? `/quotes/${c.id}` : `/contracts/${c.id}`;
@@ -239,9 +243,13 @@ export function ContractsList({
             key={f.value}
             onClick={() => setFilter(f.value)}
             className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
-              filter === f.value
-                ? "bg-[#00929C] text-white"
-                : "bg-slate-100 text-slate-600"
+              f.value === "cancelled"
+                ? filter === "cancelled"
+                  ? "bg-red-500 text-white"
+                  : "bg-slate-100 text-red-500"
+                : filter === f.value
+                  ? "bg-[#00929C] text-white"
+                  : "bg-slate-100 text-slate-600"
             }`}
           >
             {f.label}
@@ -295,6 +303,31 @@ export function ContractsList({
             items={quoteList}
             emptyMsg="No quotes."
           />
+          {cancelledList.length > 0 && (
+            <div>
+              <button
+                type="button"
+                onClick={() => setCancelledExpanded((v) => !v)}
+                className="w-full flex items-center justify-between px-4 pt-4 pb-2 text-xs font-semibold uppercase tracking-wide bg-red-50 border-b border-red-100 text-red-700"
+              >
+                <span>
+                  Cancelled{" "}
+                  <span className="font-normal normal-case text-red-400">({cancelledList.length})</span>
+                </span>
+                <svg
+                  className={`w-4 h-4 text-red-400 transition-transform ${cancelledExpanded ? "rotate-180" : ""}`}
+                  fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {cancelledExpanded && (
+                <ul className="divide-y divide-slate-100">
+                  {cancelledList.map((c) => <ContractItem key={c.id} c={c} />)}
+                </ul>
+              )}
+            </div>
+          )}
         </div>
       ) : filtered.length === 0 ? (
         <div className="text-center py-12 text-slate-500 px-4">
