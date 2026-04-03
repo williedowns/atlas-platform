@@ -168,7 +168,8 @@ export function CollectPaymentForm({
 
     if (!res.ok) {
       setState("error");
-      setErrorMessage(data?.error ?? "Payment failed. Please try again.");
+      const detail = data?.details ? ` — ${data.details}` : "";
+      setErrorMessage((data?.error ?? "Payment failed. Please try again.") + detail);
       return;
     }
 
