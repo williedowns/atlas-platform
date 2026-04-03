@@ -115,10 +115,10 @@ export async function GET(req: Request) {
     let provider: string | null = null;
     if (p.method === "financing") {
       const finEntries = Array.isArray(contract?.financing) ? contract.financing : [];
-      const match = finEntries.find((f: { deduct_from_balance?: boolean; provider?: string }) =>
-        f.deduct_from_balance !== false && f.provider
+      const match = finEntries.find((f: { deduct_from_balance?: boolean; financer_name?: string }) =>
+        f.deduct_from_balance !== false && f.financer_name
       );
-      provider = match?.provider ?? null;
+      provider = match?.financer_name ?? null;
     }
 
     rows.push({
@@ -162,7 +162,7 @@ export async function GET(req: Request) {
       if (alreadyRecorded) continue;
 
       rows.push({
-        payment_id: `fin-${c.id}-${f.provider ?? "unknown"}`,
+        payment_id: `fin-${c.id}-${f.financer_name ?? "unknown"}`,
         date: f.applied_at ?? c.created_at,
         customer_name: customer ? `${customer.first_name} ${customer.last_name}` : "—",
         product_size: productSummary || "—",
@@ -173,7 +173,7 @@ export async function GET(req: Request) {
         card_type: null,
         card_last4: null,
         contract_number: c.contract_number ?? "—",
-        provider: f.provider ?? null,
+        provider: f.financer_name ?? null,
       });
     }
   }
