@@ -35,7 +35,6 @@ export default async function ContractDetailPage({
     .from("contracts")
     .select(`
       *,
-      tax_refund_amount, tax_refund_issued_at, tax_refund_notes,
       customer:customers(*),
       show:shows(name, venue_name),
       location:locations(name),
@@ -304,7 +303,7 @@ export default async function ContractDetailPage({
               depositPaid={contract.deposit_paid ?? 0}
             />
           )}
-          {canRecordRefund && (contract.tax_amount > 0 || contract.tax_refund_amount != null) && (
+          {canRecordRefund && "tax_refund_amount" in contract && (contract.tax_amount > 0 || contract.tax_refund_amount != null) && (
             <TaxRefundButton
               contractId={contract.id}
               taxAmount={contract.tax_amount ?? 0}
