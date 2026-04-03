@@ -10,8 +10,8 @@ import { formatCurrency } from "@/lib/utils";
 const PAYMENT_METHODS = [
   { value: "credit_card", label: "Credit Card" },
   { value: "debit_card", label: "Debit Card" },
-  { value: "ach", label: "ACH / Check" },
-  { value: "cash", label: "Cash" },
+  { value: "ach", label: "ACH / eCheck" },
+  { value: "cash", label: "Cash / Check" },
 ] as const;
 
 type PaymentState = "idle" | "processing" | "success" | "error";
@@ -38,16 +38,33 @@ export function CollectPaymentForm({
   surchargeRate,
 }: CollectPaymentFormProps) {
   const router = useRouter();
+
+  // ── Payment method ────────────────────────────────────────
   const [method, setMethod] = useState<string>("credit_card");
   const [amountInput, setAmountInput] = useState(balanceDue.toFixed(2));
+
+  // ── Card fields ───────────────────────────────────────────
+  const [cardNumber, setCardNumber] = useState("");
+  const [cardExpiry, setCardExpiry] = useState(""); // MM/YY
+  const [cardCvc, setCardCvc] = useState("");
+  const [cardZip, setCardZip] = useState("");
+
+  // ── ACH fields ────────────────────────────────────────────
+  const [routingNumber, setRoutingNumber] = useState("");
+  const [accountNumber, setAccountNumber] = useState("");
+  const [accountType, setAccountType] = useState<"PERSONAL_CHECKING" | "PERSONAL_SAVINGS" | "BUSINESS_CHECKING">("PERSONAL_CHECKING");
+  const [accountName, setAccountName] = useState("");
+
+  // ── Cash/Check fields ─────────────────────────────────────
   const [checkNumber, setCheckNumber] = useState("");
   const [bankName, setBankName] = useState("");
-  const [lastFour, setLastFour] = useState("");
-  const [cardConfirmed, setCardConfirmed] = useState(false);
+
+  // ── State ─────────────────────────────────────────────────
   const [state, setState] = useState<PaymentState>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [amountCollected, setAmountCollected] = useState(0);
   const [newBalance, setNewBalance] = useState(0);
+  const [successNote, setSuccessNote] = useState<string | null>(null);
 
   const amount = Math.min(Math.max(0, parseFloat(amountInput) || 0), balanceDue);
   const surchargeAmount =
@@ -55,21 +72,91 @@ export function CollectPaymentForm({
       ? Math.round(amount * surchargeRate * 100) / 100
       : 0;
   const totalToCharge = amount + surchargeAmount;
-  const isCard = method === "credit_card" || method === "debit_card";
-  const cardReady = !isCard || (lastFour.length === 4 && cardConfirmed);
 
-  const handleAmountBlur = () => {
-    setAmountInput(amount.toFixed(2));
+  const isCard = method === "credit_card" || method === "debit_card";
+  const isAch = method === "ach";
+  const isCash = method === "cash";
+
+  // ── Card expiry formatter ─────────────────────────────────
+  const handleExpiryChange = (val: string) => {
+    const digits = val.replace(/\D/g, "").slice(0, 4);
+    if (digits.length >= 3) {
+      setCardExpiry(`${digits.slice(0, 2)}/${digits.slice(2)}`);
+    } else {
+      setCardExpiry(digits);
+    }
   };
 
+  // ── Card number formatter (groups of 4) ──────────────────
+  const handleCardNumberChange = (val: string) => {
+    const digits = val.replace(/\D/g, "").slice(0, 16);
+    const groups = digits.match(/.{1,4}/g) ?? [];
+    setCardNumber(groups.join(" "));
+  };
+
+  const handleAmountBlur = () => setAmountInput(amount.toFixed(2));
+
+  // ── Validation ────────────────────────────────────────────
+  const cardReady =
+    isCard &&
+    cardNumber.replace(/\s/g, "").length >= 13 &&
+    cardExpiry.length === 5 &&
+    cardCvc.length >= 3;
+
+  const achReady =
+    isAch &&
+    routingNumber.length === 9 &&
+    accountNumber.length >= 4 &&
+    accountName.trim().length >= 2;
+
+  const canSubmit =
+    amount > 0 &&
+    state !== "processing" &&
+    (isCard ? cardReady : isAch ? achReady : true);
+
+  // ── Submit ────────────────────────────────────────────────
   const handleSubmit = async () => {
-    if (amount <= 0) return;
+    if (!canSubmit) return;
     setState("processing");
     setErrorMessage(null);
 
-    // All payments recorded manually — card tokenization via Intuit SDK handled separately
-    const endpoint = "/api/payments/record-manual";
-    const body = { contract_id: contractId, amount, method, check_number: checkNumber || undefined, bank_name: bankName || undefined, last_four: lastFour || undefined };
+    let endpoint = "/api/payments/record-manual";
+    let body: Record<string, unknown> = { contract_id: contractId, amount, method };
+
+    if (isCard) {
+      endpoint = "/api/payments/charge";
+      const [expMonth, expYear] = cardExpiry.split("/");
+      body = {
+        contract_id: contractId,
+        amount,
+        surcharge_amount: surchargeAmount,
+        method,
+        card_number: cardNumber.replace(/\s/g, ""),
+        card_exp_month: Number(expMonth),
+        card_exp_year: 2000 + Number(expYear),
+        card_cvc: cardCvc,
+        card_postal_code: cardZip || undefined,
+      };
+    } else if (isAch) {
+      endpoint = "/api/payments/echeck";
+      body = {
+        contract_id: contractId,
+        amount,
+        routing_number: routingNumber,
+        account_number: accountNumber,
+        account_type: accountType,
+        account_holder_name: accountName,
+      };
+    } else {
+      // Cash / Check
+      body = {
+        contract_id: contractId,
+        amount,
+        method,
+        check_number: checkNumber || undefined,
+        bank_name: bankName || undefined,
+      };
+    }
 
     const res = await fetch(endpoint, {
       method: "POST",
@@ -85,12 +172,13 @@ export function CollectPaymentForm({
       return;
     }
 
-    setAmountCollected(totalToCharge);
+    setAmountCollected(isCard ? totalToCharge : amount);
     setNewBalance(Math.max(0, balanceDue - amount));
+    if (isAch) setSuccessNote("ACH payments typically settle within 1-2 business days.");
     setState("success");
   };
 
-  // ── Success ──────────────────────────────────────────────
+  // ── Success screen ────────────────────────────────────────
   if (state === "success") {
     return (
       <div className="flex flex-col items-center gap-6 py-10 text-center">
@@ -100,14 +188,16 @@ export function CollectPaymentForm({
           </svg>
         </div>
         <div>
-          <h2 className="text-3xl font-bold text-emerald-700">Payment Collected!</h2>
+          <h2 className="text-3xl font-bold text-emerald-700">
+            {isAch ? "ACH Submitted!" : "Payment Collected!"}
+          </h2>
           <p className="text-slate-500 mt-1">{customerName} · {contractNumber}</p>
         </div>
 
         <Card className="w-full">
           <CardContent className="py-5 space-y-3 text-sm">
             <div className="flex justify-between">
-              <span className="text-slate-500">Amount Collected</span>
+              <span className="text-slate-500">Amount {isAch ? "Submitted" : "Collected"}</span>
               <span className="font-bold text-emerald-700">{formatCurrency(amountCollected)}</span>
             </div>
             <div className="flex justify-between border-t border-slate-100 pt-3">
@@ -116,6 +206,9 @@ export function CollectPaymentForm({
                 {newBalance > 0 ? formatCurrency(newBalance) : "Paid in Full"}
               </span>
             </div>
+            {successNote && (
+              <p className="text-xs text-blue-600 border-t border-slate-100 pt-3">{successNote}</p>
+            )}
           </CardContent>
         </Card>
 
@@ -193,7 +286,12 @@ export function CollectPaymentForm({
               <button
                 key={m.value}
                 type="button"
-                onClick={() => { setMethod(m.value); setLastFour(""); setCardConfirmed(false); }}
+                onClick={() => {
+                  setMethod(m.value);
+                  setCardNumber(""); setCardExpiry(""); setCardCvc(""); setCardZip("");
+                  setRoutingNumber(""); setAccountNumber(""); setAccountName("");
+                  setCheckNumber(""); setBankName("");
+                }}
                 className={`h-14 rounded-full text-base font-semibold transition-all touch-manipulation ${
                   method === m.value
                     ? "bg-[#00929C] text-white shadow-md"
@@ -207,44 +305,120 @@ export function CollectPaymentForm({
         </CardContent>
       </Card>
 
-      {/* Card fields */}
+      {/* ── Credit / Debit Card Fields ── */}
       {isCard && (
         <Card>
-          <CardContent className="py-5 space-y-4">
-            <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3">
-              <p className="text-sm font-semibold text-amber-800">Charge the card on your terminal first</p>
-              <p className="text-xs text-amber-700 mt-0.5">Enter the last 4 digits and confirm below after the terminal approves.</p>
-            </div>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">Card Details</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
             <Input
-              label="Last 4 digits of card *"
+              label="Card Number *"
               type="tel"
               inputMode="numeric"
-              maxLength={4}
-              value={lastFour}
-              onChange={(e) => setLastFour(e.target.value.replace(/\D/g, "").slice(0, 4))}
-              placeholder="1234"
+              autoComplete="cc-number"
+              placeholder="1234 5678 9012 3456"
+              value={cardNumber}
+              onChange={(e) => handleCardNumberChange(e.target.value)}
             />
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={cardConfirmed}
-                onChange={(e) => setCardConfirmed(e.target.checked)}
-                className="w-5 h-5 rounded accent-[#00929C]"
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                label="Expiry (MM/YY) *"
+                type="tel"
+                inputMode="numeric"
+                autoComplete="cc-exp"
+                placeholder="09/27"
+                value={cardExpiry}
+                onChange={(e) => handleExpiryChange(e.target.value)}
               />
-              <span className="text-sm font-medium text-slate-700">
-                Card was successfully charged on terminal
-              </span>
-            </label>
+              <Input
+                label="CVV *"
+                type="tel"
+                inputMode="numeric"
+                autoComplete="cc-csc"
+                placeholder="123"
+                maxLength={4}
+                value={cardCvc}
+                onChange={(e) => setCardCvc(e.target.value.replace(/\D/g, "").slice(0, 4))}
+              />
+            </div>
+            <Input
+              label="Billing ZIP (optional)"
+              type="tel"
+              inputMode="numeric"
+              autoComplete="postal-code"
+              placeholder="90210"
+              maxLength={5}
+              value={cardZip}
+              onChange={(e) => setCardZip(e.target.value.replace(/\D/g, "").slice(0, 5))}
+            />
           </CardContent>
         </Card>
       )}
 
-      {/* ACH fields */}
-      {method === "ach" && (
+      {/* ── ACH / eCheck Fields ── */}
+      {isAch && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">Bank Account Details</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="rounded-lg bg-blue-50 border border-blue-200 px-4 py-3">
+              <p className="text-xs text-blue-700">ACH payments typically settle within 1-2 business days.</p>
+            </div>
+            <Input
+              label="Routing Number *"
+              type="tel"
+              inputMode="numeric"
+              placeholder="021000021"
+              maxLength={9}
+              value={routingNumber}
+              onChange={(e) => setRoutingNumber(e.target.value.replace(/\D/g, "").slice(0, 9))}
+            />
+            <Input
+              label="Account Number *"
+              type="tel"
+              inputMode="numeric"
+              placeholder="Account number"
+              value={accountNumber}
+              onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, ""))}
+            />
+            <div>
+              <label className="text-sm font-medium text-slate-700 block mb-2">Account Type *</label>
+              <div className="grid grid-cols-3 gap-2">
+                {(["PERSONAL_CHECKING", "PERSONAL_SAVINGS", "BUSINESS_CHECKING"] as const).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setAccountType(t)}
+                    className={`rounded-lg py-2 px-1 text-xs font-semibold transition-all touch-manipulation ${
+                      accountType === t
+                        ? "bg-[#00929C] text-white shadow"
+                        : "bg-slate-100 text-slate-700"
+                    }`}
+                  >
+                    {t === "PERSONAL_CHECKING" ? "Personal Checking" : t === "PERSONAL_SAVINGS" ? "Personal Savings" : "Business Checking"}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <Input
+              label="Account Holder Name *"
+              type="text"
+              placeholder="Full name on account"
+              value={accountName}
+              onChange={(e) => setAccountName(e.target.value)}
+            />
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── Cash / Check Fields ── */}
+      {isCash && (
         <Card>
           <CardContent className="py-5 space-y-4">
             <Input
-              label="Check #"
+              label="Check # (optional)"
               type="text"
               value={checkNumber}
               onChange={(e) => setCheckNumber(e.target.value)}
@@ -276,13 +450,15 @@ export function CollectPaymentForm({
         variant="success"
         size="xl"
         className="w-full text-lg"
-        disabled={amount <= 0 || state === "processing" || !cardReady}
+        disabled={!canSubmit}
         onClick={handleSubmit}
       >
         {state === "processing"
           ? "Processing…"
           : isCard
           ? `Charge ${formatCurrency(totalToCharge)}`
+          : isAch
+          ? `Submit ACH ${formatCurrency(amount)}`
           : `Record ${formatCurrency(amount)}`}
       </Button>
     </div>

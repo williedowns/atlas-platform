@@ -62,6 +62,72 @@ export interface ChargeResult {
   };
 }
 
+// ── Tokenization ────────────────────────────────────────────────────────────
+
+export interface TokenizeCardParams {
+  number: string;   // raw PAN — stripped of spaces/dashes by caller
+  expMonth: number;
+  expYear: number;  // 4-digit
+  cvc: string;
+  postalCode?: string;
+}
+
+export async function createToken(card: TokenizeCardParams): Promise<string> {
+  const body = {
+    card: {
+      number: card.number,
+      expMonth: card.expMonth,
+      expYear: card.expYear,
+      cvc: card.cvc,
+      ...(card.postalCode ? { address: { postalCode: card.postalCode } } : {}),
+    },
+  };
+  const result = await paymentsFetch("/tokens", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  if (!result.value) throw new Error("Intuit tokenization returned no token value");
+  return result.value as string;
+}
+
+// ── eCheck (ACH) ─────────────────────────────────────────────────────────────
+
+export interface ECheckParams {
+  amount: number;
+  routingNumber: string;
+  accountNumber: string;
+  accountType: "PERSONAL_CHECKING" | "PERSONAL_SAVINGS" | "BUSINESS_CHECKING";
+  name: string;          // account holder name
+  description?: string;
+}
+
+export interface ECheckResult {
+  id: string;
+  status: "PENDING" | "SUCCEEDED" | "DECLINED" | "VOIDED";
+  amount: number;
+  created: string;
+}
+
+export async function createECheck(params: ECheckParams): Promise<ECheckResult> {
+  const body = {
+    paymentMode: "WEB",
+    amount: params.amount.toFixed(2),
+    description: params.description,
+    checkNumber: String(Math.floor(Math.random() * 9000) + 1000), // required placeholder
+    bankAccountDetails: {
+      bankAccountNumber: params.accountNumber,
+      bankAccountType: params.accountType,
+      routingNumber: params.routingNumber,
+      name: params.name,
+      phone: "5555555555", // placeholder — Intuit requires it
+    },
+  };
+  return paymentsFetch("/echecks", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
 // Charge a card (card-present or card-not-present)
 export async function createCharge(params: ChargeParams): Promise<ChargeResult> {
   const body: Record<string, unknown> = {

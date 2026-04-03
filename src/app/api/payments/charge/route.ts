@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { createCharge } from "@/lib/payments/intuit";
+import { createCharge, createToken } from "@/lib/payments/intuit";
 import { createQBODepositInvoice } from "@/lib/qbo/client";
 import { logAction } from "@/lib/audit";
 
@@ -9,7 +9,21 @@ export async function POST(req: Request) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { contract_id, amount, surcharge_amount, method, card_token, card_present_token } = await req.json();
+  const {
+    contract_id,
+    amount,
+    surcharge_amount,
+    method,
+    // Pre-tokenized (legacy) path
+    card_token,
+    card_present_token,
+    // Raw card fields for server-side tokenization — NEVER logged or persisted
+    card_number,
+    card_exp_month,
+    card_exp_year,
+    card_cvc,
+    card_postal_code,
+  } = await req.json();
 
   // Fetch contract
   const { data: contract, error: contractError } = await supabase
@@ -44,13 +58,37 @@ export async function POST(req: Request) {
     .single();
 
   if (method === "credit_card" || method === "debit_card") {
+    // Tokenize raw card fields if no pre-existing token provided
+    let resolvedToken = card_token ?? card_present_token;
+    if (!resolvedToken && card_number) {
+      try {
+        resolvedToken = await createToken({
+          number: String(card_number).replace(/[\s\-]/g, ""),
+          expMonth: Number(card_exp_month),
+          expYear: Number(card_exp_year),
+          cvc: String(card_cvc),
+          postalCode: card_postal_code ? String(card_postal_code) : undefined,
+        });
+      } catch (err) {
+        await supabase
+          .from("payments")
+          .update({ status: "failed", error: String(err) } as Record<string, unknown>)
+          .eq("id", payment!.id);
+        return NextResponse.json({ error: "Card tokenization failed", details: String(err) }, { status: 402 });
+      }
+    }
+
+    if (!resolvedToken) {
+      await supabase.from("payments").update({ status: "failed" }).eq("id", payment!.id);
+      return NextResponse.json({ error: "No card token available" }, { status: 400 });
+    }
+
     // Charge via Intuit Payments
     let chargeResult;
     try {
       chargeResult = await createCharge({
         amount: totalCharge,
-        card_token,
-        card_present_token,
+        card_token: resolvedToken,
         description: `Atlas Spas Deposit - ${contract.contract_number}`,
         capture: true,
         context: { mobile: true, isEcommerce: false },
