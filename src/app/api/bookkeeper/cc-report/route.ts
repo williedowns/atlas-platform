@@ -48,11 +48,11 @@ export async function GET(req: Request) {
     location:locations(name)
   `;
 
-  // ── All payments — date filter done in JS so null processed_at falls back to created_at ──
+  // ── All payments — include every status so nothing is silently dropped ──
   const { data: allPayments, error: paymentsError } = await supabase
     .from("payments")
     .select(`id, amount, method, card_brand, card_last4, processed_at, created_at, status, contract:contracts(${contractSelect})`)
-    .in("status", ["completed", "pending"])
+    .not("status", "eq", "failed")
     .order("created_at", { ascending: true });
 
   if (paymentsError) return NextResponse.json({ error: paymentsError.message }, { status: 500 });
@@ -111,14 +111,14 @@ export async function GET(req: Request) {
     const { customer, salesLocation, productSummary } = extractContractFields(p);
     const contract = Array.isArray(p.contract) ? p.contract[0] : p.contract;
 
-    // For financing payments, pull the provider name from the contract's financing JSONB array
+    // For financing payments, pull provider from contract's financing JSONB array
     let provider: string | null = null;
     if (p.method === "financing") {
       const finEntries = Array.isArray(contract?.financing) ? contract.financing : [];
       const match = finEntries.find((f: { deduct_from_balance?: boolean; provider?: string }) =>
         f.deduct_from_balance !== false && f.provider
       );
-      provider = match?.provider ?? "Financing";
+      provider = match?.provider ?? null;
     }
 
     rows.push({
@@ -173,7 +173,7 @@ export async function GET(req: Request) {
         card_type: null,
         card_last4: null,
         contract_number: c.contract_number ?? "—",
-        provider: f.provider ?? "Financing",
+        provider: f.provider ?? null,
       });
     }
   }
