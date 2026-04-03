@@ -21,8 +21,9 @@ interface InventoryUnit {
 }
 
 interface InventoryUnitPickerProps {
-  productId: string;         // exact product UUID — filters to this model only
-  productCategory: string;   // fallback category filter for units without product_id
+  productId: string;           // exact product UUID — filters linked units to this model
+  productCategory: string;     // category fallback (last resort, no product_id or model_code)
+  productModelCode?: string;   // model_code (e.g. "TS 8.25") — matches legacy units imported without product_id
   showId?: string | null;
   locationId?: string | null;
   onSelect: (unit: InventoryUnit) => void;
@@ -41,6 +42,7 @@ const UNIT_TYPE_BADGES: Record<string, { label: string; color: string }> = {
 export function InventoryUnitPicker({
   productId,
   productCategory,
+  productModelCode,
   showId,
   locationId,
   onSelect,
@@ -64,10 +66,11 @@ export function InventoryUnitPicker({
         const params = new URLSearchParams({
           status: "at_location,at_show",
           product_id: productId,
-          // Also pass category so the API's post-fetch filter catches any units
-          // that were entered without a product_id link (legacy records)
           category: productCategory,
         });
+        // model_code narrows legacy units (imported without product_id) to the exact
+        // model — e.g. "TS 8.25" vs "TS 7.2" vs "TS 240X" which all share category.
+        if (productModelCode) params.set("model_code", productModelCode);
         if (allLocations) {
           params.set("all_locations", "true");
         } else if (showId) {
@@ -83,7 +86,7 @@ export function InventoryUnitPicker({
       }
     }
     load();
-  }, [productId, productCategory, showId, locationId, allLocations]);
+  }, [productId, productCategory, productModelCode, showId, locationId, allLocations]);
 
   const filtered = units.filter((u) => {
     if (!search) return true;

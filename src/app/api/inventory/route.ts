@@ -13,6 +13,9 @@ export async function GET(req: Request) {
   const showId = url.searchParams.get("show_id");
   const productId = url.searchParams.get("product_id");
   const category = url.searchParams.get("category");
+  // model_code of the selected product (e.g. "TS 8.25") — used to match
+  // legacy inventory units that were imported without a product_id link
+  const modelCode = url.searchParams.get("model_code");
   // When true, don't filter by location — return matching units from all locations
   const allLocations = url.searchParams.get("all_locations") === "true";
 
@@ -44,15 +47,19 @@ export async function GET(req: Request) {
   const { data, error } = await query.limit(500);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // Post-fetch filter: exact product match when available, category fallback for legacy units
+  // Post-fetch filter: exact product match when available, then model_code, then category
   let rows = data ?? [];
-  if (productId || category) {
+  if (productId || modelCode || category) {
     rows = rows.filter((u: any) => {
       if (u.product?.id) {
         // Unit has a product FK linked — require exact product match
         return productId ? u.product.id === productId : u.product.category === category;
       }
-      // Legacy unit with no product link — fall back to category via model_code prefix
+      // Legacy unit with no product_id: try exact model_code match first ("TS 8.25" etc.)
+      if (modelCode) {
+        return (u as any).model_code === modelCode;
+      }
+      // Final fallback: category (only when no model_code provided)
       return category ? getCategoryForModelCode((u as any).model_code) === category : true;
     });
   }

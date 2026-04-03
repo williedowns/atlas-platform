@@ -754,6 +754,7 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
         <InventoryUnitPicker
           productId={pickerProduct.product.id}
           productCategory={pickerProduct.product.category ?? ""}
+          productModelCode={pickerProduct.product.model_code ?? undefined}
           showId={draft.show_id ?? null}
           locationId={draft.location_id ?? null}
           onSelect={(unit) => {
