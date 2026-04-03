@@ -54,7 +54,14 @@ export default async function InventoryPage({
     query = query.eq("location_id", profile.assigned_location_id);
   }
 
-  const { data: units } = await query;
+  // Run filtered units + stats count in parallel instead of sequential
+  const [{ data: units }, { data: allUnits }] = await Promise.all([
+    query,
+    supabase
+      .from("inventory_units")
+      .select("status")
+      .not("status", "eq", "delivered"),
+  ]);
 
   const rows = (units ?? []).filter((u) => {
     if (!search) return true;
@@ -68,12 +75,6 @@ export default async function InventoryPage({
       u.shell_color?.toLowerCase().includes(q)
     );
   });
-
-  // Stats
-  const { data: allUnits } = await supabase
-    .from("inventory_units")
-    .select("status")
-    .not("status", "eq", "delivered");
 
   const statCounts = (allUnits ?? []).reduce<Record<string, number>>((acc, u) => {
     acc[u.status] = (acc[u.status] ?? 0) + 1;

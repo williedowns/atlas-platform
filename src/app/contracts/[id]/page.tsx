@@ -31,34 +31,39 @@ export default async function ContractDetailPage({
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { data: contract } = await supabase
-    .from("contracts")
-    .select(`
-      *,
-      customer:customers(*),
-      show:shows(name, venue_name),
-      location:locations(name),
-      sales_rep:profiles(full_name)
-    `)
-    .eq("id", id)
-    .single();
+  // Fetch contract, profile, and payments in parallel — all three only need user.id
+  const [
+    { data: contract },
+    { data: profile },
+    { data: payments },
+  ] = await Promise.all([
+    supabase
+      .from("contracts")
+      .select(`
+        *,
+        customer:customers(*),
+        show:shows(name, venue_name),
+        location:locations(name),
+        sales_rep:profiles(full_name)
+      `)
+      .eq("id", id)
+      .single(),
+    supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single(),
+    supabase
+      .from("payments")
+      .select("*")
+      .eq("contract_id", id)
+      .order("created_at"),
+  ]);
 
   if (!contract) notFound();
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
   const canViewAudit = ["admin", "manager", "bookkeeper"].includes(profile?.role ?? "");
   const canRecordRefund = ["admin", "manager", "bookkeeper"].includes(profile?.role ?? "");
-
-  const { data: payments } = await supabase
-    .from("payments")
-    .select("*")
-    .eq("contract_id", id)
-    .order("created_at");
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let auditLogs: any[] = [];
