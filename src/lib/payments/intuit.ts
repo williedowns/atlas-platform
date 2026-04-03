@@ -76,7 +76,7 @@ export async function createToken(card: TokenizeCardParams): Promise<string> {
   const body = {
     card: {
       number: card.number,
-      expMonth: card.expMonth,
+      expMonth: String(card.expMonth).padStart(2, "0"),
       expYear: card.expYear,
       cvc: card.cvc,
       ...(card.postalCode ? { address: { postalCode: card.postalCode } } : {}),
