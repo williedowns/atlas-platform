@@ -146,8 +146,17 @@ export default async function AnalyticsPage({
     .gt("balance_due", 0)
     .order("created_at", { ascending: true });
 
-  const [{ data: contracts }, { data: priorContracts }, { data: outstanding }] =
-    await Promise.all([query, priorQuery, outstandingQuery]);
+  // Closing ratio: ALL non-draft contracts in period (quotes + active + cancelled)
+  // A quote that converts just changes status — no double counting possible.
+  let closingRatioQuery = supabase
+    .from("contracts")
+    .select(`id, status, show:shows(id), location:locations(id)`)
+    .not("status", "eq", "draft");
+  if (range.gte) closingRatioQuery = closingRatioQuery.gte("created_at", range.gte);
+  if (range.lte) closingRatioQuery = closingRatioQuery.lt("created_at", range.lte);
+
+  const [{ data: contracts }, { data: priorContracts }, { data: outstanding }, { data: allOpps }] =
+    await Promise.all([query, priorQuery, outstandingQuery, closingRatioQuery]);
 
   const rows = contracts ?? [];
   const priorRows = priorContracts ?? [];
@@ -188,13 +197,14 @@ export default async function AnalyticsPage({
   // ── Shows breakdown ─────────────────────────────────────────────────────────
   const showMap = new Map<
     string,
-    { name: string; start_date?: string; count: number; revenue: number; deposits: number }
+    { id: string; name: string; start_date?: string; count: number; revenue: number; deposits: number }
   >();
   for (const c of rows) {
     const showId = (c.show as { id?: string } | null)?.id ?? "unknown";
     const showName = (c.show as { name?: string } | null)?.name ?? "Unknown";
     const showStart = (c.show as { start_date?: string } | null)?.start_date;
     const existing = showMap.get(showId) ?? {
+      id: showId,
       name: showName,
       start_date: showStart,
       count: 0,
@@ -209,7 +219,7 @@ export default async function AnalyticsPage({
   const shows = Array.from(showMap.values()).sort((a, b) => b.revenue - a.revenue);
 
   // ── Locations breakdown ──────────────────────────────────────────────────────
-  const locMap = new Map<string, { name: string; type: string; count: number; revenue: number }>();
+  const locMap = new Map<string, { id: string; name: string; type: string; count: number; revenue: number }>();
   for (const c of rows) {
     // Contracts sold at a show have show_id but no location_id — fall back to show name
     const locId = (c.location as { id?: string } | null)?.id
@@ -219,12 +229,49 @@ export default async function AnalyticsPage({
       ?? "Unknown";
     const locType = (c.location as { type?: string } | null)?.type
       ?? ((c.show as { id?: string } | null)?.id ? "show" : "store");
-    const existing = locMap.get(locId) ?? { name: locName, type: locType, count: 0, revenue: 0 };
+    const existing = locMap.get(locId) ?? { id: locId, name: locName, type: locType, count: 0, revenue: 0 };
     existing.count += 1;
     existing.revenue += c.total ?? 0;
     locMap.set(locId, existing);
   }
   const locations = Array.from(locMap.values()).sort((a, b) => b.revenue - a.revenue);
+
+  // ── Closing ratio maps ───────────────────────────────────────────────────────
+  // allOpps = every non-draft contract in period (quotes + active + cancelled)
+  // A converted quote just changes status — no double counting.
+  const showClosingMap = new Map<string, { opps: number; closed: number }>();
+  const locClosingMap = new Map<string, { opps: number; closed: number }>();
+  for (const c of (allOpps ?? [])) {
+    const showId = (c.show as { id?: string } | null)?.id;
+    const rawLocId = (c.location as { id?: string } | null)?.id;
+    const derivedLocId = rawLocId ?? (showId ? `show-${showId}` : null);
+    const isClosed = !["quote", "cancelled"].includes(c.status);
+
+    if (showId) {
+      const e = showClosingMap.get(showId) ?? { opps: 0, closed: 0 };
+      e.opps += 1;
+      if (isClosed) e.closed += 1;
+      showClosingMap.set(showId, e);
+    }
+    if (derivedLocId) {
+      const e = locClosingMap.get(derivedLocId) ?? { opps: 0, closed: 0 };
+      e.opps += 1;
+      if (isClosed) e.closed += 1;
+      locClosingMap.set(derivedLocId, e);
+    }
+  }
+
+  function closingRatioPct(opps: number, closed: number): string {
+    if (opps === 0) return "—";
+    return `${Math.round((closed / opps) * 100)}%`;
+  }
+  function closingRatioColor(opps: number, closed: number): string {
+    if (opps === 0) return "text-slate-400";
+    const pct = (closed / opps) * 100;
+    if (pct >= 50) return "font-semibold text-emerald-600";
+    if (pct >= 30) return "font-semibold text-amber-600";
+    return "font-semibold text-red-600";
+  }
 
   // ── Top products (from line_items JSONB) ────────────────────────────────────
   type LineItem = { product_name?: string; quantity?: number; sell_price?: number };
@@ -413,10 +460,13 @@ export default async function AnalyticsPage({
                       <th className="text-right py-3 px-4 font-medium text-slate-500">Contracts</th>
                       <th className="text-right py-3 px-4 font-medium text-slate-500">Revenue</th>
                       <th className="text-right py-3 px-4 font-medium text-slate-500">Deposits</th>
+                      <th className="text-right py-3 px-4 font-medium text-slate-500">Close %</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {shows.map((show) => (
+                    {shows.map((show) => {
+                      const cr = showClosingMap.get(show.id);
+                      return (
                       <tr key={show.name} className="border-b border-slate-100">
                         <td className="py-3 px-4">
                           <p className="font-medium text-slate-900">{show.name}</p>
@@ -436,8 +486,12 @@ export default async function AnalyticsPage({
                         <td className="py-3 px-4 text-right text-slate-600">
                           {formatCurrency(show.deposits)}
                         </td>
+                        <td className={`py-3 px-4 text-right ${cr ? closingRatioColor(cr.opps, cr.closed) : "text-slate-400"}`}>
+                          {cr ? closingRatioPct(cr.opps, cr.closed) : "—"}
+                        </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -463,10 +517,13 @@ export default async function AnalyticsPage({
                       <th className="text-left py-3 px-4 font-medium text-slate-500">Location</th>
                       <th className="text-right py-3 px-4 font-medium text-slate-500">Contracts</th>
                       <th className="text-right py-3 px-4 font-medium text-slate-500">Revenue</th>
+                      <th className="text-right py-3 px-4 font-medium text-slate-500">Close %</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {locations.map((loc) => (
+                    {locations.map((loc) => {
+                      const cr = locClosingMap.get(loc.id);
+                      return (
                       <tr key={loc.name} className="border-b border-slate-100">
                         <td className="py-3 px-4">
                           <div className="flex items-center gap-2">
@@ -480,8 +537,12 @@ export default async function AnalyticsPage({
                         <td className="py-3 px-4 text-right font-semibold text-[#00929C]">
                           {formatCurrency(loc.revenue)}
                         </td>
+                        <td className={`py-3 px-4 text-right ${cr ? closingRatioColor(cr.opps, cr.closed) : "text-slate-400"}`}>
+                          {cr ? closingRatioPct(cr.opps, cr.closed) : "—"}
+                        </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
