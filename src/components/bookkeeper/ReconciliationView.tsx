@@ -10,7 +10,7 @@ interface TransactionRow {
   customer_name: string;
   product_size: string;
   sales_location: string;
-  payment_type: string;
+  status: string;
   amount: number;
   method_type: string;
   card_type: string | null;
@@ -26,6 +26,13 @@ const METHOD_BADGE: Record<string, string> = {
   "Financing":   "bg-emerald-50 text-emerald-700",
   "Cash":        "bg-slate-100 text-slate-600",
   "Check":       "bg-slate-100 text-slate-600",
+};
+
+const STATUS_BADGE: Record<string, string> = {
+  completed:  "bg-emerald-50 text-emerald-700",
+  pending:    "bg-amber-50 text-amber-700",
+  processing: "bg-blue-50 text-blue-700",
+  failed:     "bg-red-50 text-red-700",
 };
 
 function todayStr() {
@@ -194,12 +201,10 @@ export default function ReconciliationView({ contracts: _ }: { contracts: unknow
                         <p className="truncate">{row.sales_location}</p>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
-                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                          row.payment_type === "Paid in Full"
-                            ? "bg-emerald-50 text-emerald-700"
-                            : "bg-blue-50 text-blue-700"
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
+                          STATUS_BADGE[row.status] ?? "bg-slate-100 text-slate-600"
                         }`}>
-                          {row.payment_type}
+                          {row.status}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right font-semibold text-slate-900 whitespace-nowrap">
@@ -209,13 +214,12 @@ export default function ReconciliationView({ contracts: _ }: { contracts: unknow
                         <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
                           METHOD_BADGE[row.method_type] ?? "bg-slate-100 text-slate-600"
                         }`}>
-                          {row.method_type}
+                          {row.method_type === "Financing" && row.provider
+                            ? row.provider
+                            : row.method_type}
                         </span>
                         {row.card_last4 && (
                           <span className="text-slate-400 text-xs ml-1.5">···{row.card_last4}</span>
-                        )}
-                        {row.method_type === "Financing" && row.provider && row.provider !== "Financing" && (
-                          <span className="text-slate-500 text-xs ml-1">({row.provider})</span>
                         )}
                       </td>
                     </tr>

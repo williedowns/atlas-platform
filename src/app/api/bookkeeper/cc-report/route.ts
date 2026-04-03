@@ -42,7 +42,7 @@ export async function GET(req: Request) {
 
   const contractSelect = `
     id, contract_number, total, deposit_paid,
-    line_items,
+    line_items, financing,
     customer:customers(first_name, last_name),
     show:shows(name),
     location:locations(name)
@@ -78,7 +78,7 @@ export async function GET(req: Request) {
     customer_name: string;
     product_size: string;
     sales_location: string;
-    payment_type: string;
+    status: string;
     amount: number;
     method_type: string;
     card_type: string | null;
@@ -108,21 +108,32 @@ export async function GET(req: Request) {
     const effectiveDate: string = p.processed_at ?? p.created_at;
     if (!effectiveDate || effectiveDate < fromTs || effectiveDate > toTs) continue;
 
-    const { customer, salesLocation, productSummary, isFullPayment } = extractContractFields(p);
+    const { customer, salesLocation, productSummary } = extractContractFields(p);
     const contract = Array.isArray(p.contract) ? p.contract[0] : p.contract;
+
+    // For financing payments, pull the provider name from the contract's financing JSONB array
+    let provider: string | null = null;
+    if (p.method === "financing") {
+      const finEntries = Array.isArray(contract?.financing) ? contract.financing : [];
+      const match = finEntries.find((f: { deduct_from_balance?: boolean; provider?: string }) =>
+        f.deduct_from_balance !== false && f.provider
+      );
+      provider = match?.provider ?? "Financing";
+    }
+
     rows.push({
       payment_id: p.id,
       date: effectiveDate,
       customer_name: customer ? `${customer.first_name} ${customer.last_name}` : "—",
       product_size: productSummary || "—",
       sales_location: salesLocation,
-      payment_type: isFullPayment ? "Paid in Full" : "Down Payment",
+      status: p.status ?? "completed",
       amount: p.amount,
       method_type: METHOD_LABEL[p.method] ?? p.method ?? "Unknown",
       card_type: p.card_brand ?? null,
       card_last4: p.card_last4 ?? null,
       contract_number: contract?.contract_number ?? "—",
-      provider: p.method === "financing" ? "Financing" : null,
+      provider,
     });
   }
 
@@ -156,7 +167,7 @@ export async function GET(req: Request) {
         customer_name: customer ? `${customer.first_name} ${customer.last_name}` : "—",
         product_size: productSummary || "—",
         sales_location: salesLocation,
-        payment_type: "Financing",
+        status: "completed",
         amount: f.financed_amount,
         method_type: "Financing",
         card_type: null,
