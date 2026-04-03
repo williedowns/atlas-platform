@@ -37,15 +37,14 @@ export default async function DashboardPage() {
   const todayDeposits = todayStats?.reduce((s, c) => s + (c.deposit_paid ?? 0), 0) ?? 0;
   const todayCount = todayStats?.length ?? 0;
 
-  // ── Recent confirmed contracts (non-contingent, with deposit) ─────────────
+  // ── Recent confirmed contracts (non-contingent, any status except quote/draft/cancelled) ──
   const confirmedQuery = supabase
     .from("contracts")
     .select("id, contract_number, status, total, deposit_paid, is_contingent, created_at, customer:customers(first_name, last_name), show:shows(name)")
     .not("status", "in", '("quote","draft","cancelled")')
     .eq("is_contingent", false)
-    .gt("deposit_paid", 0)
     .order("created_at", { ascending: false })
-    .limit(5);
+    .limit(10);
 
   if (!isAdmin) confirmedQuery.eq("sales_rep_id", user.id);
 
