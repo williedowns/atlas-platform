@@ -6,6 +6,7 @@ import { formatCurrency } from "@/lib/utils";
 import TaxExemptTracker from "@/components/bookkeeper/TaxExemptTracker";
 import ReconciliationView from "@/components/bookkeeper/ReconciliationView";
 import SalesByEventList from "@/components/bookkeeper/SalesByEventList";
+import CCReportView from "@/components/bookkeeper/CCReportView";
 
 export default async function BookkeeperPage() {
   const supabase = await createClient();
@@ -179,6 +180,10 @@ export default async function BookkeeperPage() {
         {hasMigration ? (
           <TaxExemptTracker contracts={taxTracked} />
         ) : null}
+
+        {/* ── Deposit Reconciliation ── */}
+        {/* ── Credit Card Reporting ── */}
+        <CCReportView />
 
         {/* ── Deposit Reconciliation ── */}
         <ReconciliationView contracts={contracts} />

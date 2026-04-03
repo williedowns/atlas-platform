@@ -116,6 +116,8 @@ export async function POST(req: Request) {
         status: "completed",
         intuit_charge_id: chargeResult.id,
         processed_at: new Date().toISOString(),
+        card_brand: chargeResult.card?.brand ?? null,
+        card_last4: chargeResult.card?.last4 ?? null,
       })
       .eq("id", payment!.id);
 
