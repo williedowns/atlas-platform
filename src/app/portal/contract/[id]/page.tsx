@@ -30,24 +30,53 @@ export default async function PortalContractPage({ params }: { params: Promise<{
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/portal/login");
 
-  // Verify customer owns this contract
-  const { data: customer } = await supabase
-    .from("customers").select("id").eq("email", user.email ?? "").maybeSingle();
+  // Check if the viewer is a staff member (admin/manager/sales_rep/bookkeeper/field_crew)
+  const { data: staffProfile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
 
-  const { data: contract } = await supabase
-    .from("contracts")
-    .select(`
-      id, contract_number, status, total, subtotal, tax_amount,
-      deposit_paid, balance_due, payment_method, created_at,
-      line_items, contract_pdf_url,
-      tax_exempt_cert_received, tax_exempt_cert_received_at,
-      customer:customers(first_name, last_name, email, phone),
-      show:shows(name),
-      location:locations(name, address, city, state, zip)
-    `)
-    .eq("id", id)
-    .eq("customer_id", customer?.id ?? "00000000-0000-0000-0000-000000000000")
-    .single();
+  const isStaff = !!staffProfile?.role;
+
+  let contract;
+  if (isStaff) {
+    // Staff preview — fetch by ID only, no customer ownership check
+    const { data } = await supabase
+      .from("contracts")
+      .select(`
+        id, contract_number, status, total, subtotal, tax_amount,
+        deposit_paid, balance_due, payment_method, created_at,
+        line_items, contract_pdf_url,
+        tax_exempt_cert_received, tax_exempt_cert_received_at,
+        customer:customers(first_name, last_name, email, phone),
+        show:shows(name),
+        location:locations(name, address, city, state, zip)
+      `)
+      .eq("id", id)
+      .single();
+    contract = data;
+  } else {
+    // Customer — verify they own this contract
+    const { data: customer } = await supabase
+      .from("customers").select("id").eq("email", user.email ?? "").maybeSingle();
+
+    const { data } = await supabase
+      .from("contracts")
+      .select(`
+        id, contract_number, status, total, subtotal, tax_amount,
+        deposit_paid, balance_due, payment_method, created_at,
+        line_items, contract_pdf_url,
+        tax_exempt_cert_received, tax_exempt_cert_received_at,
+        customer:customers(first_name, last_name, email, phone),
+        show:shows(name),
+        location:locations(name, address, city, state, zip)
+      `)
+      .eq("id", id)
+      .eq("customer_id", customer?.id ?? "00000000-0000-0000-0000-000000000000")
+      .single();
+    contract = data;
+  }
 
   if (!contract) redirect("/portal/dashboard");
 
