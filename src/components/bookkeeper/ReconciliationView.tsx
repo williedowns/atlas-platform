@@ -80,7 +80,13 @@ export default function ReconciliationView({ contracts: _ }: { contracts: unknow
 
   const downloadPdf = () => {
     const p = new URLSearchParams({ dateFrom, dateTo, ...(search ? { search } : {}) });
-    window.open(`/api/bookkeeper/cc-report/pdf?${p}`, "_blank");
+    const url = `/api/bookkeeper/cc-report/pdf?${p}`;
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `deposit-reconciliation-${dateFrom}${dateTo !== dateFrom ? `-to-${dateTo}` : ""}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   };
 
   return (
