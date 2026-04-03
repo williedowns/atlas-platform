@@ -46,9 +46,12 @@ export async function GET(req: Request) {
     );
   }
 
-  // Store tokens in Supabase for persistent access
-  const { createClient } = await import("@/lib/supabase/server");
-  const supabase = await createClient();
+  // Store tokens using service role key (bypasses RLS — callback has no user session)
+  const { createClient } = await import("@supabase/supabase-js");
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
 
   const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
