@@ -11,7 +11,8 @@ export type AuditAction =
   | "user.invited"
   | "customer.created"
   | "cert.uploaded"
-  | "cert.marked_received";
+  | "cert.marked_received"
+  | "contract.refund_marked";
 
 interface LogActionParams {
   userId: string;
