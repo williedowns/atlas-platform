@@ -74,6 +74,7 @@ export async function GET(req: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   type ReportRow = {
     payment_id: string;
+    contract_id: string;
     date: string;
     customer_name: string;
     product_size: string;
@@ -123,6 +124,7 @@ export async function GET(req: Request) {
 
     rows.push({
       payment_id: p.id,
+      contract_id: contract?.id ?? "",
       date: effectiveDate,
       customer_name: customer ? `${customer.first_name} ${customer.last_name}` : "—",
       product_size: productSummary || "—",
@@ -163,6 +165,7 @@ export async function GET(req: Request) {
 
       rows.push({
         payment_id: `fin-${c.id}-${f.financer_name ?? "unknown"}`,
+        contract_id: c.id,
         date: f.applied_at ?? c.created_at,
         customer_name: customer ? `${customer.first_name} ${customer.last_name}` : "—",
         product_size: productSummary || "—",

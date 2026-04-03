@@ -1,11 +1,13 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { formatCurrency } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
 interface TransactionRow {
   payment_id: string;
+  contract_id: string;
   date: string;
   customer_name: string;
   product_size: string;
@@ -185,8 +187,20 @@ export default function ReconciliationView({ contracts: _ }: { contracts: unknow
                     <tr key={row.payment_id} className={i % 2 === 0 ? "bg-white" : "bg-slate-50/50"}>
                       <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{fmtDate(row.date)}</td>
                       <td className="px-4 py-3 whitespace-nowrap">
-                        <p className="font-medium text-slate-900">{row.customer_name}</p>
-                        <p className="text-xs text-slate-400">{row.contract_number}</p>
+                        {row.contract_id ? (
+                          <Link
+                            href={`/contracts/${row.contract_id}`}
+                            className="group block hover:text-[#00929C] transition-colors"
+                          >
+                            <p className="font-medium text-slate-900 group-hover:text-[#00929C]">{row.customer_name}</p>
+                            <p className="text-xs text-slate-400 group-hover:text-[#00929C]/70">{row.contract_number}</p>
+                          </Link>
+                        ) : (
+                          <>
+                            <p className="font-medium text-slate-900">{row.customer_name}</p>
+                            <p className="text-xs text-slate-400">{row.contract_number}</p>
+                          </>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-slate-700 max-w-[180px]">
                         <p className="truncate">{row.product_size}</p>
