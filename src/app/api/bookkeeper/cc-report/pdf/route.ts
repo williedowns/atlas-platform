@@ -70,88 +70,56 @@ export async function GET(req: Request) {
 
   const rows: PdfRow[] = [];
 
-  // Card payments
-  const { data: cardPayments } = await supabase
+  const METHOD_LABEL: Record<string, string> = {
+    credit_card: "Credit Card",
+    debit_card:  "Debit Card",
+    ach:         "ACH",
+    financing:   "Financing",
+    cash:        "Cash",
+    check:       "Check",
+  };
+
+  // Single query for all non-failed payments — mirror the main route exactly
+  // so the PDF always matches what Lori sees on screen.
+  const { data: allPayments } = await supabase
     .from("payments")
-    .select(`id, amount, method, card_brand, card_last4, processed_at, contract:contracts(${contractSelect})`)
-    .in("method", ["credit_card", "debit_card"])
-    .eq("status", "completed")
-    .gte("processed_at", `${dateFrom}T00:00:00`)
-    .lte("processed_at", `${dateTo}T23:59:59`)
-    .order("processed_at", { ascending: true });
+    .select(`id, amount, method, card_brand, card_last4, processed_at, created_at, status, contract:contracts(${contractSelect})`)
+    .not("status", "eq", "failed")
+    .order("created_at", { ascending: true });
+
+  const fromTs = `${dateFrom}T00:00:00`;
+  const toTs   = `${dateTo}T23:59:59`;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  for (const p of (cardPayments ?? []) as any[]) {
+  for (const p of (allPayments ?? []) as any[]) {
+    const effectiveDate: string = p.processed_at ?? p.created_at;
+    if (!effectiveDate || effectiveDate < fromTs || effectiveDate > toTs) continue;
+
     const { customer, salesLocation, productSummary, isFullPayment } = extractFields(p);
+    const contract = Array.isArray(p.contract) ? p.contract[0] : p.contract;
+
+    let provider: string | null = null;
+    if (p.method === "financing") {
+      const finEntries = Array.isArray(contract?.financing) ? contract.financing : [];
+      const match = finEntries.find((f: { deduct_from_balance?: boolean; financer_name?: string }) =>
+        f.deduct_from_balance !== false && f.financer_name
+      );
+      provider = match?.financer_name ?? null;
+    }
+
     rows.push({
-      date: p.processed_at,
+      date: effectiveDate,
       customer_name: customer ? `${customer.first_name} ${customer.last_name}` : "—",
       product_size: productSummary || "—",
       sales_location: salesLocation,
       payment_type: isFullPayment ? "Paid in Full" : "Down Payment",
       amount: p.amount,
-      method_type: p.method === "debit_card" ? "Debit Card" : "Credit Card",
-      card_type: p.card_brand ?? (p.method === "debit_card" ? "Debit" : "Credit"),
-      card_last4: p.card_last4 ?? null,
-      contract_number: (Array.isArray(p.contract) ? p.contract[0] : p.contract)?.contract_number ?? "—",
-      provider: null,
-      is_refund: false,
-    });
-  }
-
-  // ACH payments
-  const { data: achPayments } = await supabase
-    .from("payments")
-    .select(`id, amount, method, card_brand, card_last4, processed_at, contract:contracts(${contractSelect})`)
-    .eq("method", "ach")
-    .in("status", ["completed", "pending"])
-    .gte("processed_at", `${dateFrom}T00:00:00`)
-    .lte("processed_at", `${dateTo}T23:59:59`)
-    .order("processed_at", { ascending: true });
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  for (const p of (achPayments ?? []) as any[]) {
-    const { customer, salesLocation, productSummary, isFullPayment } = extractFields(p);
-    rows.push({
-      date: p.processed_at,
-      customer_name: customer ? `${customer.first_name} ${customer.last_name}` : "—",
-      product_size: productSummary || "—",
-      sales_location: salesLocation,
-      payment_type: isFullPayment ? "Paid in Full" : "Down Payment",
-      amount: p.amount,
-      method_type: "ACH",
-      card_type: null,
-      card_last4: null,
-      contract_number: (Array.isArray(p.contract) ? p.contract[0] : p.contract)?.contract_number ?? "—",
-      provider: null,
-    });
-  }
-
-  // Financing payments (Intuit-processed)
-  const { data: finPayments } = await supabase
-    .from("payments")
-    .select(`id, amount, method, card_brand, card_last4, processed_at, contract:contracts(${contractSelect})`)
-    .eq("method", "financing")
-    .eq("status", "completed")
-    .gte("processed_at", `${dateFrom}T00:00:00`)
-    .lte("processed_at", `${dateTo}T23:59:59`)
-    .order("processed_at", { ascending: true });
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  for (const p of (finPayments ?? []) as any[]) {
-    const { customer, salesLocation, productSummary, isFullPayment } = extractFields(p);
-    rows.push({
-      date: p.processed_at,
-      customer_name: customer ? `${customer.first_name} ${customer.last_name}` : "—",
-      product_size: productSummary || "—",
-      sales_location: salesLocation,
-      payment_type: isFullPayment ? "Paid in Full" : "Down Payment",
-      amount: p.amount,
-      method_type: "Financing",
+      method_type: METHOD_LABEL[p.method] ?? p.method ?? "Unknown",
       card_type: p.card_brand ?? null,
       card_last4: p.card_last4 ?? null,
-      contract_number: (Array.isArray(p.contract) ? p.contract[0] : p.contract)?.contract_number ?? "—",
-      provider: "Financing",
+      contract_number: contract?.contract_number ?? "—",
+      provider,
+      is_refund: false,
     });
   }
 
@@ -198,7 +166,7 @@ export async function GET(req: Request) {
         card_type: null,
         card_last4: null,
         contract_number: c.contract_number ?? "—",
-        provider: f.provider ?? "Financing",
+        provider: f.financer_name ?? f.provider ?? "Financing",
         is_refund: false,
       });
     }
