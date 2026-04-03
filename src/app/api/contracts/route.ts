@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { generateContractNumber } from "@/lib/utils";
 import { createQBOEstimate, createQBOCustomer } from "@/lib/qbo/client";
+import { logAction } from "@/lib/audit";
 
 export async function POST(req: Request) {
   const supabase = await createClient();
@@ -28,7 +29,14 @@ export async function POST(req: Request) {
     payment_method,
     notes,
     customer_signature_url,
+    signed_name,
+    electronic_consent,
+    consent_timestamp,
   } = body;
+
+  // Capture legal metadata for signature defensibility
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() ?? req.headers.get('x-real-ip') ?? 'unknown';
+  const userAgent = req.headers.get('user-agent') ?? 'unknown';
 
   // Ensure customer exists in DB
   let customerId = customer.id;
@@ -86,11 +94,33 @@ export async function POST(req: Request) {
       customer_signature_url,
       signed_at: new Date().toISOString(),
       notes,
+      signature_metadata: {
+        ip_address: ip,
+        user_agent: userAgent,
+        electronic_consent: electronic_consent ?? false,
+        consent_timestamp: consent_timestamp ?? null,
+        signed_name: signed_name ?? null,
+      },
     })
     .select()
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // Fire-and-forget audit log
+  logAction({
+    userId: user.id,
+    action: "contract.created",
+    entityType: "contract",
+    entityId: contract.id,
+    metadata: {
+      contract_number: contract.contract_number,
+      total: contract.total,
+      customer_id: contract.customer_id,
+      status: contract.status,
+    },
+    req,
+  });
 
   // Allocate inventory units if serial numbers provided
   for (const item of line_items) {

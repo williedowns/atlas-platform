@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { logAction } from "@/lib/audit";
 
 export async function POST(req: Request) {
   const supabase = await createClient();
@@ -57,6 +58,20 @@ export async function POST(req: Request) {
       balance_due: Math.max(0, contract.total - financedAtSale - newDepositPaid),
     })
     .eq("id", contract_id);
+
+  // Fire-and-forget audit log
+  logAction({
+    userId: user.id,
+    action: "payment.manual_recorded",
+    entityType: "payment",
+    entityId: payment.id,
+    metadata: {
+      contract_id,
+      amount,
+      method,
+    },
+    req,
+  });
 
   return NextResponse.json({ success: true, payment_id: payment.id, amount_recorded: amount });
 }

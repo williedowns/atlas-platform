@@ -37,6 +37,7 @@ export default function Step5Sign({ onNext }: Step5SignProps) {
 
   const [printedName, setPrintedName] = useState("");
   const [hasSigned, setHasSigned] = useState(false);
+  const [hasConsented, setHasConsented] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -54,7 +55,7 @@ export default function Step5Sign({ onNext }: Step5SignProps) {
     setHasSigned(false);
   };
 
-  const canSubmit = hasSigned && printedName.trim().length > 0 && !isSubmitting;
+  const canSubmit = hasSigned && printedName.trim().length > 0 && hasConsented && !isSubmitting;
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
@@ -103,6 +104,8 @@ export default function Step5Sign({ onNext }: Step5SignProps) {
           customer_signature_url: urlData.publicUrl,
           signed_name: printedName.trim(),
           signed_at: new Date().toISOString(),
+          electronic_consent: true,
+          consent_timestamp: new Date().toISOString(),
         }),
       });
 
@@ -111,6 +114,14 @@ export default function Step5Sign({ onNext }: Step5SignProps) {
         throw new Error(
           body?.error ?? `Contract creation failed (${contractResponse.status})`
         );
+      }
+
+      // Parse response to get contract ID for welcome email
+      const contractData = await contractResponse.json().catch(() => null);
+      if (contractData?.id) {
+        // Fire-and-forget welcome email
+        fetch(`/api/contracts/${contractData.id}/welcome-email`, { method: "POST" })
+          .catch(() => {/* non-fatal */});
       }
 
       onNext();
@@ -169,16 +180,26 @@ export default function Step5Sign({ onNext }: Step5SignProps) {
         </CardContent>
       </Card>
 
-      {/* ── Legal Text ─────────────────────────────────────── */}
-      <Card className="border-[#00929C]/20 bg-[#00929C]/5">
-        <CardContent className="py-4">
-          <p className="text-sm text-slate-700 leading-relaxed">
-            By signing below, I agree to the terms and conditions of this
-            purchase agreement. I authorize a deposit of{" "}
-            <strong>{formatCurrency(depositAmount)}</strong> to be collected
-            today. The remaining balance of{" "}
-            <strong>{formatCurrency(balance)}</strong> is due at delivery.
+      {/* ── Legal Disclosure ── */}
+      <Card className="border-slate-200">
+        <CardContent className="py-4 space-y-3">
+          <p className="text-xs text-slate-600 leading-relaxed">
+            <strong>Electronic Signature Disclosure:</strong> By checking the box below and signing, you agree that your electronic signature is the legal equivalent of your handwritten signature. You consent to conduct this transaction electronically and agree to be bound by the terms of this agreement. This electronic record will be retained and is legally binding under the Electronic Signatures in Global and National Commerce Act (E-SIGN) and the Texas Uniform Electronic Transactions Act (TUETA).
           </p>
+          <p className="text-xs text-slate-600 leading-relaxed">
+            By signing below, I agree to the terms and conditions of this purchase agreement. I authorize a deposit of <strong>{formatCurrency(depositAmount)}</strong> to be collected today. The remaining balance of <strong>{formatCurrency(balance)}</strong> is due at delivery.
+          </p>
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={hasConsented}
+              onChange={(e) => setHasConsented(e.target.checked)}
+              className="mt-0.5 h-5 w-5 rounded border-slate-300 text-[#00929C] accent-[#00929C] cursor-pointer flex-shrink-0"
+            />
+            <span className="text-sm font-medium text-slate-800">
+              I understand and agree that my electronic signature has the same legal effect as a handwritten signature
+            </span>
+          </label>
         </CardContent>
       </Card>
 

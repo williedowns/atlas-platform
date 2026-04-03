@@ -132,6 +132,8 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedLine, setSelectedLine] = useState<string | null>(null);
+  const [lineCollapsed, setLineCollapsed] = useState(false);
+  const [modelCollapsed, setModelCollapsed] = useState(false);
   const [addedFlash, setAddedFlash] = useState<string | null>(null);
   const [showDiscountForm, setShowDiscountForm] = useState(false);
   const [discountType, setDiscountType] = useState<DiscountType>("show_special");
@@ -193,11 +195,18 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
     return () => { if (taxTimeoutRef.current) clearTimeout(taxTimeoutRef.current); };
   }, [calculateTax]);
 
+  function collapseAfterModelAdd() {
+    setModelCollapsed(true);
+    setShowOptions(true);
+  }
+
   function handleAddProduct(product: Product, price: number, waived = false) {
     addLineItem(product, price, waived);
     const flashKey = product.id + "-" + (waived ? "waived" : price);
     setAddedFlash(flashKey);
     setTimeout(() => setAddedFlash(null), 800);
+    // Collapse model list and open add-ons only for main spa products (not add-ons)
+    if (isSpaProduct(product.category ?? "")) collapseAfterModelAdd();
   }
 
   function handleSpaAdd(product: Product, price: number) {
@@ -357,101 +366,154 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
         </Card>
       )}
 
-      {/* Product line picker — grouped by section */}
-      {(["Hot Tubs", "Swim Spas", "Cold Tubs", "Saunas"] as const).map((section) => {
-        const sectionLines = PRODUCT_LINES.filter((l) => l.section === section);
-        const visibleLines = sectionLines.filter((l) =>
-          products.some((p) => l.categories.includes(p.category ?? ""))
-        );
-        if (visibleLines.length === 0) return null;
-        return (
-          <div key={section}>
-            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">{section}</h3>
-            <div className="grid grid-cols-2 gap-3">
-              {visibleLines.map((line) => {
-                const isSelected = selectedLine === line.label;
-                return (
-                  <button
-                    key={line.label}
-                    type="button"
-                    onClick={() => setSelectedLine(isSelected ? null : line.label)}
-                    className={`flex flex-col items-center justify-center p-4 rounded-xl border-2 text-left touch-manipulation transition-all active:scale-[0.98] min-h-[90px] ${
-                      isSelected
-                        ? "border-[#00929C] bg-[#00929C]/8 shadow-sm"
-                        : "border-slate-200 bg-white hover:border-[#00929C]/40"
-                    }`}
-                  >
-                    <img
-                      src={line.logoUrl}
-                      alt={line.label}
-                      className="h-8 w-auto object-contain mb-2"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).style.display = "none";
+      {/* Product line picker — collapsed chip or full grid */}
+      {lineCollapsed && selectedLine ? (
+        <div className="flex items-center gap-3 p-3 rounded-xl border-2 border-[#00929C] bg-[#00929C]/5">
+          {(() => {
+            const activeLine = PRODUCT_LINES.find((l) => l.label === selectedLine);
+            return activeLine ? (
+              <img
+                src={activeLine.logoUrl}
+                alt={activeLine.label}
+                className="h-7 w-auto object-contain flex-shrink-0"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+              />
+            ) : null;
+          })()}
+          <span className="flex-1 text-sm font-semibold text-[#00929C] truncate">{selectedLine}</span>
+          <svg className="w-4 h-4 text-[#00929C] flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+          <button
+            type="button"
+            onClick={() => { setLineCollapsed(false); setModelCollapsed(false); }}
+            className="flex-shrink-0 text-xs font-semibold text-[#00929C] border border-[#00929C]/40 rounded-lg px-3 py-1.5 hover:bg-[#00929C]/10 touch-manipulation"
+          >
+            Change
+          </button>
+        </div>
+      ) : (
+        (["Hot Tubs", "Swim Spas", "Cold Tubs", "Saunas"] as const).map((section) => {
+          const sectionLines = PRODUCT_LINES.filter((l) => l.section === section);
+          const visibleLines = sectionLines.filter((l) =>
+            products.some((p) => l.categories.includes(p.category ?? ""))
+          );
+          if (visibleLines.length === 0) return null;
+          return (
+            <div key={section}>
+              <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">{section}</h3>
+              <div className="grid grid-cols-2 gap-3">
+                {visibleLines.map((line) => {
+                  const isSelected = selectedLine === line.label;
+                  return (
+                    <button
+                      key={line.label}
+                      type="button"
+                      onClick={() => {
+                        if (isSelected) {
+                          setSelectedLine(null);
+                          setLineCollapsed(false);
+                          setModelCollapsed(false);
+                        } else {
+                          setSelectedLine(line.label);
+                          setLineCollapsed(true);
+                          setModelCollapsed(false);
+                        }
                       }}
-                    />
-                    <span className={`text-xs font-semibold text-center leading-tight ${isSelected ? "text-[#00929C]" : "text-slate-600"}`}>
-                      {line.label}
-                    </span>
-                  </button>
-                );
-              })}
+                      className={`flex flex-col items-center justify-center p-4 rounded-xl border-2 text-left touch-manipulation transition-all active:scale-[0.98] min-h-[90px] ${
+                        isSelected
+                          ? "border-[#00929C] bg-[#00929C]/8 shadow-sm"
+                          : "border-slate-200 bg-white hover:border-[#00929C]/40"
+                      }`}
+                    >
+                      <img
+                        src={line.logoUrl}
+                        alt={line.label}
+                        className="h-8 w-auto object-contain mb-2"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = "none";
+                        }}
+                      />
+                      <span className={`text-xs font-semibold text-center leading-tight ${isSelected ? "text-[#00929C]" : "text-slate-600"}`}>
+                        {line.label}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        );
-      })}
+          );
+        })
+      )}
 
-      {/* Models for selected line */}
+      {/* Models for selected line — collapsed chip or full list */}
       {selectedLine && lineProducts.length > 0 && (
-        <div>
-          <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">
-            {selectedLine} — Select Model
-          </h3>
-          <div className="space-y-4">
-            {Object.entries(groupedLine).map(([cat, catProducts]) => (
-              <div key={cat}>
-                {Object.keys(groupedLine).length > 1 && (
-                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">{cat}</p>
-                )}
-                <div className="space-y-2">
-                  {catProducts.map((product) => (
-                    <div key={product.id} className="flex items-center justify-between gap-3 p-4 rounded-xl border border-slate-200 bg-white">
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-slate-900">{product.name}</p>
-                        {product.sku && <p className="text-xs text-slate-400 mt-0.5">{product.sku}</p>}
-                      </div>
-                      <div className="flex gap-2 flex-shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => handleSpaAdd(product, product.msrp)}
-                          className={`h-11 px-4 rounded-lg text-sm font-bold transition-all touch-manipulation active:scale-[0.97] ${
-                            addedFlash === product.id + "-" + product.msrp
-                              ? "bg-emerald-500 text-white"
-                              : "bg-[#00929C] text-white hover:bg-[#007279]"
-                          }`}
-                        >
-                          {addedFlash === product.id + "-" + product.msrp ? "✓" : formatCurrency(product.msrp)}
-                        </button>
-                        {product.floor_price != null && product.floor_price > 0 && (
+        modelCollapsed ? (
+          <div className="flex items-center gap-3 p-3 rounded-xl border-2 border-emerald-400 bg-emerald-50">
+            <svg className="w-5 h-5 text-emerald-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+            <span className="flex-1 text-sm font-semibold text-emerald-700">Model added to cart</span>
+            <button
+              type="button"
+              onClick={() => setModelCollapsed(false)}
+              className="flex-shrink-0 text-xs font-semibold text-emerald-700 border border-emerald-400 rounded-lg px-3 py-1.5 hover:bg-emerald-100 touch-manipulation"
+            >
+              Change
+            </button>
+          </div>
+        ) : (
+          <div>
+            <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">
+              {selectedLine} — Select Model
+            </h3>
+            <div className="space-y-4">
+              {Object.entries(groupedLine).map(([cat, catProducts]) => (
+                <div key={cat}>
+                  {Object.keys(groupedLine).length > 1 && (
+                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">{cat}</p>
+                  )}
+                  <div className="space-y-2">
+                    {catProducts.map((product) => (
+                      <div key={product.id} className="flex items-center justify-between gap-3 p-4 rounded-xl border border-slate-200 bg-white">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold text-slate-900">{product.name}</p>
+                          {product.sku && <p className="text-xs text-slate-400 mt-0.5">{product.sku}</p>}
+                        </div>
+                        <div className="flex gap-2 flex-shrink-0">
                           <button
                             type="button"
-                            onClick={() => handleSpaAdd(product, product.floor_price!)}
+                            onClick={() => handleSpaAdd(product, product.msrp)}
                             className={`h-11 px-4 rounded-lg text-sm font-bold transition-all touch-manipulation active:scale-[0.97] ${
-                              addedFlash === product.id + "-" + product.floor_price
+                              addedFlash === product.id + "-" + product.msrp
                                 ? "bg-emerald-500 text-white"
-                                : "bg-slate-700 text-white hover:bg-slate-800"
+                                : "bg-[#00929C] text-white hover:bg-[#007279]"
                             }`}
                           >
-                            {addedFlash === product.id + "-" + product.floor_price ? "✓" : `Floor ${formatCurrency(product.floor_price)}`}
+                            {addedFlash === product.id + "-" + product.msrp ? "✓" : formatCurrency(product.msrp)}
                           </button>
-                        )}
+                          {product.floor_price != null && product.floor_price > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => handleSpaAdd(product, product.floor_price!)}
+                              className={`h-11 px-4 rounded-lg text-sm font-bold transition-all touch-manipulation active:scale-[0.97] ${
+                                addedFlash === product.id + "-" + product.floor_price
+                                  ? "bg-emerald-500 text-white"
+                                  : "bg-slate-700 text-white hover:bg-slate-800"
+                              }`}
+                            >
+                              {addedFlash === product.id + "-" + product.floor_price ? "✓" : `Floor ${formatCurrency(product.floor_price)}`}
+                            </button>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
+        )
       )}
 
       {/* Add-ons toggle */}
@@ -660,6 +722,7 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
             setAddedFlash(flashKey);
             setTimeout(() => setAddedFlash(null), 800);
             setPickerProduct(null);
+            collapseAfterModelAdd();
           }}
           onSkip={(shell, cabinet) => {
             const { product, price } = pickerProduct;
@@ -668,6 +731,7 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
             setAddedFlash(flashKey);
             setTimeout(() => setAddedFlash(null), 800);
             setPickerProduct(null);
+            collapseAfterModelAdd();
           }}
           onClose={() => setPickerProduct(null)}
         />

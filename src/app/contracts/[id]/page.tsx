@@ -43,11 +43,32 @@ export default async function ContractDetailPage({
 
   if (!contract) notFound();
 
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+
+  const canViewAudit = ["admin", "manager", "bookkeeper"].includes(profile?.role ?? "");
+
   const { data: payments } = await supabase
     .from("payments")
     .select("*")
     .eq("contract_id", id)
     .order("created_at");
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let auditLogs: any[] = [];
+  if (canViewAudit) {
+    const { data } = await supabase
+      .from("audit_logs")
+      .select("action, metadata, ip_address, created_at, user:profiles(full_name)")
+      .eq("entity_type", "contract")
+      .eq("entity_id", id)
+      .order("created_at", { ascending: false })
+      .limit(10);
+    auditLogs = data ?? [];
+  }
 
   const lineItems = Array.isArray(contract.line_items) ? contract.line_items : [];
   const discounts = Array.isArray(contract.discounts) ? contract.discounts : [];
@@ -273,6 +294,44 @@ export default async function ContractDetailPage({
             />
           )}
         </div>
+
+        {/* Audit Trail (admin/manager/bookkeeper only) */}
+        {canViewAudit && auditLogs.length > 0 && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle>Audit Trail</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <ul className="divide-y divide-slate-100">
+                {auditLogs.map((log, i) => (
+                  <li key={i} className="px-4 py-3">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="text-sm font-medium text-slate-900">
+                          {log.action.replace(/\./g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          {(Array.isArray(log.user) ? log.user[0]?.full_name : log.user?.full_name) ?? "System"}
+                          {log.ip_address ? ` from ${log.ip_address}` : ""}
+                        </p>
+                        {log.metadata && Object.keys(log.metadata).length > 0 && (
+                          <p className="text-xs text-slate-400 mt-1">
+                            {Object.entries(log.metadata)
+                              .map(([k, v]) => `${k.replace(/_/g, " ")}: ${v}`)
+                              .join(" | ")}
+                          </p>
+                        )}
+                      </div>
+                      <span className="text-xs text-slate-400 whitespace-nowrap ml-2">
+                        {formatDate(log.created_at)}
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        )}
       </main>
     </div>
   );

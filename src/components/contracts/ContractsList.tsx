@@ -67,11 +67,43 @@ export function ContractsList({
   const [filter, setFilter] = useState<FilterType>(initialFilter);
 
   const matchesSearch = (c: ContractRow) => {
+    if (!search) return true;
     const q = search.toLowerCase();
+    // Strip currency symbols and punctuation for money matching
+    const qMoney = q.replace(/[$,.\s]/g, "");
+    // Strip non-digits for phone matching
+    const qPhone = q.replace(/\D/g, "");
+
+    const has = (val: unknown) =>
+      val != null && String(val).toLowerCase().includes(q);
+    const hasMoney = (val: unknown) =>
+      val != null && qMoney.length > 0 && String(val).replace(/[$,.]/g, "").includes(qMoney);
+    const hasPhone = (val: unknown) =>
+      qPhone.length >= 3 && val != null && String(val).replace(/\D/g, "").includes(qPhone);
+
     return (
-      !q ||
-      c.contract_number.toLowerCase().includes(q) ||
-      `${c.customer?.first_name} ${c.customer?.last_name}`.toLowerCase().includes(q)
+      has(c.contract_number) ||
+      has(`${c.customer?.first_name} ${c.customer?.last_name}`) ||
+      has(c.customer?.phone) ||
+      hasPhone(c.customer?.phone) ||
+      has(c.customer?.email) ||
+      has(c.customer?.address) ||
+      has(c.customer?.city) ||
+      has(c.customer?.state) ||
+      has(c.customer?.zip) ||
+      has(c.show?.name) ||
+      has(c.location?.name) ||
+      has(c.notes) ||
+      has(c.payment_method?.replace(/_/g, " ")) ||
+      has(STATUS_LABELS[c.status] ?? c.status) ||
+      hasMoney(c.total) ||
+      hasMoney(c.subtotal) ||
+      hasMoney(c.deposit_paid) ||
+      hasMoney(c.balance_due) ||
+      hasMoney(c.discount_total) ||
+      // Search product names inside line items JSONB
+      (Array.isArray(c.line_items) &&
+        c.line_items.some((item: Record<string, unknown>) => has(item.product_name)))
     );
   };
 
@@ -161,7 +193,7 @@ export function ContractsList({
       {/* Search */}
       <div className="p-4 bg-white border-b border-slate-200">
         <Input
-          placeholder="Search by name or contract #..."
+          placeholder="Search by name, phone, email, amount, product..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
