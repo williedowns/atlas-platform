@@ -9,10 +9,14 @@ export async function GET(request: Request) {
 
   const supabase = await createClient();
 
-  // ── PKCE OAuth code flow (GitHub, etc.) ──────────────────────────────────
+  // ── PKCE OAuth code flow (GitHub, OAuth, and password recovery) ──────────
   if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
+      // Recovery and invite both need the user to set a password
+      if (type === "recovery" || type === "invite") {
+        return NextResponse.redirect(`${origin}/auth/set-password`);
+      }
       return NextResponse.redirect(`${origin}/dashboard`);
     }
   }
