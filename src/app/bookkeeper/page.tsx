@@ -43,16 +43,19 @@ export default async function BookkeeperPage() {
   const contracts = (contractsRaw ?? []) as any[];
 
   // ── Cancelled contracts with deposits pending refund ──
+  // Include payments join so we catch contracts where deposit_paid wasn't updated
+  // on the contract row (e.g. payment stuck in "processing" status) but money was
+  // actually collected. Filter to non-failed payments so test/voided records don't count.
   const { data: cancelledWithDeposits } = await supabase
     .from("contracts")
     .select(`
       id, contract_number, notes, deposit_paid, created_at, line_items,
       customer:customers(first_name, last_name),
       show:shows(name),
-      location:locations(name)
+      location:locations(name),
+      payments(id, amount, status, method)
     `)
     .eq("status", "cancelled")
-    .gt("deposit_paid", 0)
     .order("created_at", { ascending: false })
     .limit(100);
 

@@ -7,11 +7,24 @@ import { formatCurrency } from "@/lib/utils";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type CancelledContract = Record<string, any>;
 
-function parseRefundAmount(notes: string | null, depositPaid: number): number {
-  if (!notes) return depositPaid;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function getEffectiveDeposit(c: Record<string, any>): number {
+  // Prefer the contract-level deposit_paid field when it's populated.
+  // Fall back to summing non-failed payment records — this catches contracts
+  // where deposit_paid wasn't updated due to a payment stuck in "processing".
+  if ((c.deposit_paid ?? 0) > 0) return c.deposit_paid as number;
+  const payments: { amount: number; status: string }[] = Array.isArray(c.payments) ? c.payments : [];
+  const collected = payments
+    .filter((p) => p.status !== "failed")
+    .reduce((sum, p) => sum + (p.amount ?? 0), 0);
+  return collected;
+}
+
+function parseRefundAmount(notes: string | null, effectiveDeposit: number): number {
+  if (!notes) return effectiveDeposit;
   const match = notes.match(/Refund of \$([0-9,]+\.?[0-9]*)/);
-  if (!match) return depositPaid;
-  return parseFloat(match[1].replace(/,/g, "")) || depositPaid;
+  if (!match) return effectiveDeposit;
+  return parseFloat(match[1].replace(/,/g, "")) || effectiveDeposit;
 }
 
 function parseCancelledDate(notes: string | null, createdAt: string): string {
@@ -35,11 +48,13 @@ export default function CancellationRefundTracker({
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(true);
 
-  // Merge server-side processed state with optimistic local updates
-  const pending = contracts.filter(
+  // Only show contracts where money was actually collected (deposit_paid OR payments)
+  // and where the refund hasn't been processed yet.
+  const withDeposits = contracts.filter((c) => getEffectiveDeposit(c) > 0);
+  const pending = withDeposits.filter(
     (c) => !isProcessed(c.notes) && !localState[c.id]
   );
-  const done = contracts.length - pending.length;
+  const done = withDeposits.length - pending.length;
 
   const handleMarkRefunded = async (contractId: string) => {
     setLoadingId(contractId);
@@ -55,8 +70,8 @@ export default function CancellationRefundTracker({
     }
   };
 
-  // ── All clear state ──
-  if (contracts.length === 0) return null;
+  // ── Nothing to show ──
+  if (withDeposits.length === 0) return null;
 
   if (pending.length === 0) {
     return (
@@ -68,7 +83,7 @@ export default function CancellationRefundTracker({
         </div>
         <div>
           <p className="font-semibold text-emerald-800 text-sm">All cancellation refunds processed</p>
-          <p className="text-xs text-emerald-600 mt-0.5">{done} refund{done !== 1 ? "s" : ""} marked as issued in QuickBooks</p>
+          <p className="text-xs text-emerald-600 mt-0.5">{withDeposits.length} refund{withDeposits.length !== 1 ? "s" : ""} marked as issued in QuickBooks</p>
         </div>
       </div>
     );
@@ -122,7 +137,8 @@ export default function CancellationRefundTracker({
                   li.quantity && li.quantity > 1 ? `${li.product_name} (x${li.quantity})` : li.product_name
                 )
                 .join(", ") || "—";
-              const refundAmount = parseRefundAmount(c.notes, c.deposit_paid ?? 0);
+              const effectiveDeposit = getEffectiveDeposit(c);
+              const refundAmount = parseRefundAmount(c.notes, effectiveDeposit);
               const cancelDate = parseCancelledDate(c.notes, c.created_at);
 
               // Extract the cancellation reason from notes
@@ -155,8 +171,8 @@ export default function CancellationRefundTracker({
                     <div className="flex flex-col items-end gap-2 flex-shrink-0">
                       <div className="text-right">
                         <p className="text-xs text-slate-400">Deposit paid</p>
-                        <p className="font-bold text-slate-900">{formatCurrency(c.deposit_paid ?? 0)}</p>
-                        {refundAmount !== c.deposit_paid && (
+                        <p className="font-bold text-slate-900">{formatCurrency(effectiveDeposit)}</p>
+                        {refundAmount !== effectiveDeposit && (
                           <p className="text-xs text-amber-600 font-medium">
                             Refund: {formatCurrency(refundAmount)}
                           </p>
