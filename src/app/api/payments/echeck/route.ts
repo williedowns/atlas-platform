@@ -103,7 +103,7 @@ export async function POST(req: Request) {
 
   logAction({
     userId: user.id,
-    action: "payment.echeck_submitted",
+    action: "payment.collected",
     entityType: "payment",
     entityId: payment.id,
     metadata: {
