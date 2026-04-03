@@ -211,9 +211,14 @@ export default async function AnalyticsPage({
   // ── Locations breakdown ──────────────────────────────────────────────────────
   const locMap = new Map<string, { name: string; type: string; count: number; revenue: number }>();
   for (const c of rows) {
-    const locId = (c.location as { id?: string } | null)?.id ?? "unknown";
-    const locName = (c.location as { name?: string } | null)?.name ?? "Unknown";
-    const locType = (c.location as { type?: string } | null)?.type ?? "store";
+    // Contracts sold at a show have show_id but no location_id — fall back to show name
+    const locId = (c.location as { id?: string } | null)?.id
+      ?? `show-${(c.show as { id?: string } | null)?.id ?? "none"}`;
+    const locName = (c.location as { name?: string } | null)?.name
+      ?? (c.show as { name?: string } | null)?.name
+      ?? "Unknown";
+    const locType = (c.location as { type?: string } | null)?.type
+      ?? ((c.show as { id?: string } | null)?.id ? "show" : "store");
     const existing = locMap.get(locId) ?? { name: locName, type: locType, count: 0, revenue: 0 };
     existing.count += 1;
     existing.revenue += c.total ?? 0;
