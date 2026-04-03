@@ -42,6 +42,8 @@ export function CollectPaymentForm({
   const [amountInput, setAmountInput] = useState(balanceDue.toFixed(2));
   const [checkNumber, setCheckNumber] = useState("");
   const [bankName, setBankName] = useState("");
+  const [lastFour, setLastFour] = useState("");
+  const [cardConfirmed, setCardConfirmed] = useState(false);
   const [state, setState] = useState<PaymentState>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [amountCollected, setAmountCollected] = useState(0);
@@ -54,6 +56,7 @@ export function CollectPaymentForm({
       : 0;
   const totalToCharge = amount + surchargeAmount;
   const isCard = method === "credit_card" || method === "debit_card";
+  const cardReady = !isCard || (lastFour.length === 4 && cardConfirmed);
 
   const handleAmountBlur = () => {
     setAmountInput(amount.toFixed(2));
@@ -66,7 +69,7 @@ export function CollectPaymentForm({
 
     // All payments recorded manually — card tokenization via Intuit SDK handled separately
     const endpoint = "/api/payments/record-manual";
-    const body = { contract_id: contractId, amount, method, check_number: checkNumber || undefined, bank_name: bankName || undefined };
+    const body = { contract_id: contractId, amount, method, check_number: checkNumber || undefined, bank_name: bankName || undefined, last_four: lastFour || undefined };
 
     const res = await fetch(endpoint, {
       method: "POST",
@@ -190,7 +193,7 @@ export function CollectPaymentForm({
               <button
                 key={m.value}
                 type="button"
-                onClick={() => setMethod(m.value)}
+                onClick={() => { setMethod(m.value); setLastFour(""); setCardConfirmed(false); }}
                 className={`h-14 rounded-full text-base font-semibold transition-all touch-manipulation ${
                   method === m.value
                     ? "bg-[#00929C] text-white shadow-md"
@@ -203,6 +206,38 @@ export function CollectPaymentForm({
           </div>
         </CardContent>
       </Card>
+
+      {/* Card fields */}
+      {isCard && (
+        <Card>
+          <CardContent className="py-5 space-y-4">
+            <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3">
+              <p className="text-sm font-semibold text-amber-800">Charge the card on your terminal first</p>
+              <p className="text-xs text-amber-700 mt-0.5">Enter the last 4 digits and confirm below after the terminal approves.</p>
+            </div>
+            <Input
+              label="Last 4 digits of card *"
+              type="tel"
+              inputMode="numeric"
+              maxLength={4}
+              value={lastFour}
+              onChange={(e) => setLastFour(e.target.value.replace(/\D/g, "").slice(0, 4))}
+              placeholder="1234"
+            />
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={cardConfirmed}
+                onChange={(e) => setCardConfirmed(e.target.checked)}
+                className="w-5 h-5 rounded accent-[#00929C]"
+              />
+              <span className="text-sm font-medium text-slate-700">
+                Card was successfully charged on terminal
+              </span>
+            </label>
+          </CardContent>
+        </Card>
+      )}
 
       {/* ACH fields */}
       {method === "ach" && (
@@ -241,7 +276,7 @@ export function CollectPaymentForm({
         variant="success"
         size="xl"
         className="w-full text-lg"
-        disabled={amount <= 0 || state === "processing"}
+        disabled={amount <= 0 || state === "processing" || !cardReady}
         onClick={handleSubmit}
       >
         {state === "processing"
