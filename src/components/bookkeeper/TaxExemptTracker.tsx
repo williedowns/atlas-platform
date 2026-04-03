@@ -41,6 +41,7 @@ export default function TaxExemptTracker({ contracts }: { contracts: ContractRow
   const [certState, setCertState] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
   const [expanded, setExpanded] = useState(true);
+  const [search, setSearch] = useState("");
 
   // Merge local toggle state with server data
   const getReceived = (c: ContractRow) =>
@@ -71,6 +72,26 @@ export default function TaxExemptTracker({ contracts }: { contracts: ContractRow
     // Within same tier, sort by deadline ascending
     return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
   });
+
+  const filtered = search.trim()
+    ? sorted.filter((c) => {
+        const q = search.toLowerCase().trim();
+        const name = `${c.customer?.first_name ?? ""} ${c.customer?.last_name ?? ""}`.toLowerCase();
+        const phone = (c.customer?.phone ?? "").toLowerCase().replace(/\D/g, "");
+        const email = (c.customer?.email ?? "").toLowerCase();
+        const contractNum = (c.contract_number ?? "").toLowerCase();
+        const amount = String(c.total ?? "");
+        const deposit = String(c.deposit_paid ?? "");
+        return (
+          name.includes(q) ||
+          phone.includes(q.replace(/\D/g, "")) ||
+          email.includes(q) ||
+          contractNum.includes(q) ||
+          amount.includes(q) ||
+          deposit.includes(q)
+        );
+      })
+    : sorted;
 
   const overdueCount = sorted.filter((c) => getCertStatus({ ...c, tax_exempt_cert_received: getReceived(c) }).color === "red").length;
   const dueSoonCount = sorted.filter((c) => getCertStatus({ ...c, tax_exempt_cert_received: getReceived(c) }).color === "amber").length;
@@ -110,6 +131,17 @@ export default function TaxExemptTracker({ contracts }: { contracts: ContractRow
 
       {expanded && (
         <>
+          {/* Search */}
+          <div className="px-4 py-2.5 border-t border-slate-100 bg-slate-50">
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by name, contract #, phone, email, or amount…"
+              className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#00929C]/40 placeholder:text-slate-400"
+            />
+          </div>
+
           {/* Column headers */}
           <div className="grid grid-cols-12 gap-1 px-4 py-2 bg-slate-50 border-t border-b border-slate-100 text-xs font-semibold uppercase tracking-wide text-slate-400">
             <div className="col-span-4">Customer</div>
@@ -120,10 +152,12 @@ export default function TaxExemptTracker({ contracts }: { contracts: ContractRow
           </div>
 
           <div className="divide-y divide-slate-100">
-            {sorted.length === 0 ? (
-              <p className="px-4 py-6 text-sm text-slate-400 text-center">No contracts to track.</p>
+            {filtered.length === 0 ? (
+              <p className="px-4 py-6 text-sm text-slate-400 text-center">
+                {search ? "No customers match your search." : "No contracts to track."}
+              </p>
             ) : (
-              sorted.map((c) => {
+              filtered.map((c) => {
                 const received = getReceived(c);
                 const status = getCertStatus({ ...c, tax_exempt_cert_received: received });
                 const isLoading = !!loading[c.id];
