@@ -9,9 +9,9 @@ function getBaseUrl() {
 }
 
 async function paymentsFetch(path: string, options: RequestInit = {}) {
-  // Intuit Payments uses the same OAuth token as QBO
-  const token = process.env.QBO_ACCESS_TOKEN;
-  if (!token) throw new Error("QBO_ACCESS_TOKEN not configured");
+  // Intuit Payments uses the same OAuth token as QBO accounting
+  const { getQBOAccessToken } = await import("@/lib/qbo/client");
+  const token = await getQBOAccessToken();
 
   const res = await fetch(`${getBaseUrl()}${path}`, {
     ...options,
