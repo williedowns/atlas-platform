@@ -46,16 +46,30 @@ export async function GET(req: Request) {
     );
   }
 
-  // In production: store tokens in database (encrypted)
-  // For now: log them for manual .env update
-  console.log("QBO Tokens received:", {
-    access_token: tokens.access_token,
-    refresh_token: tokens.refresh_token,
-    realm_id: realmId,
-    expires_in: tokens.expires_in,
-  });
+  // Store tokens in Supabase for persistent access
+  const { createClient } = await import("@/lib/supabase/server");
+  const supabase = await createClient();
 
-  // TODO: Store in Supabase qbo_tokens table (encrypted) and auto-refresh
+  const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
+
+  const { error: upsertError } = await supabase
+    .from("qbo_tokens")
+    .upsert({
+      id: 1, // single-row table
+      realm_id: realmId,
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
+      expires_at: expiresAt,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "id" });
+
+  if (upsertError) {
+    console.error("Failed to store QBO tokens:", upsertError);
+    return NextResponse.redirect(
+      `${process.env.NEXT_PUBLIC_APP_URL}/admin?qbo_error=token_storage_failed`
+    );
+  }
+
   return NextResponse.redirect(
     `${process.env.NEXT_PUBLIC_APP_URL}/admin?qbo=connected`
   );

@@ -9,16 +9,47 @@ function getBaseUrl() {
 }
 
 export async function getQBOAccessToken(): Promise<string> {
-  // Token is refreshed server-side and stored in DB/env
-  // For now return from env; in production use token refresh flow
-  const token = process.env.QBO_ACCESS_TOKEN;
-  if (!token) throw new Error("QBO_ACCESS_TOKEN not configured");
-  return token;
+  const { createClient } = await import("@/lib/supabase/server");
+  const supabase = await createClient();
+
+  const { data: row } = await supabase
+    .from("qbo_tokens")
+    .select("access_token, refresh_token, expires_at")
+    .eq("id", 1)
+    .single();
+
+  if (!row) throw new Error("QuickBooks is not connected. Go to Admin to connect QuickBooks.");
+
+  // Refresh if expired (with 5-minute buffer)
+  const expiresAt = new Date(row.expires_at).getTime();
+  if (Date.now() > expiresAt - 5 * 60 * 1000) {
+    const refreshed = await refreshQBOToken(row.refresh_token);
+    if (!refreshed.access_token) throw new Error("QBO token refresh failed — reconnect QuickBooks in Admin.");
+
+    await supabase.from("qbo_tokens").update({
+      access_token: refreshed.access_token,
+      refresh_token: refreshed.refresh_token ?? row.refresh_token,
+      expires_at: new Date(Date.now() + refreshed.expires_in * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    }).eq("id", 1);
+
+    return refreshed.access_token;
+  }
+
+  return row.access_token;
+}
+
+export async function getQBORealmId(): Promise<string> {
+  const { createClient } = await import("@/lib/supabase/server");
+  const supabase = await createClient();
+  const { data: row } = await supabase.from("qbo_tokens").select("realm_id").eq("id", 1).single();
+  if (!row?.realm_id) throw new Error("QuickBooks not connected");
+  return row.realm_id;
 }
 
 async function qboFetch(path: string, options: RequestInit = {}) {
   const token = await getQBOAccessToken();
-  const realmId = process.env.QBO_REALM_ID;
+  const realmId = await getQBORealmId();
   const baseUrl = getBaseUrl();
 
   const res = await fetch(`${baseUrl}/${realmId}${path}`, {
