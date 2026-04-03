@@ -61,16 +61,15 @@ export default async function BookkeeperPage() {
 
   // Fetch payments for all cancelled contracts in one query
   const cancelledIds = cancelledContracts.map((c) => c.id);
-  const { data: cancelledPaymentsRaw } = cancelledIds.length > 0
-    ? await supabase
-        .from("payments")
-        .select("id, contract_id, amount, status, method")
-        .in("contract_id", cancelledIds)
-        .neq("status", "failed")
-    : { data: [] };
-
-  // Attach payments array to each contract
-  const cancelledPayments = (cancelledPaymentsRaw ?? []) as any[];
+  let cancelledPayments: any[] = [];
+  if (cancelledIds.length > 0) {
+    const { data: cancelledPaymentsRaw } = await supabase
+      .from("payments")
+      .select("id, contract_id, amount, status, method")
+      .in("contract_id", cancelledIds)
+      .neq("status", "failed");
+    cancelledPayments = (cancelledPaymentsRaw ?? []) as any[];
+  }
   const cancelledWithDeposits = cancelledContracts.map((c) => ({
     ...c,
     payments: cancelledPayments.filter((p) => p.contract_id === c.id),
