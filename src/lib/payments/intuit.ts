@@ -40,6 +40,7 @@ export interface ChargeParams {
   // Card present (reader)
   card_present_token?: string;
   description?: string;
+  customerName?: string;  // shows in Intuit merchant portal transaction list
   capture?: boolean; // true = charge immediately
   context?: {
     mobile?: boolean;
@@ -69,6 +70,7 @@ export interface TokenizeCardParams {
   expMonth: number;
   expYear: number;  // 4-digit
   cvc: string;
+  name?: string;    // cardholder name — shows in Intuit merchant portal
   postalCode?: string;
 }
 
@@ -79,6 +81,7 @@ export async function createToken(card: TokenizeCardParams): Promise<string> {
       expMonth: String(card.expMonth).padStart(2, "0"),
       expYear: card.expYear,
       cvc: card.cvc,
+      ...(card.name ? { name: card.name } : {}),
       ...(card.postalCode ? { address: { postalCode: card.postalCode } } : {}),
     },
   };
@@ -135,6 +138,7 @@ export async function createCharge(params: ChargeParams): Promise<ChargeResult> 
     currency: params.currency ?? "USD",
     capture: params.capture ?? true,
     description: params.description,
+    ...(params.customerName ? { customerName: params.customerName } : {}),
     context: {
       mobile: params.context?.mobile ?? true,
       isEcommerce: params.context?.isEcommerce ?? false,

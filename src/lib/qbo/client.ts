@@ -172,6 +172,7 @@ export async function createQBODepositInvoice(params: {
   qbo_customer_id: string;
   deposit_amount: number;
   contract_number: string;
+  customer_name?: string;      // shown on invoice and in QBO customer activity
   class_id?: string;           // QBO Class tracking (optional)
   department_id?: string;      // QBO Location (Department) for tax allocation
   deposit_account_id?: string; // Per-location bank account override
@@ -185,6 +186,7 @@ export async function createQBODepositInvoice(params: {
     body: JSON.stringify({
       DocNumber: `DEP-${params.contract_number}`,
       CustomerRef: { value: params.qbo_customer_id },
+      CustomerMemo: { value: `Deposit — Contract ${params.contract_number}${params.customer_name ? ` — ${params.customer_name}` : ""}` },
       Line: [
         {
           Amount: params.deposit_amount,

@@ -90,6 +90,10 @@ export async function POST(req: Request) {
     .select()
     .single();
 
+  // Build customer name from contract customer for Intuit merchant portal
+  const customerFullName = [contract.customer?.first_name, contract.customer?.last_name]
+    .filter(Boolean).join(" ") || undefined;
+
   if (method === "credit_card" || method === "debit_card" || method === "financing") {
     // Tokenize raw card fields if no pre-existing token provided
     let resolvedToken = card_token ?? card_present_token;
@@ -100,6 +104,7 @@ export async function POST(req: Request) {
           expMonth: Number(card_exp_month),
           expYear: Number(card_exp_year),
           cvc: String(card_cvc),
+          name: customerFullName,
           postalCode: card_postal_code ? String(card_postal_code) : undefined,
         });
       } catch (err) {
@@ -123,6 +128,7 @@ export async function POST(req: Request) {
         amount: totalCharge,
         card_token: resolvedToken,
         description: `Atlas Spas Deposit - ${contract.contract_number}`,
+        customerName: customerFullName,
         capture: true,
         context: { mobile: true, isEcommerce: false },
       });
@@ -173,6 +179,7 @@ export async function POST(req: Request) {
           qbo_customer_id: contract.customer.qbo_customer_id,
           deposit_amount: amount,
           contract_number: contract.contract_number,
+          customer_name: customerFullName,
           deposit_account_id: contract.location?.qbo_deposit_account_id ?? undefined,
           department_id: contract.location?.qbo_department_id ?? undefined,
         });
