@@ -34,9 +34,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Use your account settings to change your own password" }, { status: 400 });
   }
 
-  // 3. Set the password via admin SDK (bypasses email confirmation)
+  // 3. Set the password AND force-confirm the email so they can sign in immediately
   const admin = createAdminClient();
-  const { error } = await admin.auth.admin.updateUserById(userId, { password });
+  const { error } = await admin.auth.admin.updateUserById(userId, {
+    password,
+    email_confirm: true,
+  });
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
