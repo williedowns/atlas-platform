@@ -1,5 +1,26 @@
 export const dynamic = "force-dynamic";
+import type { Metadata } from "next";
 import Link from "next/link";
+
+export const metadata: Metadata = {
+  title: "Salta — The modern sales platform for hot tub dealers",
+  description:
+    "Digital contracts, instant financing, and real-time analytics — all from an iPad. Built for high-volume hot tub show sales.",
+  openGraph: {
+    title: "Salta — The modern sales platform for hot tub dealers",
+    description:
+      "Digital contracts, instant financing, and real-time analytics — all from an iPad. Close deals faster at every show.",
+    url: "https://www.getsalta.com",
+    siteName: "Salta",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Salta — The modern sales platform for hot tub dealers",
+    description:
+      "Digital contracts, instant financing, and real-time analytics — all from an iPad. Close deals faster at every show.",
+  },
+};
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
