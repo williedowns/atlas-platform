@@ -7,10 +7,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SyncProductsButton } from "@/components/admin/SyncProductsButton";
 import { PingButton } from "@/components/admin/PingButton";
-import { InviteUserButton } from "@/components/admin/InviteUserButton";
-import { UserRoleEditor } from "@/components/admin/UserRoleEditor";
-import { GetLoginLinkButton } from "@/components/admin/GetLoginLinkButton";
-import { SetPasswordButton } from "@/components/admin/SetPasswordButton";
 
 
 export default async function AdminPage() {
@@ -26,10 +22,10 @@ export default async function AdminPage() {
 
   if (profile?.role !== "admin") redirect("/dashboard");
 
-  const [{ count: productCount }, { data: locations }, { data: profiles }, { data: qboToken }] = await Promise.all([
+  const [{ count: productCount }, { data: locations }, { count: userCount }, { data: qboToken }] = await Promise.all([
     supabase.from("products").select("*", { count: "exact", head: true }),
     supabase.from("locations").select("*").order("type").order("name"),
-    supabase.from("profiles").select("*").order("full_name"),
+    supabase.from("profiles").select("*", { count: "exact", head: true }),
     supabase.from("qbo_tokens").select("id").eq("id", 1).single(),
   ]);
 
@@ -165,43 +161,19 @@ export default async function AdminPage() {
         </Card>
 
         {/* Users */}
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle>Users ({profiles?.length ?? 0})</CardTitle>
-              <InviteUserButton />
-            </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            <ul className="divide-y divide-slate-100">
-              {profiles?.map((p) => (
-                <li key={p.id} className="px-4 py-3 flex items-center justify-between">
-                  <div>
-                    <p className="font-medium text-slate-900">{p.full_name}</p>
-                    <p className="text-xs text-slate-500">{p.email}</p>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <UserRoleEditor
-                      userId={p.id}
-                      currentRole={p.role ?? "sales_rep"}
-                      currentUserId={user.id}
-                    />
-                    <GetLoginLinkButton
-                      email={p.email}
-                      userId={p.id}
-                      currentUserId={user.id}
-                    />
-                    <SetPasswordButton
-                      userId={p.id}
-                      userName={p.full_name || p.email}
-                      currentUserId={user.id}
-                    />
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
+        <Link href="/admin/users">
+          <Card className="hover:border-slate-300 transition-colors cursor-pointer">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="font-semibold text-slate-900">Manage Users</p>
+                <p className="text-sm text-slate-500">{userCount ?? 0} team members · roles, passwords, access</p>
+              </div>
+              <svg className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+              </svg>
+            </CardContent>
+          </Card>
+        </Link>
 
         {/* Avalara */}
         <Card>

@@ -20,8 +20,9 @@ export default async function DashboardPage() {
     .eq("id", user.id)
     .single();
 
-  // Bookkeeper gets their own specialized dashboard
+  // Role-based routing
   if (profile?.role === "bookkeeper") redirect("/bookkeeper");
+  if (profile?.role === "field_crew") redirect("/field");
 
   const isAdmin = profile?.role === "admin" || profile?.role === "manager";
   const today = new Date().toISOString().split("T")[0];

@@ -24,6 +24,8 @@ export default async function ContractsPage({
     .eq("id", user.id)
     .single();
 
+  if (profile?.role === "field_crew") redirect("/field");
+
   const isAdmin = ["admin", "manager", "bookkeeper"].includes(profile?.role ?? "");
 
   let query = supabase

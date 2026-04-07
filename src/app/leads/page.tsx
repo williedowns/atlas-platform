@@ -39,6 +39,8 @@ export default async function LeadsPage({
     .eq("id", user.id)
     .single();
 
+  if (profile?.role === "field_crew") redirect("/field");
+
   const isAdmin = ["admin", "manager"].includes(profile?.role ?? "");
 
   let query = supabase

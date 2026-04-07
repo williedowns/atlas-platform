@@ -19,6 +19,8 @@ export default async function ShowsPage() {
     .eq("id", user.id)
     .single();
 
+  if (profile?.role === "field_crew") redirect("/field");
+
   const { data: shows } = await supabase
     .from("shows")
     .select("*, location:locations(name, city, state)")
