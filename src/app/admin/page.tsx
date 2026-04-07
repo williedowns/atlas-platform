@@ -10,6 +10,7 @@ import { PingButton } from "@/components/admin/PingButton";
 import { InviteUserButton } from "@/components/admin/InviteUserButton";
 import { UserRoleEditor } from "@/components/admin/UserRoleEditor";
 import { GetLoginLinkButton } from "@/components/admin/GetLoginLinkButton";
+import { SetPasswordButton } from "@/components/admin/SetPasswordButton";
 
 
 export default async function AdminPage() {
@@ -188,6 +189,11 @@ export default async function AdminPage() {
                     <GetLoginLinkButton
                       email={p.email}
                       userId={p.id}
+                      currentUserId={user.id}
+                    />
+                    <SetPasswordButton
+                      userId={p.id}
+                      userName={p.full_name || p.email}
                       currentUserId={user.id}
                     />
                   </div>
