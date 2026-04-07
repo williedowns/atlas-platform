@@ -52,8 +52,12 @@ ALTER TABLE public.contracts
 ALTER TABLE public.inventory_units
   ADD COLUMN IF NOT EXISTS organization_id uuid REFERENCES public.organizations(id) ON DELETE SET NULL;
 
-ALTER TABLE public.leads
-  ADD COLUMN IF NOT EXISTS organization_id uuid REFERENCES public.organizations(id) ON DELETE SET NULL;
+-- leads table added in a later migration; skip if not yet created
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'leads') THEN
+    ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS organization_id uuid REFERENCES public.organizations(id) ON DELETE SET NULL;
+  END IF;
+END $$;
 
 -- Backfill existing rows to the Atlas Spas org
 DO $$
@@ -68,7 +72,9 @@ BEGIN
   UPDATE public.customers      SET organization_id = atlas_org_id WHERE organization_id IS NULL;
   UPDATE public.contracts      SET organization_id = atlas_org_id WHERE organization_id IS NULL;
   UPDATE public.inventory_units SET organization_id = atlas_org_id WHERE organization_id IS NULL;
-  UPDATE public.leads          SET organization_id = atlas_org_id WHERE organization_id IS NULL;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'leads') THEN
+    UPDATE public.leads SET organization_id = atlas_org_id WHERE organization_id IS NULL;
+  END IF;
 END $$;
 
 -- Index for fast org lookups
