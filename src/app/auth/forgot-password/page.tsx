@@ -3,13 +3,10 @@ export const dynamic = "force-dynamic";
 
 import { useState } from "react";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 export default function ForgotPasswordPage() {
-  const supabase = createClient();
-
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
@@ -20,21 +17,23 @@ export default function ForgotPasswordPage() {
     setLoading(true);
     setError("");
 
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/callback?type=recovery`,
-    });
+    try {
+      const res = await fetch("/api/auth/request-reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
 
-    setLoading(false);
-
-    if (error) {
-      const msg = error.message.toLowerCase();
-      if (msg.includes("rate limit") || msg.includes("too many") || msg.includes("email rate")) {
-        setError("RATE_LIMITED");
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error ?? "Something went wrong. Please try again.");
       } else {
-        setError(error.message);
+        setSent(true);
       }
-    } else {
-      setSent(true);
+    } catch {
+      setError("Network error. Please check your connection and try again.");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -54,10 +53,10 @@ export default function ForgotPasswordPage() {
               <div className="text-4xl">📬</div>
               <h2 className="text-xl font-semibold text-slate-900">Check your email</h2>
               <p className="text-sm text-slate-500">
-                We sent a password reset link to <strong>{email}</strong>. Click the link in that email to set your password.
+                If <strong>{email}</strong> has an account, we&apos;ve sent a password reset link. Click the link in that email to set your password.
               </p>
               <p className="text-xs text-slate-400 pt-2">
-                If you don&apos;t see it, check your spam folder.
+                Don&apos;t see it? Check your spam folder.
               </p>
               <Link href="/login" className="block mt-4 text-sm text-[#00929C] hover:underline">
                 ← Back to sign in
@@ -68,7 +67,7 @@ export default function ForgotPasswordPage() {
               <div className="mb-6">
                 <h2 className="text-xl font-semibold text-slate-900">Reset your password</h2>
                 <p className="text-sm text-slate-500 mt-1">
-                  Enter your email and we&apos;ll send you a link to set a new password. Works even if you signed up with GitHub.
+                  Enter your email and we&apos;ll send you a link to set a new password.
                 </p>
               </div>
 
@@ -83,14 +82,9 @@ export default function ForgotPasswordPage() {
                   autoFocus
                 />
 
-                {error === "RATE_LIMITED" ? (
-                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                    <p className="font-semibold mb-0.5">Too many reset attempts</p>
-                    <p>Ask your admin to generate a login link for you from the Admin Panel — no email required.</p>
-                  </div>
-                ) : error ? (
+                {error && (
                   <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>
-                ) : null}
+                )}
 
                 <Button
                   type="submit"
