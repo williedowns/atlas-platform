@@ -43,6 +43,8 @@ export default function EditLocationPage() {
   });
   const [qboAccounts, setQboAccounts] = useState<QBOAccount[]>([]);
   const [qboLoading, setQboLoading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     supabase
@@ -84,6 +86,18 @@ export default function EditLocationPage() {
 
   function set<K extends keyof typeof form>(key: K, value: typeof form[K]) {
     setForm((f) => ({ ...f, [key]: value }));
+  }
+
+  async function handleDelete() {
+    setDeleting(true);
+    const { error } = await supabase.from("locations").delete().eq("id", params.id);
+    if (error) {
+      setError(error.message);
+      setDeleting(false);
+      setConfirmDelete(false);
+    } else {
+      router.push("/admin");
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -347,6 +361,39 @@ export default function EditLocationPage() {
           <Button type="submit" size="xl" className="w-full" loading={saving}>
             Save Changes
           </Button>
+
+          {/* Delete */}
+          {!confirmDelete ? (
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+              className="w-full py-3 text-sm font-medium text-red-500 hover:text-red-700 transition-colors"
+            >
+              Delete Location
+            </button>
+          ) : (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-4 space-y-3">
+              <p className="text-sm font-semibold text-red-800">Delete "{form.name}"?</p>
+              <p className="text-xs text-red-600">This cannot be undone. Contracts linked to this location will keep their reference but the location will be gone.</p>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(false)}
+                  className="flex-1 py-2.5 rounded-lg text-sm font-medium bg-white border border-slate-200 text-slate-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="flex-1 py-2.5 rounded-lg text-sm font-semibold bg-red-600 text-white disabled:opacity-50"
+                >
+                  {deleting ? "Deleting…" : "Yes, Delete"}
+                </button>
+              </div>
+            </div>
+          )}
         </form>
       </main>
     </div>
