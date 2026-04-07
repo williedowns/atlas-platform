@@ -27,14 +27,19 @@ export default async function DashboardPage() {
   const isAdmin = profile?.role === "admin" || profile?.role === "manager";
   const today = new Date().toISOString().split("T")[0];
 
-  // ── Today's stats: confirmed (non-contingent) contracts with deposits ──────
-  const { data: todayStats } = await supabase
+  // ── Today's stats ─────────────────────────────────────────────────────────
+  // Admin/manager: company-wide. Sales reps: their own contracts only.
+  const todayStatsQuery = supabase
     .from("contracts")
-    .select("total, deposit_paid, status, is_contingent")
+    .select("total, deposit_paid, status, is_contingent, sales_rep_id")
     .gte("created_at", `${today}T00:00:00`)
     .not("status", "in", '("quote","draft","cancelled")')
     .eq("is_contingent", false)
     .gt("deposit_paid", 0);
+
+  if (!isAdmin) todayStatsQuery.eq("sales_rep_id", user.id);
+
+  const { data: todayStats } = await todayStatsQuery;
 
   const todayRevenue = todayStats?.reduce((s, c) => s + (c.total ?? 0), 0) ?? 0;
   const todayDeposits = todayStats?.reduce((s, c) => s + (c.deposit_paid ?? 0), 0) ?? 0;
@@ -162,25 +167,33 @@ export default async function DashboardPage() {
         <div className="grid grid-cols-2 gap-3">
           <Card>
             <CardContent className="p-4">
-              <p className="text-xs text-slate-500 uppercase tracking-wide font-medium">Today&apos;s Revenue</p>
+              <p className="text-xs text-slate-500 uppercase tracking-wide font-medium">
+                {isAdmin ? "Today's Revenue" : "My Revenue Today"}
+              </p>
               <p className="text-2xl font-bold text-[#00929C] mt-1">{formatCurrency(todayRevenue)}</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
-              <p className="text-xs text-slate-500 uppercase tracking-wide font-medium">Deposits Collected</p>
+              <p className="text-xs text-slate-500 uppercase tracking-wide font-medium">
+                {isAdmin ? "Deposits Collected" : "My Deposits Today"}
+              </p>
               <p className="text-2xl font-bold text-emerald-600 mt-1">{formatCurrency(todayDeposits)}</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
-              <p className="text-xs text-slate-500 uppercase tracking-wide font-medium">Contracts Today</p>
+              <p className="text-xs text-slate-500 uppercase tracking-wide font-medium">
+                {isAdmin ? "Contracts Today" : "My Contracts Today"}
+              </p>
               <p className="text-2xl font-bold text-slate-900 mt-1">{todayCount}</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
-              <p className="text-xs text-slate-500 uppercase tracking-wide font-medium">Contingent Today</p>
+              <p className="text-xs text-slate-500 uppercase tracking-wide font-medium">
+                {isAdmin ? "Contingent Today" : "My Contingent"}
+              </p>
               <p className="text-2xl font-bold text-amber-600 mt-1">
                 {contingentContracts?.filter(c => c.created_at?.startsWith(today)).length ?? 0}
               </p>
