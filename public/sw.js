@@ -1,4 +1,4 @@
-const CACHE_NAME = "atlas-spas-v3";
+const CACHE_NAME = "atlas-spas-v2";
 const OFFLINE_DB = "atlas-offline";
 const APP_SHELL = ["/", "/dashboard", "/contracts/new", "/login"];
 

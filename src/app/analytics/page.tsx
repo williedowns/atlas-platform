@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/utils";
+import AppShell from "@/components/layout/AppShell";
 
 // ── Period helpers ────────────────────────────────────────────────────────────
 
@@ -102,7 +103,7 @@ export default async function AnalyticsPage({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("role, organization:organizations(role_permissions)")
+    .select("role, full_name, organization:organizations(role_permissions)")
     .eq("id", user.id)
     .single();
 
@@ -310,7 +311,7 @@ export default async function AnalyticsPage({
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-slate-50">
+    <AppShell role={profile?.role} userName={(profile as any)?.full_name} orgPerms={orgPerms}>
       {/* Header */}
       <header className="bg-[#010F21] text-white px-4 py-4 sticky top-0 z-10 shadow-lg">
         <div className="flex items-center gap-3">
@@ -689,7 +690,7 @@ export default async function AnalyticsPage({
         </Card>
 
       </main>
-    </div>
+    </AppShell>
   );
 }
 

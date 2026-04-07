@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SyncProductsButton } from "@/components/admin/SyncProductsButton";
 import { PingButton } from "@/components/admin/PingButton";
+import AppShell from "@/components/layout/AppShell";
 
 
 export default async function AdminPage() {
@@ -16,7 +17,7 @@ export default async function AdminPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("role")
+    .select("role, full_name")
     .eq("id", user.id)
     .single();
 
@@ -33,7 +34,7 @@ export default async function AdminPage() {
   const avalaraConfigured = !!process.env.AVALARA_ACCOUNT_ID;
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <AppShell role={profile?.role} userName={(profile as any)?.full_name}>
       <header className="bg-[#010F21] text-white px-4 py-4 sticky top-0 z-10 shadow-lg">
         <div className="flex items-center gap-3">
           <Link href="/dashboard" className="p-2 rounded-lg hover:bg-white/10">
@@ -211,6 +212,6 @@ export default async function AdminPage() {
           </CardContent>
         </Card>
       </main>
-    </div>
+    </AppShell>
   );
 }

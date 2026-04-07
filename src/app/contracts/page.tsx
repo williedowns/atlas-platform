@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { ContractsList } from "@/components/contracts/ContractsList";
-import BottomNav from "@/components/layout/BottomNav";
+import AppShell from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 
 export default async function ContractsPage({
@@ -20,7 +20,7 @@ export default async function ContractsPage({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("role, organization:organizations(role_permissions)")
+    .select("role, full_name, organization:organizations(role_permissions)")
     .eq("id", user.id)
     .single();
 
@@ -52,7 +52,7 @@ export default async function ContractsPage({
   const { data: contracts } = await query;
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <AppShell role={profile?.role} userName={profile?.full_name} orgPerms={orgPerms}>
       <header className="bg-[#010F21] text-white px-4 py-4 sticky top-0 z-10 shadow-lg">
         <h1 className="text-lg font-bold">Contracts</h1>
       </header>
@@ -70,7 +70,6 @@ export default async function ContractsPage({
         </Link>
       </div>
 
-      <BottomNav role={profile?.role} />
-    </div>
+    </AppShell>
   );
 }

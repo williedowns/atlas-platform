@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { logAction } from "@/lib/audit";
+import { createQBODepositInvoice } from "@/lib/qbo/client";
 
 export async function POST(req: Request) {
   const supabase = await createClient();
@@ -15,7 +16,7 @@ export async function POST(req: Request) {
 
   const { data: contract, error: contractError } = await supabase
     .from("contracts")
-    .select("total, deposit_paid, financing")
+    .select("total, deposit_paid, financing, contract_number, location:locations(qbo_deposit_account_id), customer:customers(qbo_customer_id)")
     .eq("id", contract_id)
     .single();
 
@@ -58,6 +59,18 @@ export async function POST(req: Request) {
       balance_due: Math.max(0, contract.total - financedAtSale - newDepositPaid),
     })
     .eq("id", contract_id);
+
+  // Sync to QBO (best-effort — non-fatal)
+  const customer = contract.customer as any;
+  const location = contract.location as any;
+  if (customer?.qbo_customer_id) {
+    createQBODepositInvoice({
+      qbo_customer_id: customer.qbo_customer_id,
+      deposit_amount: Number(amount),
+      contract_number: (contract as any).contract_number ?? contract_id,
+      deposit_account_id: location?.qbo_deposit_account_id ?? undefined,
+    }).catch((err) => console.error("QBO manual payment sync failed (non-fatal):", err));
+  }
 
   // Fire-and-forget audit log
   logAction({

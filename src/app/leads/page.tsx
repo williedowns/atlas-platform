@@ -4,7 +4,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/utils";
-import BottomNav from "@/components/layout/BottomNav";
+import AppShell from "@/components/layout/AppShell";
 
 const STATUS_COLORS: Record<string, "default" | "success" | "warning" | "destructive" | "secondary"> = {
   new: "default",
@@ -83,7 +83,7 @@ export default async function LeadsPage({
   const activeFilter = statusFilter ?? "all";
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <AppShell role={profile?.role} userName={profile?.full_name} orgPerms={orgPerms}>
       <header className="bg-[#010F21] text-white px-4 py-4 sticky top-0 z-10 shadow-lg">
         <div className="flex items-center gap-3">
           <Link href="/dashboard" className="p-2 rounded-lg hover:bg-white/10">
@@ -158,7 +158,6 @@ export default async function LeadsPage({
         )}
       </main>
 
-      <BottomNav role={profile?.role} />
-    </div>
+    </AppShell>
   );
 }

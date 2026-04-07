@@ -172,8 +172,13 @@ export async function createQBODepositInvoice(params: {
   qbo_customer_id: string;
   deposit_amount: number;
   contract_number: string;
-  class_id?: string; // For location tracking
+  class_id?: string;          // QBO Location/Class tracking
+  deposit_account_id?: string; // Per-location bank account override
 }) {
+  // Prefer the location-specific account, fall back to global env var
+  const depositAccountId =
+    params.deposit_account_id ?? process.env.QBO_CUSTOMER_DEPOSITS_ACCOUNT_ID;
+
   return qboFetch("/invoice", {
     method: "POST",
     body: JSON.stringify({
@@ -190,10 +195,7 @@ export async function createQBODepositInvoice(params: {
           },
         },
       ],
-      // Posts to Customer Deposits liability account
-      DepositToAccountRef: {
-        value: process.env.QBO_CUSTOMER_DEPOSITS_ACCOUNT_ID,
-      },
+      DepositToAccountRef: depositAccountId ? { value: depositAccountId } : undefined,
       ClassRef: params.class_id ? { value: params.class_id } : undefined,
     }),
   });

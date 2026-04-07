@@ -8,7 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import BottomNav from "@/components/layout/BottomNav";
+import AppShell from "@/components/layout/AppShell";
 
 type Profile = {
   full_name: string;
@@ -50,7 +50,7 @@ export default function ProfilePage() {
     : "?";
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <AppShell role={profile?.role} userName={profile?.full_name}>
       <header className="bg-[#010F21] text-white px-4 py-4 sticky top-0 z-10 shadow-lg">
         <h1 className="text-lg font-bold">Profile</h1>
       </header>
@@ -110,7 +110,6 @@ export default function ProfilePage() {
         <p className="text-center text-slate-400 text-xs mt-4">Powered by {process.env.NEXT_PUBLIC_PLATFORM_NAME ?? "Salta"}</p>
       </main>
 
-            <BottomNav role={profile?.role} />
-    </div>
+    </AppShell>
   );
 }

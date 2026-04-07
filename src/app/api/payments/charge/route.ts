@@ -173,6 +173,7 @@ export async function POST(req: Request) {
           qbo_customer_id: contract.customer.qbo_customer_id,
           deposit_amount: amount,
           contract_number: contract.contract_number,
+          deposit_account_id: contract.location?.qbo_deposit_account_id ?? undefined,
         });
         await supabase
           .from("contracts")

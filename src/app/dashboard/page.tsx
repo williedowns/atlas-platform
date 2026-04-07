@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/utils";
 import LeadsPipeline from "@/components/dashboard/LeadsPipeline";
-import BottomNav from "@/components/layout/BottomNav";
+import AppShell from "@/components/layout/AppShell";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -16,9 +16,11 @@ export default async function DashboardPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("*")
+    .select("*, organization:organizations(role_permissions)")
     .eq("id", user.id)
     .single();
+
+  const orgPerms = (profile?.organization as any)?.role_permissions ?? null;
 
   // Role-based routing
   if (profile?.role === "bookkeeper") redirect("/bookkeeper");
@@ -145,7 +147,7 @@ export default async function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <AppShell role={profile?.role} userName={profile?.full_name} orgPerms={orgPerms}>
       {/* Header */}
       <header className="bg-[#010F21] text-white px-4 py-4 flex items-center justify-between sticky top-0 z-10 shadow-lg">
         <div>
@@ -313,8 +315,6 @@ export default async function DashboardPage() {
         </Card>
 
       </main>
-
-      <BottomNav role={profile?.role} />
-    </div>
+    </AppShell>
   );
 }

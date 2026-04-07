@@ -6,7 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/utils";
-import BottomNav from "@/components/layout/BottomNav";
+import AppShell from "@/components/layout/AppShell";
 
 export default async function ShowsPage() {
   const supabase = await createClient();
@@ -15,7 +15,7 @@ export default async function ShowsPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("role, organization:organizations(role_permissions)")
+    .select("role, full_name, organization:organizations(role_permissions)")
     .eq("id", user.id)
     .single();
 
@@ -38,7 +38,7 @@ export default async function ShowsPage() {
   const canCreateShows = profile?.role === "admin" || profile?.role === "manager";
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <AppShell role={profile?.role} userName={profile?.full_name} orgPerms={orgPerms}>
       <header className="bg-[#010F21] text-white px-4 py-4 sticky top-0 z-10 shadow-lg">
         <div className="flex items-center justify-between">
           <h1 className="text-lg font-bold">Shows & Events</h1>
@@ -118,7 +118,6 @@ export default async function ShowsPage() {
         )}
       </main>
 
-      <BottomNav role={profile?.role} />
-    </div>
+    </AppShell>
   );
 }

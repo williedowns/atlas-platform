@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getStatusColor, getUnitTypeLabel, getCabinetName, INVENTORY_STATUSES } from "@/lib/inventory-constants";
-import BottomNav from "@/components/layout/BottomNav";
+import AppShell from "@/components/layout/AppShell";
 
 export default async function InventoryPage({
   searchParams,
@@ -22,7 +22,7 @@ export default async function InventoryPage({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("role, assigned_location_id, organization:organizations(role_permissions)")
+    .select("role, full_name, assigned_location_id, organization:organizations(role_permissions)")
     .eq("id", user.id)
     .single();
 
@@ -96,7 +96,7 @@ export default async function InventoryPage({
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <AppShell role={profile?.role} userName={profile?.full_name} orgPerms={orgPerms}>
       <header className="bg-[#010F21] text-white px-4 py-4 sticky top-0 z-10 shadow-lg">
         <div className="flex items-center justify-between">
           <div>
@@ -215,7 +215,6 @@ export default async function InventoryPage({
         )}
       </main>
 
-      <BottomNav role={profile?.role} />
-    </div>
+    </AppShell>
   );
 }

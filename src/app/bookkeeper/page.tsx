@@ -7,7 +7,7 @@ import TaxExemptTracker from "@/components/bookkeeper/TaxExemptTracker";
 import ReconciliationView from "@/components/bookkeeper/ReconciliationView";
 import SalesByEventList from "@/components/bookkeeper/SalesByEventList";
 import CancellationRefundTracker from "@/components/bookkeeper/CancellationRefundTracker";
-import BottomNav from "@/components/layout/BottomNav";
+import AppShell from "@/components/layout/AppShell";
 
 export default async function BookkeeperPage() {
   const supabase = await createClient();
@@ -128,7 +128,7 @@ export default async function BookkeeperPage() {
   const hasCertAlert = overdueCerts.length > 0 || dueSoonCerts.length > 0 || refundNeededCerts.length > 0;
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <AppShell role={profile?.role} userName={profile?.full_name} orgPerms={orgPerms}>
       {/* Header */}
       <header className="bg-[#010F21] text-white px-4 py-4 sticky top-0 z-10 shadow-lg">
         <div className="flex items-center justify-between">
@@ -257,7 +257,6 @@ export default async function BookkeeperPage() {
 
       </main>
 
-      <BottomNav role={profile?.role} />
-    </div>
+    </AppShell>
   );
 }

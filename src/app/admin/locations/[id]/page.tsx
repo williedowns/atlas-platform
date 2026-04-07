@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 
+type QBOAccount = { id: string; name: string; account_type: string; account_number?: string };
+
 const US_STATES = [
   "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA",
   "KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ",
@@ -36,7 +38,11 @@ export default function EditLocationPage() {
     cc_surcharge_rate: 3.5,
     floor_price_enabled: true,
     active: true,
+    qbo_deposit_account_id: "",
+    qbo_deposit_account_name: "",
   });
+  const [qboAccounts, setQboAccounts] = useState<QBOAccount[]>([]);
+  const [qboLoading, setQboLoading] = useState(false);
 
   useEffect(() => {
     supabase
@@ -60,9 +66,19 @@ export default function EditLocationPage() {
             cc_surcharge_rate: Math.round(data.cc_surcharge_rate * 100 * 10) / 10,
             floor_price_enabled: data.floor_price_enabled,
             active: data.active,
+            qbo_deposit_account_id: data.qbo_deposit_account_id ?? "",
+            qbo_deposit_account_name: data.qbo_deposit_account_name ?? "",
           });
         }
         setLoading(false);
+
+        // Load QBO accounts (non-blocking)
+        setQboLoading(true);
+        fetch("/api/qbo/accounts")
+          .then((r) => r.json())
+          .then((d) => { if (d.accounts) setQboAccounts(d.accounts); })
+          .catch(() => {})
+          .finally(() => setQboLoading(false));
       });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -89,6 +105,8 @@ export default function EditLocationPage() {
         cc_surcharge_rate: form.cc_surcharge_rate / 100,
         floor_price_enabled: form.floor_price_enabled,
         active: form.active,
+        qbo_deposit_account_id: form.qbo_deposit_account_id || null,
+        qbo_deposit_account_name: form.qbo_deposit_account_name || null,
       })
       .eq("id", params.id);
 
@@ -275,6 +293,50 @@ export default function EditLocationPage() {
                   />
                 </button>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* QuickBooks Account Mapping */}
+          <Card>
+            <CardContent className="p-4 space-y-3">
+              <div>
+                <h2 className="font-semibold text-slate-700">QuickBooks Deposit Account</h2>
+                <p className="text-xs text-slate-500 mt-0.5">Payments from this location will post to this QBO bank account</p>
+              </div>
+
+              {qboLoading ? (
+                <p className="text-sm text-slate-400">Loading QBO accounts…</p>
+              ) : qboAccounts.length === 0 ? (
+                <p className="text-sm text-slate-400">
+                  QuickBooks not connected, or no bank accounts found.{" "}
+                  <Link href="/admin" className="text-[#00929C] underline">Connect QBO</Link>
+                </p>
+              ) : (
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-sm font-medium text-slate-700">Deposit Account</label>
+                  <select
+                    value={form.qbo_deposit_account_id}
+                    onChange={(e) => {
+                      const selected = qboAccounts.find((a) => a.id === e.target.value);
+                      set("qbo_deposit_account_id", e.target.value);
+                      set("qbo_deposit_account_name", selected?.name ?? "");
+                    }}
+                    className="flex h-12 w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base focus:outline-none focus:ring-2 focus:ring-[#00929C] focus:border-transparent touch-manipulation"
+                  >
+                    <option value="">— Use default account —</option>
+                    {qboAccounts.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.account_number ? `${a.account_number} ` : ""}{a.name}
+                      </option>
+                    ))}
+                  </select>
+                  {form.qbo_deposit_account_id && (
+                    <p className="text-xs text-emerald-600">
+                      ✓ Payments will post to: <strong>{form.qbo_deposit_account_name}</strong>
+                    </p>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
 

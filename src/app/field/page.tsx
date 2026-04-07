@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import BottomNav from "@/components/layout/BottomNav";
+import AppShell from "@/components/layout/AppShell";
 
 const STATUS_LABEL: Record<string, string> = {
   scheduled: "Scheduled",
@@ -61,7 +61,7 @@ export default async function FieldPage() {
   const firstName = profile?.full_name?.split(" ")[0] ?? "Crew";
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-24">
+    <AppShell role={profile?.role} userName={profile?.full_name}>
       {/* Header */}
       <header className="bg-[#010F21] text-white px-4 py-4 sticky top-0 z-10 shadow-lg">
         <div className="flex items-center justify-between max-w-2xl mx-auto">
@@ -179,8 +179,6 @@ export default async function FieldPage() {
         )}
 
       </main>
-
-      <BottomNav role={profile?.role} />
-    </div>
+    </AppShell>
   );
 }
