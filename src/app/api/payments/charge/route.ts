@@ -174,6 +174,7 @@ export async function POST(req: Request) {
           deposit_amount: amount,
           contract_number: contract.contract_number,
           deposit_account_id: contract.location?.qbo_deposit_account_id ?? undefined,
+          department_id: contract.location?.qbo_department_id ?? undefined,
         });
         await supabase
           .from("contracts")

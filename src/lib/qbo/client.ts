@@ -172,7 +172,8 @@ export async function createQBODepositInvoice(params: {
   qbo_customer_id: string;
   deposit_amount: number;
   contract_number: string;
-  class_id?: string;          // QBO Location/Class tracking
+  class_id?: string;           // QBO Class tracking (optional)
+  department_id?: string;      // QBO Location (Department) for tax allocation
   deposit_account_id?: string; // Per-location bank account override
 }) {
   // Prefer the location-specific account, fall back to global env var
@@ -196,6 +197,7 @@ export async function createQBODepositInvoice(params: {
         },
       ],
       DepositToAccountRef: depositAccountId ? { value: depositAccountId } : undefined,
+      DepartmentRef: params.department_id ? { value: params.department_id } : undefined,
       ClassRef: params.class_id ? { value: params.class_id } : undefined,
     }),
   });

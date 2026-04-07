@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 
 type QBOAccount = { id: string; name: string; account_type: string; account_number?: string };
+type QBODepartment = { id: string; name: string; fully_qualified_name: string };
 
 const US_STATES = [
   "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA",
@@ -40,9 +41,13 @@ export default function EditLocationPage() {
     active: true,
     qbo_deposit_account_id: "",
     qbo_deposit_account_name: "",
+    qbo_department_id: "",
+    qbo_department_name: "",
   });
   const [qboAccounts, setQboAccounts] = useState<QBOAccount[]>([]);
   const [qboLoading, setQboLoading] = useState(false);
+  const [qboDepartments, setQboDepartments] = useState<QBODepartment[]>([]);
+  const [qboDeptLoading, setQboDeptLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -70,6 +75,8 @@ export default function EditLocationPage() {
             active: data.active,
             qbo_deposit_account_id: data.qbo_deposit_account_id ?? "",
             qbo_deposit_account_name: data.qbo_deposit_account_name ?? "",
+            qbo_department_id: data.qbo_department_id ?? "",
+            qbo_department_name: data.qbo_department_name ?? "",
           });
         }
         setLoading(false);
@@ -81,6 +88,14 @@ export default function EditLocationPage() {
           .then((d) => { if (d.accounts) setQboAccounts(d.accounts); })
           .catch(() => {})
           .finally(() => setQboLoading(false));
+
+        // Load QBO departments/locations (non-blocking)
+        setQboDeptLoading(true);
+        fetch("/api/qbo/departments")
+          .then((r) => r.json())
+          .then((d) => { if (d.departments) setQboDepartments(d.departments); })
+          .catch(() => {})
+          .finally(() => setQboDeptLoading(false));
       });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -122,6 +137,8 @@ export default function EditLocationPage() {
         active: form.active,
         qbo_deposit_account_id: form.qbo_deposit_account_id || null,
         qbo_deposit_account_name: form.qbo_deposit_account_name || null,
+        qbo_department_id: form.qbo_department_id || null,
+        qbo_department_name: form.qbo_department_name || null,
       })
       .eq("id", params.id);
 
@@ -348,6 +365,49 @@ export default function EditLocationPage() {
                   {form.qbo_deposit_account_id && (
                     <p className="text-xs text-emerald-600">
                       ✓ Payments will post to: <strong>{form.qbo_deposit_account_name}</strong>
+                    </p>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* QuickBooks Location (Department) Mapping */}
+          <Card>
+            <CardContent className="p-4 space-y-3">
+              <div>
+                <h2 className="font-semibold text-slate-700">QuickBooks Location (Tax Allocation)</h2>
+                <p className="text-xs text-slate-500 mt-0.5">Revenue from this location will be tagged to this QBO Location for tax and P&amp;L reporting</p>
+              </div>
+
+              {qboDeptLoading ? (
+                <p className="text-sm text-slate-400">Loading QBO locations…</p>
+              ) : qboDepartments.length === 0 ? (
+                <p className="text-sm text-slate-400">
+                  No QBO Locations found. Set up Locations in QuickBooks under Company Settings → Advanced → Locations.
+                </p>
+              ) : (
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-sm font-medium text-slate-700">QBO Location</label>
+                  <select
+                    value={form.qbo_department_id}
+                    onChange={(e) => {
+                      const selected = qboDepartments.find((d) => d.id === e.target.value);
+                      set("qbo_department_id", e.target.value);
+                      set("qbo_department_name", selected?.fully_qualified_name ?? selected?.name ?? "");
+                    }}
+                    className="flex h-12 w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base focus:outline-none focus:ring-2 focus:ring-[#00929C] focus:border-transparent touch-manipulation"
+                  >
+                    <option value="">— No location tag —</option>
+                    {qboDepartments.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.fully_qualified_name}
+                      </option>
+                    ))}
+                  </select>
+                  {form.qbo_department_id && (
+                    <p className="text-xs text-emerald-600">
+                      ✓ Transactions tagged to: <strong>{form.qbo_department_name}</strong>
                     </p>
                   )}
                 </div>

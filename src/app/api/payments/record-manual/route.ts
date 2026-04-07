@@ -16,7 +16,7 @@ export async function POST(req: Request) {
 
   const { data: contract, error: contractError } = await supabase
     .from("contracts")
-    .select("total, deposit_paid, financing, contract_number, location:locations(qbo_deposit_account_id), customer:customers(qbo_customer_id)")
+    .select("total, deposit_paid, financing, contract_number, location:locations(qbo_deposit_account_id, qbo_department_id), customer:customers(qbo_customer_id)")
     .eq("id", contract_id)
     .single();
 
@@ -69,6 +69,7 @@ export async function POST(req: Request) {
       deposit_amount: Number(amount),
       contract_number: (contract as any).contract_number ?? contract_id,
       deposit_account_id: location?.qbo_deposit_account_id ?? undefined,
+      department_id: location?.qbo_department_id ?? undefined,
     }).catch((err) => console.error("QBO manual payment sync failed (non-fatal):", err));
   }
 
