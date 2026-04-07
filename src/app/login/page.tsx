@@ -40,7 +40,7 @@ export default function LoginPage() {
           <div className="inline-flex items-center justify-center bg-white rounded-2xl px-8 py-5 shadow-xl mb-3">
             <img src="/logo.png" alt="Atlas Spas & Swim Spas" className="h-14 w-auto" />
           </div>
-          <p className="text-white/50 text-xs mt-1 tracking-wide uppercase">Sales Platform</p>
+          <p className="text-white/50 text-xs mt-1 tracking-wide uppercase">{process.env.NEXT_PUBLIC_COMPANY_NAME ?? "Atlas Spas"}</p>
         </div>
 
         {/* Login Card */}
@@ -94,7 +94,7 @@ export default function LoginPage() {
         </div>
 
         <p className="text-center text-white/50 text-xs mt-6">
-          Atlas Spas &amp; Swim Spas · Internal Platform · v1.0
+          Powered by {process.env.NEXT_PUBLIC_PLATFORM_NAME ?? "Salta"}
         </p>
       </div>
     </div>

@@ -91,7 +91,7 @@ export default function PortalLoginPage() {
         </div>
 
         <p className="text-center text-white/30 text-xs mt-6">
-          Atlas Spas & Swim Spas · 5511 Hwy 31 W · Tyler, TX 75709
+          Powered by {process.env.NEXT_PUBLIC_PLATFORM_NAME ?? "Salta"}
         </p>
       </div>
     </div>

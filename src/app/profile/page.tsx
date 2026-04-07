@@ -107,7 +107,7 @@ export default function ProfilePage() {
           Sign Out
         </Button>
 
-        <p className="text-center text-slate-400 text-xs mt-4">Atlas Spas Platform v1.0</p>
+        <p className="text-center text-slate-400 text-xs mt-4">Powered by {process.env.NEXT_PUBLIC_PLATFORM_NAME ?? "Salta"}</p>
       </main>
 
             <BottomNav role={profile?.role} />

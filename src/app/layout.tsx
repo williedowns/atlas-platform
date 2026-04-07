@@ -4,14 +4,20 @@ import "./globals.css";
 
 const figtree = Figtree({ subsets: ["latin"], weight: ["400", "600", "700"] });
 
+const platformName = process.env.NEXT_PUBLIC_PLATFORM_NAME ?? "Salta";
+const companyName = process.env.NEXT_PUBLIC_COMPANY_NAME ?? "Atlas Spas";
+
 export const metadata: Metadata = {
-  title: "Atlas Spas Platform",
+  title: {
+    default: `${companyName} · ${platformName}`,
+    template: `%s · ${platformName}`,
+  },
   description: "Sales & Operations Platform",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Atlas Spas",
+    title: platformName,
   },
 };
 
