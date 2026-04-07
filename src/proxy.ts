@@ -29,11 +29,13 @@ export async function proxy(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const isPublicPath =
+    request.nextUrl.pathname === "/" ||
     request.nextUrl.pathname.startsWith("/login") ||
     request.nextUrl.pathname.startsWith("/auth/") ||
     request.nextUrl.pathname.startsWith("/api/") ||
     request.nextUrl.pathname.startsWith("/_next") ||
     request.nextUrl.pathname === "/favicon.ico" ||
+    request.nextUrl.pathname.startsWith("/salta-") ||
     request.nextUrl.pathname.startsWith("/portal");
 
   if (!user && !isPublicPath) {
