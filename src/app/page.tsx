@@ -1,7 +1,6 @@
 export const dynamic = "force-dynamic";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import Image from "next/image";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function HomePage() {
@@ -17,14 +16,8 @@ export default async function HomePage() {
 
       {/* Nav */}
       <nav className="bg-[#010F21] px-6 py-4 flex items-center justify-between sticky top-0 z-50 shadow-lg">
-        <Image
-          src="/salta-logo-white.svg"
-          alt="Salta"
-          width={120}
-          height={32}
-          className="h-8 w-auto"
-          priority
-        />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/salta-logo-white.svg" alt="Salta" className="h-8 w-auto" />
         <Link
           href="/login"
           className="text-sm font-semibold text-white hover:text-[#00929C] transition-colors flex items-center gap-1"
@@ -157,13 +150,8 @@ export default async function HomePage() {
       {/* Footer */}
       <footer className="bg-[#010F21] border-t border-white/10 px-6 py-8">
         <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-          <Image
-            src="/salta-logo-white.svg"
-            alt="Salta"
-            width={100}
-            height={28}
-            className="h-7 w-auto opacity-80"
-          />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/salta-logo-white.svg" alt="Salta" className="h-7 w-auto opacity-80" />
           <div className="flex items-center gap-6 text-sm text-slate-500">
             <a href="mailto:hello@getsalta.com" className="hover:text-slate-300 transition-colors">
               hello@getsalta.com
