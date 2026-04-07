@@ -29,7 +29,7 @@ export function InviteUserButton({ onInvited }: { onInvited?: () => void }) {
     setLoading(true);
     setError(null);
 
-    const res = await fetch("/api/admin/invite", {
+    const res = await fetch("/api/admin/send-invite", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, full_name: fullName, role }),
