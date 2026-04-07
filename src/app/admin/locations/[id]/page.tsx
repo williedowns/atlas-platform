@@ -90,9 +90,10 @@ export default function EditLocationPage() {
 
   async function handleDelete() {
     setDeleting(true);
-    const { error } = await supabase.from("locations").delete().eq("id", params.id);
-    if (error) {
-      setError(error.message);
+    const res = await fetch(`/api/admin/locations/${params.id}`, { method: "DELETE" });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      setError(data?.error ?? "Delete failed. Try again.");
       setDeleting(false);
       setConfirmDelete(false);
     } else {
