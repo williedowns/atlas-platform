@@ -102,11 +102,13 @@ export default async function AnalyticsPage({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("role")
+    .select("role, organization:organizations(role_permissions)")
     .eq("id", user.id)
     .single();
 
-  if (!["admin", "manager"].includes(profile?.role ?? "")) redirect("/dashboard");
+  const { hasPermission } = await import("@/lib/permissions");
+  const orgPerms = (profile?.organization as any)?.role_permissions;
+  if (!hasPermission(orgPerms, profile?.role, "analytics")) redirect("/dashboard");
 
   // ── Fetch data ──────────────────────────────────────────────────────────────
   const range = getPeriodRange(period);

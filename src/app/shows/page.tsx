@@ -15,11 +15,15 @@ export default async function ShowsPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("role")
+    .select("role, organization:organizations(role_permissions)")
     .eq("id", user.id)
     .single();
 
   if (profile?.role === "field_crew") redirect("/field");
+
+  const { hasPermission } = await import("@/lib/permissions");
+  const orgPerms = (profile?.organization as any)?.role_permissions;
+  if (!hasPermission(orgPerms, profile?.role, "shows")) redirect("/dashboard");
 
   const { data: shows } = await supabase
     .from("shows")

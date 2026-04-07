@@ -22,9 +22,13 @@ export default async function InventoryPage({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("role, assigned_location_id")
+    .select("role, assigned_location_id, organization:organizations(role_permissions)")
     .eq("id", user.id)
     .single();
+
+  const { hasPermission } = await import("@/lib/permissions");
+  const orgPerms = (profile?.organization as any)?.role_permissions;
+  if (!hasPermission(orgPerms, profile?.role, "inventory")) redirect("/dashboard");
 
   const isAdmin = ["admin", "manager"].includes(profile?.role ?? "");
 

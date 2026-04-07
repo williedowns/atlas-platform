@@ -16,12 +16,13 @@ export default async function BookkeeperPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("*")
+    .select("*, organization:organizations(role_permissions)")
     .eq("id", user.id)
     .single();
 
-  const allowedRoles = ["admin", "manager", "bookkeeper"];
-  if (!allowedRoles.includes(profile?.role ?? "")) redirect("/dashboard");
+  const { hasPermission } = await import("@/lib/permissions");
+  const orgPerms = (profile?.organization as any)?.role_permissions;
+  if (!hasPermission(orgPerms, profile?.role, "bookkeeper")) redirect("/dashboard");
 
   // ── Fetch all active contracts with full financial + customer + line item data ──
   const { data: contractsRaw, error } = await supabase
