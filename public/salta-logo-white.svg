@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 240" width="960" height="240">
+  <rect width="960" height="240" fill="#010F21"/>
+  <!-- Icon mark (scaled to fit 240px height with padding) -->
+  <g transform="translate(20, 20) scale(0.39)">
+    <path d="
+      M 80 384
+      C 120 384, 168 356, 216 304
+      C 264 252, 308 184, 356 144
+      C 380 126, 396 122, 408 128
+      C 396 104, 372 100, 344 112
+      C 300 136, 256 200, 212 252
+      C 168 300, 128 340, 88 352
+      Z
+    " fill="#FFFFFF"/>
+    <circle cx="424" cy="108" r="28" fill="#FFFFFF"/>
+  </g>
+  <!-- Wordmark -->
+  <text x="260" y="136"
+    font-family="'Inter', 'DM Sans', 'Helvetica Neue', 'Arial', sans-serif"
+    font-weight="800"
+    font-size="96"
+    letter-spacing="8"
+    fill="#FFFFFF"
+    dominant-baseline="central"
+  >SALTA</text>
+</svg>
