@@ -9,6 +9,7 @@ import { SyncProductsButton } from "@/components/admin/SyncProductsButton";
 import { PingButton } from "@/components/admin/PingButton";
 import { InviteUserButton } from "@/components/admin/InviteUserButton";
 import { UserRoleEditor } from "@/components/admin/UserRoleEditor";
+import { GetLoginLinkButton } from "@/components/admin/GetLoginLinkButton";
 
 
 export default async function AdminPage() {
@@ -163,11 +164,18 @@ export default async function AdminPage() {
                     <p className="font-medium text-slate-900">{p.full_name}</p>
                     <p className="text-xs text-slate-500">{p.email}</p>
                   </div>
-                  <UserRoleEditor
-                    userId={p.id}
-                    currentRole={p.role ?? "sales_rep"}
-                    currentUserId={user.id}
-                  />
+                  <div className="flex items-center gap-1">
+                    <UserRoleEditor
+                      userId={p.id}
+                      currentRole={p.role ?? "sales_rep"}
+                      currentUserId={user.id}
+                    />
+                    <GetLoginLinkButton
+                      email={p.email}
+                      userId={p.id}
+                      currentUserId={user.id}
+                    />
+                  </div>
                 </li>
               ))}
             </ul>

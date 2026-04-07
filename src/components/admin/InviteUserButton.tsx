@@ -20,6 +20,9 @@ export function InviteUserButton({ onInvited }: { onInvited?: () => void }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [loginLink, setLoginLink] = useState<string | null>(null);
+  const [linkLoading, setLinkLoading] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -49,6 +52,26 @@ export function InviteUserButton({ onInvited }: { onInvited?: () => void }) {
       setFullName("");
       setRole("sales_rep");
     }, 1500);
+  }
+
+  async function handleGetLink() {
+    setLinkLoading(true);
+    const res = await fetch("/api/admin/generate-link", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+    const data = await res.json();
+    setLinkLoading(false);
+    if (res.ok) setLoginLink(data.link);
+    else setError(data.error ?? "Failed to generate link");
+  }
+
+  async function handleCopyLink() {
+    if (!loginLink) return;
+    await navigator.clipboard.writeText(loginLink);
+    setLinkCopied(true);
+    setTimeout(() => setLinkCopied(false), 2000);
   }
 
   return (
@@ -117,8 +140,40 @@ export function InviteUserButton({ onInvited }: { onInvited?: () => void }) {
                   </div>
                 </div>
 
-                {error && (
-                  <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>
+                {error && !loginLink && (
+                  <div className="space-y-2">
+                    <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>
+                    {error.includes("already exists") && (
+                      <button
+                        type="button"
+                        onClick={handleGetLink}
+                        disabled={linkLoading}
+                        className="w-full py-2.5 rounded-xl border-2 border-[#00929C] text-[#00929C] text-sm font-semibold hover:bg-[#00929C]/8 transition-colors disabled:opacity-50"
+                      >
+                        {linkLoading ? "Generating…" : "Get login link instead (no email)"}
+                      </button>
+                    )}
+                  </div>
+                )}
+                {loginLink && (
+                  <div className="space-y-3">
+                    <p className="text-sm text-slate-600">
+                      Send this link to <strong>{email}</strong> via text or Slack:
+                    </p>
+                    <div className="bg-slate-50 rounded-xl p-3 border border-slate-200 break-all text-xs text-slate-700 font-mono">
+                      {loginLink}
+                    </div>
+                    <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
+                      ⚠️ Expires in 24 hours.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleCopyLink}
+                      className={`w-full py-3 rounded-xl font-semibold text-sm transition-colors ${linkCopied ? "bg-emerald-500 text-white" : "bg-[#00929C] hover:bg-[#007a82] text-white"}`}
+                    >
+                      {linkCopied ? "✓ Copied!" : "Copy Link"}
+                    </button>
+                  </div>
                 )}
 
                 <Button

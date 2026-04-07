@@ -27,7 +27,12 @@ export default function ForgotPasswordPage() {
     setLoading(false);
 
     if (error) {
-      setError(error.message);
+      const msg = error.message.toLowerCase();
+      if (msg.includes("rate limit") || msg.includes("too many") || msg.includes("email rate")) {
+        setError("RATE_LIMITED");
+      } else {
+        setError(error.message);
+      }
     } else {
       setSent(true);
     }
@@ -78,9 +83,14 @@ export default function ForgotPasswordPage() {
                   autoFocus
                 />
 
-                {error && (
+                {error === "RATE_LIMITED" ? (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    <p className="font-semibold mb-0.5">Too many reset attempts</p>
+                    <p>Ask your admin to generate a login link for you from the Admin Panel — no email required.</p>
+                  </div>
+                ) : error ? (
                   <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>
-                )}
+                ) : null}
 
                 <Button
                   type="submit"

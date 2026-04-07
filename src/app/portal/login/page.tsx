@@ -77,12 +77,17 @@ export default function PortalLoginPage() {
             </button>
           </form>
 
-          <p className="text-center text-sm text-slate-500 mt-6">
-            New customer?{" "}
-            <Link href="/portal/register" className="text-[#00929C] font-semibold">
-              Create account
+          <div className="mt-6 space-y-2 text-center">
+            <p className="text-sm text-slate-500">
+              New customer?{" "}
+              <Link href="/portal/register" className="text-[#00929C] font-semibold">
+                Create account
+              </Link>
+            </p>
+            <Link href="/auth/forgot-password" className="block text-sm text-slate-400 hover:text-[#00929C] transition-colors">
+              Forgot password?
             </Link>
-          </p>
+          </div>
         </div>
 
         <p className="text-center text-white/30 text-xs mt-6">
