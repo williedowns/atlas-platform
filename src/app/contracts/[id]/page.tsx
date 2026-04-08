@@ -97,11 +97,13 @@ export default async function ContractDetailPage({
   // Legacy single-object fallback kept for older contracts
   const financing = financingArr[0] ?? {};
 
-  // Compute balance due from actual paid amounts — stored balance_due can be stale
-  // if a deposit split was planned but never collected
+  // deposit_amount = what was agreed in the contract wizard (used for balance_due calc)
+  // deposit_paid   = what has actually been collected so far
+  const depositAmount = contract.deposit_amount ?? 0;
+  const depositPaid = contract.deposit_paid ?? 0;
   const totalFinanced = financingArr.reduce((sum: number, f: { financed_amount?: number }) => sum + (f.financed_amount ?? 0), 0);
-  const actualDepositPaid = contract.deposit_paid ?? 0;
-  const computedBalanceDue = Math.max(0, (contract.total ?? 0) - totalFinanced - actualDepositPaid);
+  // Always derive balance due from real numbers so it's never stale
+  const computedBalanceDue = Math.max(0, (contract.total ?? 0) - totalFinanced - depositPaid);
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -289,10 +291,16 @@ export default async function ContractDetailPage({
                   <span>−{formatCurrency(f.financed_amount)}</span>
                 </div>
               ))}
-              {contract.deposit_paid > 0 && (
+              {depositAmount > 0 && depositPaid === 0 && (
+                <div className="flex justify-between text-slate-600 pt-1">
+                  <span>Deposit (due now)</span>
+                  <span>−{formatCurrency(depositAmount)}</span>
+                </div>
+              )}
+              {depositPaid > 0 && (
                 <div className="flex justify-between text-emerald-700 pt-1">
                   <span>Deposit Paid</span>
-                  <span>−{formatCurrency(contract.deposit_paid)}</span>
+                  <span>−{formatCurrency(depositPaid)}</span>
                 </div>
               )}
               <div className="flex justify-between font-semibold text-amber-700 pt-1 border-t border-slate-100">
