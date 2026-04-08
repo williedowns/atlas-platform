@@ -63,6 +63,36 @@ export default async function AdminPage() {
           </Card>
         </Link>
 
+        {/* Work Orders */}
+        <Link href="/admin/work-orders" className="block">
+          <Card className="hover:border-slate-300 transition-colors cursor-pointer">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="font-semibold text-slate-900">Work Orders</p>
+                <p className="text-sm text-slate-500">Deliveries · Scheduling · Crew Assignment</p>
+              </div>
+              <svg className="w-6 h-6 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+              </svg>
+            </CardContent>
+          </Card>
+        </Link>
+
+        {/* Sales Goals */}
+        <Link href="/admin/goals" className="block">
+          <Card className="hover:border-slate-300 transition-colors cursor-pointer">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="font-semibold text-slate-900">Sales Goals</p>
+                <p className="text-sm text-slate-500">Monthly targets · Quota tracking per rep</p>
+              </div>
+              <svg className="w-6 h-6 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+              </svg>
+            </CardContent>
+          </Card>
+        </Link>
+
         {/* Platform Settings */}
         <Link href="/admin/settings">
           <Card className="hover:border-slate-300 transition-colors cursor-pointer">

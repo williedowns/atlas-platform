@@ -9,6 +9,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { ContingentToggle } from "@/components/contracts/ContingentToggle";
 import { CancelContractButton } from "@/components/contracts/CancelContractButton";
 import { TaxRefundButton } from "@/components/contracts/TaxRefundButton";
+import { StatusTimeline } from "@/components/contracts/StatusTimeline";
 
 const STATUS_COLORS: Record<string, "default" | "success" | "warning" | "destructive" | "secondary"> = {
   draft: "secondary",
@@ -117,6 +118,13 @@ export default async function ContractDetailPage({
       </header>
 
       <main className="px-5 py-6 space-y-4 max-w-2xl mx-auto pb-24">
+        {/* Status Timeline */}
+        <Card>
+          <CardContent className="p-4">
+            <StatusTimeline status={contract.status} />
+          </CardContent>
+        </Card>
+
         {/* Customer */}
         <Card>
           <CardHeader className="pb-2">

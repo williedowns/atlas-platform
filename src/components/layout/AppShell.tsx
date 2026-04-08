@@ -51,7 +51,8 @@ function WorkOrdersIcon() {
 
 const ALL_NAV_ITEMS: NavItem[] = [
   { href: "/dashboard",  label: "Home",        icon: <HomeIcon />,        roles: ["admin","manager","sales_rep"] },
-  { href: "/field",      label: "Work Orders", icon: <WorkOrdersIcon />,  roles: ["field_crew","admin"] },
+  { href: "/field",             label: "Work Orders", icon: <WorkOrdersIcon />,  roles: ["field_crew"] },
+  { href: "/admin/work-orders", label: "Work Orders", icon: <WorkOrdersIcon />,  roles: ["admin","manager"] },
   { href: "/contracts",  label: "Contracts",   icon: <ContractsIcon />,   roles: ["admin","manager","sales_rep","bookkeeper"], feature: "contracts" },
   { href: "/leads",      label: "Leads",       icon: <LeadsIcon />,       roles: ["admin","manager","sales_rep"],              feature: "leads" },
   { href: "/shows",      label: "Shows",       icon: <ShowsIcon />,       roles: ["admin","manager","sales_rep"],              feature: "shows" },

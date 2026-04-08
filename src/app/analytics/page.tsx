@@ -158,8 +158,14 @@ export default async function AnalyticsPage({
   if (range.gte) closingRatioQuery = closingRatioQuery.gte("created_at", range.gte);
   if (range.lte) closingRatioQuery = closingRatioQuery.lt("created_at", range.lte);
 
-  const [{ data: contracts }, { data: priorContracts }, { data: outstanding }, { data: allOpps }] =
-    await Promise.all([query, priorQuery, outstandingQuery, closingRatioQuery]);
+  // Goals for all reps this month (for leaderboard enrichment)
+  const goalsQuery = supabase
+    .from("sales_goals")
+    .select("rep_id, target_revenue")
+    .eq("period_start", new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10));
+
+  const [{ data: contracts }, { data: priorContracts }, { data: outstanding }, { data: allOpps }, { data: goalRows }] =
+    await Promise.all([query, priorQuery, outstandingQuery, closingRatioQuery, goalsQuery]);
 
   const rows = contracts ?? [];
   const priorRows = priorContracts ?? [];
@@ -186,11 +192,12 @@ export default async function AnalyticsPage({
   const cntDelta = priorCount > 0 ? ((contractCount - priorCount) / priorCount) * 100 : null;
 
   // ── Sales rep leaderboard ───────────────────────────────────────────────────
-  const repMap = new Map<string, { name: string; count: number; revenue: number }>();
+  const goalMap = new Map((goalRows ?? []).map((g) => [g.rep_id, g.target_revenue]));
+  const repMap = new Map<string, { id: string; name: string; count: number; revenue: number }>();
   for (const c of rows) {
     const repId = (c.sales_rep as { id?: string } | null)?.id ?? "unknown";
     const repName = (c.sales_rep as { full_name?: string } | null)?.full_name ?? "Unknown";
-    const existing = repMap.get(repId) ?? { name: repName, count: 0, revenue: 0 };
+    const existing = repMap.get(repId) ?? { id: repId, name: repName, count: 0, revenue: 0 };
     existing.count += 1;
     existing.revenue += c.total ?? 0;
     repMap.set(repId, existing);
@@ -411,18 +418,22 @@ export default async function AnalyticsPage({
                     <tr className="border-b border-slate-200 bg-slate-50">
                       <th className="text-left py-3 px-4 font-medium text-slate-500">#</th>
                       <th className="text-left py-3 px-4 font-medium text-slate-500">Rep</th>
-                      <th className="text-right py-3 px-4 font-medium text-slate-500">Contracts</th>
+                      <th className="text-right py-3 px-4 font-medium text-slate-500">Deals</th>
                       <th className="text-right py-3 px-4 font-medium text-slate-500">Revenue</th>
                       <th className="text-right py-3 px-4 font-medium text-slate-500">Avg</th>
+                      <th className="text-right py-3 px-4 font-medium text-slate-500">Goal</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {reps.map((rep, i) => (
+                    {reps.map((rep, i) => {
+                      const targetRev = goalMap.get(rep.id);
+                      const goalPct = targetRev && period === "month"
+                        ? Math.min(999, Math.round((rep.revenue / targetRev) * 100))
+                        : null;
+                      return (
                       <tr
                         key={rep.name}
-                        className={`border-b border-slate-100 ${
-                          i === 0 ? "bg-amber-50" : ""
-                        }`}
+                        className={`border-b border-slate-100 ${i === 0 ? "bg-amber-50" : ""}`}
                       >
                         <td className="py-3 px-4 text-slate-500">
                           {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : i + 1}
@@ -435,8 +446,18 @@ export default async function AnalyticsPage({
                         <td className="py-3 px-4 text-right text-slate-600">
                           {formatCurrency(rep.count > 0 ? rep.revenue / rep.count : 0)}
                         </td>
+                        <td className="py-3 px-4 text-right">
+                          {goalPct !== null ? (
+                            <span className={`font-bold text-sm ${goalPct >= 100 ? "text-emerald-600" : goalPct >= 70 ? "text-[#00929C]" : "text-slate-500"}`}>
+                              {goalPct}%
+                            </span>
+                          ) : (
+                            <span className="text-slate-300 text-sm">—</span>
+                          )}
+                        </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

@@ -28,6 +28,7 @@ export default async function DashboardPage() {
 
   const isAdmin = profile?.role === "admin" || profile?.role === "manager";
   const today = new Date().toISOString().split("T")[0];
+  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split("T")[0];
 
   // ── Today's stats ─────────────────────────────────────────────────────────
   // Admin/manager: company-wide. Sales reps: their own contracts only.
@@ -89,17 +90,43 @@ export default async function DashboardPage() {
 
   if (!isAdmin) leadsQuery.eq("assigned_to", user.id);
 
+  // ── Monthly stats for goal progress ──────────────────────────────────────
+  const monthStatsQuery = supabase
+    .from("contracts")
+    .select("total, deposit_paid")
+    .gte("created_at", `${monthStart}T00:00:00`)
+    .not("status", "in", '("quote","draft","cancelled")')
+    .eq("is_contingent", false)
+    .gt("deposit_paid", 0);
+  if (!isAdmin) monthStatsQuery.eq("sales_rep_id", user.id);
+
+  // ── Goal for current user this month ──────────────────────────────────────
+  const goalQuery = supabase
+    .from("sales_goals")
+    .select("target_revenue, target_contracts")
+    .eq("rep_id", user.id)
+    .eq("period_start", monthStart)
+    .maybeSingle();
+
   const [
     { data: confirmedContractsRaw },
     { data: contingentContractsRaw },
     { data: recentQuotesRaw },
     { data: leadsRaw },
-  ] = await Promise.all([confirmedQuery, contingentQuery, quotesQuery, leadsQuery]);
+    { data: monthStatsRaw },
+    { data: goal },
+  ] = await Promise.all([confirmedQuery, contingentQuery, quotesQuery, leadsQuery, monthStatsQuery, goalQuery]);
 
   const confirmedContracts = (confirmedContractsRaw ?? []) as any[];
   const contingentContracts = (contingentContractsRaw ?? []) as any[];
   const recentQuotes = (recentQuotesRaw ?? []) as any[];
   const leads = (leadsRaw ?? []) as any[];
+
+  // Goal progress calculations
+  const monthRevenue = (monthStatsRaw ?? []).reduce((s: number, c: any) => s + (c.total ?? 0), 0);
+  const monthCount = (monthStatsRaw ?? []).length;
+  const goalRevPct = goal?.target_revenue ? Math.min(100, Math.round((monthRevenue / goal.target_revenue) * 100)) : null;
+  const goalCntPct = goal?.target_contracts ? Math.min(100, Math.round((monthCount / goal.target_contracts) * 100)) : null;
 
   const statusLabels: Record<string, string> = {
     pending_signature: "Pending Sig.",
@@ -202,6 +229,60 @@ export default async function DashboardPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* ── Monthly Goal Progress ── */}
+        {goal && (goalRevPct !== null || goalCntPct !== null) && (
+          <Card>
+            <CardContent className="p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                  Monthly Goal Progress
+                </p>
+                <span className="text-xs text-slate-400">
+                  {new Date().toLocaleDateString("en-US", { month: "long" })}
+                </span>
+              </div>
+              {goalRevPct !== null && (
+                <div className="space-y-1">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-600 font-medium">Revenue</span>
+                    <span className={`font-bold ${goalRevPct >= 100 ? "text-emerald-600" : goalRevPct >= 70 ? "text-[#00929C]" : "text-slate-700"}`}>
+                      {goalRevPct}% · {formatCurrency(monthRevenue)} / {formatCurrency(goal.target_revenue)}
+                    </span>
+                  </div>
+                  <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{
+                        width: `${goalRevPct}%`,
+                        background: goalRevPct >= 100 ? "#10b981" : goalRevPct >= 70 ? "#00929C" : "#010F21",
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+              {goalCntPct !== null && (
+                <div className="space-y-1">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-600 font-medium">Contracts</span>
+                    <span className={`font-bold ${goalCntPct >= 100 ? "text-emerald-600" : "text-slate-700"}`}>
+                      {goalCntPct}% · {monthCount} / {goal.target_contracts}
+                    </span>
+                  </div>
+                  <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{
+                        width: `${goalCntPct}%`,
+                        background: goalCntPct >= 100 ? "#10b981" : "#00929C",
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {/* ── Analytics shortcut — admin/manager only ── */}
         {isAdmin && (
