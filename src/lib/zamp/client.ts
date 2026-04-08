@@ -104,15 +104,20 @@ export async function recordRefund(params: {
   });
 }
 
-// Verify Zamp connection
-export async function pingZamp(): Promise<{ ok: boolean }> {
+// Verify Zamp connection — runs a real $1 test calculation
+export async function pingZamp(): Promise<{ ok: boolean; error?: string }> {
   try {
-    // Validate a known address as a lightweight connectivity check
-    const res = await fetch(`${ZAMP_BASE_URL}/addresses?line1=123+Main+St&city=Topeka&state=KS&zip=66612&country=US`, {
-      headers: { Authorization: getAuthHeader() },
+    const result = await calculateTax({
+      id: `PING-${Date.now()}`,
+      transactedAt: new Date().toISOString(),
+      subtotal: 1,
+      total: 1,
+      shipToAddress: { line1: "120 SW 10th Ave", city: "Topeka", state: "KS", zip: "66612" },
+      shipFromAddress: { line1: "123 Main St", city: "Wichita", state: "KS", zip: "67201" },
+      lineItems: [{ id: "1", amount: 1, quantity: 1, productTaxCode: "R_TPP" }],
     });
-    return { ok: res.ok };
-  } catch {
-    return { ok: false };
+    return { ok: typeof result.taxDue === "number" };
+  } catch (err) {
+    return { ok: false, error: String(err) };
   }
 }

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 
 export function PingButton() {
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{ ok?: boolean; authenticated?: boolean } | null>(null);
+  const [result, setResult] = useState<{ ok?: boolean; error?: string } | null>(null);
 
   async function handlePing() {
     setLoading(true);
@@ -28,7 +28,7 @@ export function PingButton() {
       </Button>
       {result && (
         <span className={`text-sm ${result.ok ? "text-emerald-600" : "text-red-600"}`}>
-          {result.ok ? "✓ Connected" : "✗ Failed"}
+          {result.ok ? "✓ Connected" : `✗ Failed${result.error ? `: ${result.error}` : ""}`}
         </span>
       )}
     </div>
