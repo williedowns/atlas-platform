@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -14,7 +14,7 @@ type Equipment = { id: string; product_name: string; serial_number: string | nul
 
 const JOB_TYPES = ["maintenance", "repair", "warranty", "install", "follow_up", "other"];
 
-export default function NewServiceJobPage() {
+function NewServiceJobForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = createClient();
@@ -195,5 +195,14 @@ export default function NewServiceJobPage() {
         </form>
       </main>
     </div>
+  );
+}
+
+
+export default function NewServiceJobPage() {
+  return (
+    <Suspense>
+      <NewServiceJobForm />
+    </Suspense>
   );
 }

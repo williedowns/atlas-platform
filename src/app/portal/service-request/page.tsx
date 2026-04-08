@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 
 type Equipment = { id: string; product_name: string; serial_number: string | null };
 
-export default function ServiceRequestPage() {
+function ServiceRequestForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = createClient();
@@ -152,5 +152,13 @@ export default function ServiceRequestPage() {
         </form>
       </main>
     </div>
+  );
+}
+
+export default function ServiceRequestPage() {
+  return (
+    <Suspense>
+      <ServiceRequestForm />
+    </Suspense>
   );
 }
