@@ -93,7 +93,9 @@ export default async function ContractDetailPage({
 
   const lineItems = Array.isArray(contract.line_items) ? contract.line_items : [];
   const discounts = Array.isArray(contract.discounts) ? contract.discounts : [];
-  const financing = contract.financing ?? {};
+  const financingArr = Array.isArray(contract.financing) ? contract.financing : (contract.financing ? [contract.financing] : []);
+  // Legacy single-object fallback kept for older contracts
+  const financing = financingArr[0] ?? {};
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -203,16 +205,16 @@ export default async function ContractDetailPage({
                     <td className="px-4 py-2 text-right text-sm">−{formatCurrency(d.amount)}</td>
                   </tr>
                 ))}
-                {financing?.financed_amount > 0 && (
-                  <tr className="text-blue-700">
+                {financingArr.filter((f: { financed_amount?: number }) => (f.financed_amount ?? 0) > 0).map((f: { financed_amount: number; financer_name?: string }, i: number) => (
+                  <tr key={`f-${i}`} className="text-blue-700">
                     <td className="px-4 py-2 text-sm">
-                      Financing ({financing.financer_name ?? "In-House"})
+                      Financing ({f.financer_name ?? "In-House"})
                     </td>
                     <td className="px-4 py-2 text-right text-sm">
-                      −{formatCurrency(financing.financed_amount)}
+                      −{formatCurrency(f.financed_amount)}
                     </td>
                   </tr>
-                )}
+                ))}
               </tbody>
             </table>
           </CardContent>
@@ -275,10 +277,18 @@ export default async function ContractDetailPage({
                 <span>Total</span>
                 <span>{formatCurrency(contract.total)}</span>
               </div>
-              <div className="flex justify-between text-emerald-700 pt-1">
-                <span>Deposit Paid</span>
-                <span>−{formatCurrency(contract.deposit_paid)}</span>
-              </div>
+              {financingArr.filter((f: { financed_amount?: number }) => (f.financed_amount ?? 0) > 0).map((f: { financed_amount: number; financer_name?: string }, i: number) => (
+                <div key={i} className="flex justify-between text-blue-700 pt-1">
+                  <span>Financing ({f.financer_name ?? "In-House"})</span>
+                  <span>−{formatCurrency(f.financed_amount)}</span>
+                </div>
+              ))}
+              {contract.deposit_paid > 0 && (
+                <div className="flex justify-between text-emerald-700 pt-1">
+                  <span>Deposit Paid</span>
+                  <span>−{formatCurrency(contract.deposit_paid)}</span>
+                </div>
+              )}
               <div className="flex justify-between font-semibold text-amber-700 pt-1 border-t border-slate-100">
                 <span>Balance Due at Delivery</span>
                 <span>{formatCurrency(contract.balance_due)}</span>
