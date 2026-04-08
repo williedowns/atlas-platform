@@ -177,9 +177,8 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
         body: JSON.stringify({
           line_items: draft.line_items,
           discounts: draft.discounts,
-          shipping_address: draft.location
-            ? { address: draft.location.address, city: draft.location.city, state: draft.location.state, zip: draft.location.zip }
-            : undefined,
+          show_id: draft.show_id,
+          location_id: draft.location_id,
         }),
       });
       if (response.ok) {
