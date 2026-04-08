@@ -56,7 +56,7 @@ export default async function ContractDetailPage({
       .single(),
     supabase
       .from("payments")
-      .select("*")
+      .select("*, intuit_charge_id, card_brand, card_last4")
       .eq("contract_id", id)
       .order("created_at"),
   ]);
@@ -65,6 +65,11 @@ export default async function ContractDetailPage({
 
   const canViewAudit = ["admin", "manager", "bookkeeper"].includes(profile?.role ?? "");
   const canRecordRefund = ["admin", "manager", "bookkeeper"].includes(profile?.role ?? "");
+
+  // Find the first completed CC payment that can receive a refund
+  const ccPayment = (payments ?? []).find(
+    (p) => p.intuit_charge_id && p.card_brand && p.card_last4 && p.status === "completed"
+  ) ?? null;
 
   // Load registered equipment for this contract (visible after delivery)
   const { data: contractEquipment } = await supabase
@@ -399,6 +404,7 @@ export default async function ContractDetailPage({
             <TaxRefundButton
               contractId={contract.id}
               taxAmount={contract.tax_amount ?? 0}
+              ccPayment={ccPayment ? { card_brand: ccPayment.card_brand, card_last4: ccPayment.card_last4 } : null}
               existingRefund={
                 contract.tax_refund_amount != null
                   ? {

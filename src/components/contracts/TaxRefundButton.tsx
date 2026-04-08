@@ -3,9 +3,15 @@
 import { useState } from "react";
 import { formatCurrency } from "@/lib/utils";
 
+interface CcPayment {
+  card_brand: string;
+  card_last4: string;
+}
+
 interface Props {
   contractId: string;
   taxAmount: number;
+  ccPayment?: CcPayment | null;
   existingRefund?: {
     amount: number;
     issued_at: string;
@@ -19,13 +25,26 @@ function formatDate(iso: string) {
   });
 }
 
-export function TaxRefundButton({ contractId, taxAmount, existingRefund }: Props) {
+function CardIcon() {
+  return (
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+    </svg>
+  );
+}
+
+export function TaxRefundButton({ contractId, taxAmount, ccPayment, existingRefund }: Props) {
   const [open, setOpen] = useState(false);
   const [amount, setAmount] = useState(taxAmount > 0 ? taxAmount.toFixed(2) : "");
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [issued, setIssued] = useState(existingRefund ?? null);
+
+  const hasCard = !!ccPayment?.card_last4;
+  const cardLabel = hasCard
+    ? `${ccPayment!.card_brand} ····${ccPayment!.card_last4}`
+    : null;
 
   // Already issued — show read-only state
   if (issued) {
@@ -66,8 +85,8 @@ export function TaxRefundButton({ contractId, taxAmount, existingRefund }: Props
         body: JSON.stringify({ amount: parsedAmount, notes }),
       });
       const data = await res.json();
-      if (!res.ok) { setError(data.error ?? "Failed to record refund."); return; }
-      setIssued({ amount: parsedAmount, issued_at: data.issued_at, notes: notes || null });
+      if (!res.ok) { setError(data.error ?? "Failed to issue refund."); return; }
+      setIssued({ amount: parsedAmount, issued_at: data.issued_at, notes: (data.notes ?? notes) || null });
       setOpen(false);
     } catch {
       setError("Network error. Please try again.");
@@ -84,10 +103,10 @@ export function TaxRefundButton({ contractId, taxAmount, existingRefund }: Props
           onClick={() => setOpen(true)}
           className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-amber-300 bg-amber-50 text-amber-800 font-semibold text-sm hover:bg-amber-100 transition-colors"
         >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-          </svg>
-          Record Tax Refund
+          <CardIcon />
+          {hasCard
+            ? `Refund ${formatCurrency(taxAmount)} to ${cardLabel}`
+            : "Record Tax Refund"}
         </button>
       ) : (
         <form
@@ -95,13 +114,28 @@ export function TaxRefundButton({ contractId, taxAmount, existingRefund }: Props
           className="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-3"
         >
           <div className="flex items-center justify-between">
-            <p className="font-semibold text-amber-900 text-sm">Record Tax Refund</p>
+            <p className="font-semibold text-amber-900 text-sm">
+              {hasCard ? "Refund Tax to Card" : "Record Tax Refund"}
+            </p>
             {taxAmount > 0 && (
               <p className="text-xs text-slate-500">
-                Tax on contract: <span className="font-semibold">{formatCurrency(taxAmount)}</span>
+                Tax: <span className="font-semibold">{formatCurrency(taxAmount)}</span>
               </p>
             )}
           </div>
+
+          {/* Card info banner */}
+          {hasCard && (
+            <div className="flex items-center gap-2.5 bg-white border border-slate-200 rounded-lg px-3 py-2.5">
+              <div className="w-7 h-7 rounded-md bg-slate-100 flex items-center justify-center text-slate-500">
+                <CardIcon />
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-slate-900">{cardLabel}</p>
+                <p className="text-xs text-slate-500">Refund will be processed to this card via Intuit Payments</p>
+              </div>
+            </div>
+          )}
 
           <div>
             <label className="text-xs font-medium text-slate-600 block mb-1">
@@ -124,13 +158,13 @@ export function TaxRefundButton({ contractId, taxAmount, existingRefund }: Props
 
           <div>
             <label className="text-xs font-medium text-slate-600 block mb-1">
-              How was this refunded? <span className="text-slate-400">(optional)</span>
+              Notes <span className="text-slate-400">(optional)</span>
             </label>
             <input
               type="text"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="e.g. Credit memo in QuickBooks, ACH refund…"
+              placeholder={hasCard ? "e.g. TX exemption cert received 4/8/2026" : "e.g. Credit memo in QuickBooks, ACH refund…"}
               className="w-full px-3 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
             />
           </div>
@@ -153,7 +187,9 @@ export function TaxRefundButton({ contractId, taxAmount, existingRefund }: Props
               disabled={loading}
               className="flex-1 px-4 py-2.5 rounded-lg bg-amber-500 text-white text-sm font-semibold hover:bg-amber-600 disabled:opacity-50 transition-colors"
             >
-              {loading ? "Saving…" : "Confirm Refund"}
+              {loading
+                ? (hasCard ? "Processing…" : "Saving…")
+                : (hasCard ? `Refund ${formatCurrency(parseFloat(amount) || 0)} to Card` : "Confirm Refund")}
             </button>
           </div>
         </form>
