@@ -114,7 +114,7 @@ export async function pingZamp(): Promise<{ ok: boolean; error?: string }> {
       total: 1,
       shipToAddress: { line1: "120 SW 10th Ave", city: "Topeka", state: "KS", zip: "66612" },
       shipFromAddress: { line1: "123 Main St", city: "Wichita", state: "KS", zip: "67201" },
-      lineItems: [{ id: "1", amount: 1, quantity: 1, productTaxCode: "R_TPP" }],
+      lineItems: [{ id: "1", amount: 1, quantity: 1, productName: "Test Item", productTaxCode: "R_TPP" }],
     });
     return { ok: typeof result.taxDue === "number" };
   } catch (err) {
