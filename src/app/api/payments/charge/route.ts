@@ -61,7 +61,7 @@ export async function POST(req: Request) {
   // Fetch contract
   const { data: contract, error: contractError } = await supabase
     .from("contracts")
-    .select(`*, customer:customers(*), location:locations(*)`)
+    .select(`*, customer:customers(*), location:locations(qbo_deposit_account_id, qbo_department_id, name), show:shows(qbo_deposit_account_id, qbo_department_id, name)`)
     .eq("id", contract_id)
     .single();
 
@@ -90,9 +90,21 @@ export async function POST(req: Request) {
     .select()
     .single();
 
-  // Build customer name from contract customer for Intuit merchant portal
+  // Build customer name for Intuit merchant portal
   const customerFullName = [contract.customer?.first_name, contract.customer?.last_name]
     .filter(Boolean).join(" ") || undefined;
+
+  // QBO context: prefer show over location (show-based sales track to the expo)
+  const show = (contract as any).show as { qbo_deposit_account_id?: string; qbo_department_id?: string; name?: string } | null;
+  const location = (contract as any).location as { qbo_deposit_account_id?: string; qbo_department_id?: string; name?: string } | null;
+  const qboContext = show ?? location;
+  const locationName = show?.name ?? location?.name ?? undefined;
+
+  // Build line items summary for QBO memo (e.g. "Hot Tub X (1), Steps (1)")
+  const lineItems = (contract as any).line_items as { product_name?: string; quantity?: number }[] | null;
+  const lineItemsSummary = lineItems?.length
+    ? lineItems.map((i) => `${i.product_name ?? "Item"}${i.quantity && i.quantity > 1 ? ` (${i.quantity})` : ""}`).join(", ")
+    : undefined;
 
   if (method === "credit_card" || method === "debit_card" || method === "financing") {
     // Tokenize raw card fields if no pre-existing token provided
@@ -180,8 +192,10 @@ export async function POST(req: Request) {
           deposit_amount: amount,
           contract_number: contract.contract_number,
           customer_name: customerFullName,
-          deposit_account_id: contract.location?.qbo_deposit_account_id ?? undefined,
-          department_id: contract.location?.qbo_department_id ?? undefined,
+          location_name: locationName,
+          line_items_summary: lineItemsSummary,
+          deposit_account_id: qboContext?.qbo_deposit_account_id ?? undefined,
+          department_id: qboContext?.qbo_department_id ?? undefined,
         });
         await supabase
           .from("contracts")

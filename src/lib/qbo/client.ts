@@ -172,10 +172,12 @@ export async function createQBODepositInvoice(params: {
   qbo_customer_id: string;
   deposit_amount: number;
   contract_number: string;
-  customer_name?: string;      // shown on invoice and in QBO customer activity
-  class_id?: string;           // QBO Class tracking (optional)
-  department_id?: string;      // QBO Location (Department) for tax allocation
-  deposit_account_id?: string; // Per-location bank account override
+  customer_name?: string;       // shown on invoice and in QBO customer activity
+  location_name?: string;       // store location or show/expo name
+  line_items_summary?: string;  // e.g. "Hot Tub X (1), Steps (1), Chemicals (2)"
+  class_id?: string;            // QBO Class tracking (optional)
+  department_id?: string;       // QBO Location (Department) for tax allocation
+  deposit_account_id?: string;  // Per-location bank account override
 }) {
   // Prefer the location-specific account, fall back to global env var
   const depositAccountId =
@@ -186,7 +188,14 @@ export async function createQBODepositInvoice(params: {
     body: JSON.stringify({
       DocNumber: `DEP-${params.contract_number}`,
       CustomerRef: { value: params.qbo_customer_id },
-      CustomerMemo: { value: `Deposit — Contract ${params.contract_number}${params.customer_name ? ` — ${params.customer_name}` : ""}` },
+      CustomerMemo: {
+        value: [
+          `Deposit — Contract ${params.contract_number}`,
+          params.customer_name,
+          params.location_name,
+          params.line_items_summary,
+        ].filter(Boolean).join(" — ").slice(0, 1000),
+      },
       Line: [
         {
           Amount: params.deposit_amount,

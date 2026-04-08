@@ -36,6 +36,7 @@ export default async function ShowsPage() {
   const past = shows?.filter((s) => s.end_date < today).slice(0, 5) ?? [];
 
   const canCreateShows = profile?.role === "admin" || profile?.role === "manager";
+  const canEditShows = profile?.role === "admin";
 
   return (
     <AppShell role={profile?.role} userName={profile?.full_name} orgPerms={orgPerms}>
@@ -66,28 +67,39 @@ export default async function ShowsPage() {
           ) : (
             <div className="space-y-3">
               {upcoming.map((show) => (
-                <Link key={show.id} href={`/shows/${show.id}`} className="block">
-                  <Card className="active:bg-slate-50 hover:shadow-md transition-shadow cursor-pointer">
-                    <CardContent className="p-4">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <p className="font-semibold text-slate-900 text-lg">{show.name}</p>
-                          <p className="text-slate-600 mt-0.5">{show.venue_name}</p>
-                          <p className="text-slate-500 text-sm">
-                            {show.city}, {show.state}
-                          </p>
+                <div key={show.id} className="relative">
+                  <Link href={`/shows/${show.id}`} className="block">
+                    <Card className="active:bg-slate-50 hover:shadow-md transition-shadow cursor-pointer">
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <p className="font-semibold text-slate-900 text-lg">{show.name}</p>
+                            <p className="text-slate-600 mt-0.5">{show.venue_name}</p>
+                            <p className="text-slate-500 text-sm">
+                              {show.city}, {show.state}
+                            </p>
+                          </div>
+                          <div className="text-right ml-3">
+                            <Badge variant="default" className="mb-1">Active</Badge>
+                            <p className="text-xs text-slate-500 mt-1">
+                              {formatDate(show.start_date)}
+                              {show.start_date !== show.end_date && ` – ${formatDate(show.end_date)}`}
+                            </p>
+                            {canEditShows && (
+                              <Link
+                                href={`/admin/shows/${show.id}`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="text-xs text-[#00929C] underline mt-1 block"
+                              >
+                                Edit / QBO
+                              </Link>
+                            )}
+                          </div>
                         </div>
-                        <div className="text-right ml-3">
-                          <Badge variant="default" className="mb-1">Active</Badge>
-                          <p className="text-xs text-slate-500 mt-1">
-                            {formatDate(show.start_date)}
-                            {show.start_date !== show.end_date && ` – ${formatDate(show.end_date)}`}
-                          </p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </Link>
+                      </CardContent>
+                    </Card>
+                  </Link>
+                </div>
               ))}
             </div>
           )}
