@@ -183,9 +183,17 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
       });
       if (response.ok) {
         const data = await response.json();
+        if (data.unconfigured) {
+          console.warn("[tax] ZAMP_API_TOKEN not configured — tax will be $0 until token is added to environment");
+        }
         setTax(data.total_tax ?? 0, data.tax_rate ?? 0);
+      } else {
+        const errBody = await response.json().catch(() => ({}));
+        console.error("[tax] API error", response.status, errBody);
       }
-    } catch { /* Tax service unavailable */ } finally {
+    } catch (err) {
+      console.error("[tax] Network/unexpected error:", err);
+    } finally {
       setTaxCalculating(false);
     }
   }, [draft.line_items, draft.discounts, draft.location, setTax]);

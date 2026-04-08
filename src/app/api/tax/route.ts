@@ -36,6 +36,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Location address required for tax calculation" }, { status: 400 });
   }
 
+  // Guard: token not configured — return gracefully instead of throwing
+  if (!process.env.ZAMP_API_TOKEN) {
+    console.warn("[tax] ZAMP_API_TOKEN not set — skipping tax calculation");
+    return NextResponse.json({ tax_amount: 0, total_tax: 0, tax_rate: 0, jurisdiction: null, unconfigured: true });
+  }
+
   const subtotal = (line_items as { sell_price: number; quantity: number }[])
     .reduce((sum: number, item) => sum + item.sell_price * item.quantity, 0);
   const discountTotal = (discounts as { amount: number }[])
