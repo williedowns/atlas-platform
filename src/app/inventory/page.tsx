@@ -37,7 +37,7 @@ export default async function InventoryPage({
     .from("inventory_units")
     .select(`
       id, serial_number, order_number, status, unit_type,
-      shell_color, cabinet_color, sub_location, received_date, notes,
+      shell_color, cabinet_color, sub_location, received_date, notes, model_code,
       product:products(id, name, category, line, model_code),
       location:locations(id, name, city, state),
       show:shows(id, name, venue_name)
@@ -190,7 +190,7 @@ export default async function InventoryPage({
                   >
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-slate-900 truncate">
-                        {product?.name ?? "Unknown Product"}
+                        {product?.name ?? unit.model_code ?? "Unknown Product"}
                       </p>
                       <p className="text-sm text-slate-500 mt-0.5">
                         {unit.serial_number ?? unit.order_number ?? "No serial"}
