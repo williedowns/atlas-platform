@@ -97,6 +97,12 @@ export default async function ContractDetailPage({
   // Legacy single-object fallback kept for older contracts
   const financing = financingArr[0] ?? {};
 
+  // Compute balance due from actual paid amounts — stored balance_due can be stale
+  // if a deposit split was planned but never collected
+  const totalFinanced = financingArr.reduce((sum: number, f: { financed_amount?: number }) => sum + (f.financed_amount ?? 0), 0);
+  const actualDepositPaid = contract.deposit_paid ?? 0;
+  const computedBalanceDue = Math.max(0, (contract.total ?? 0) - totalFinanced - actualDepositPaid);
+
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Header */}
@@ -291,7 +297,7 @@ export default async function ContractDetailPage({
               )}
               <div className="flex justify-between font-semibold text-amber-700 pt-1 border-t border-slate-100">
                 <span>Balance Due at Delivery</span>
-                <span>{formatCurrency(contract.balance_due)}</span>
+                <span>{formatCurrency(computedBalanceDue)}</span>
               </div>
             </div>
           </CardContent>
@@ -385,7 +391,7 @@ export default async function ContractDetailPage({
 
         {/* Actions */}
         <div className="space-y-3 pt-2">
-          {(contract.deposit_paid ?? 0) < contract.total && !["cancelled", "delivered"].includes(contract.status) && (
+          {computedBalanceDue > 0 && !["cancelled", "delivered"].includes(contract.status) && (
             <Link href={`/contracts/${id}/collect-payment`} className="block">
               <Button variant="success" size="xl" className="w-full">
                 {(contract.deposit_paid ?? 0) > 0 ? "Add Payment" : "Collect Deposit"}
