@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+export const dynamic = "force-dynamic";
+
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -10,7 +12,7 @@ import { Input } from "@/components/ui/input";
 
 type Profile = { id: string; full_name: string };
 
-export default function NewWorkOrderPage() {
+function NewWorkOrderForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const contractId = searchParams.get("contract_id") ?? "";
@@ -73,6 +75,79 @@ export default function NewWorkOrderPage() {
   }
 
   return (
+    <main className="px-5 py-6 max-w-2xl mx-auto pb-24 space-y-4">
+      {contract && (
+        <Card>
+          <CardContent className="p-4">
+            <p className="font-semibold text-slate-900">
+              {contract.customer?.first_name} {contract.customer?.last_name}
+            </p>
+            <p className="text-sm text-slate-500">
+              {contract.contract_number} · {contract.show?.name ?? contract.location?.name ?? "—"}
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      <Card>
+        <CardContent className="p-4 space-y-4">
+          <Input
+            label="Scheduled Date"
+            type="date"
+            value={form.scheduled_date}
+            onChange={(e) => setForm((f) => ({ ...f, scheduled_date: e.target.value }))}
+          />
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium text-slate-700">Notes</label>
+            <textarea
+              value={form.notes}
+              onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+              rows={3}
+              placeholder="Access code, gate instructions, customer notes…"
+              className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#00929C] focus:border-transparent resize-none"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="p-4">
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Assign Crew</p>
+          <div className="space-y-2">
+            {crew.map((p) => {
+              const assigned = form.assigned_crew_ids.includes(p.id);
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => toggleCrew(p.id)}
+                  className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border transition-all text-left ${
+                    assigned
+                      ? "bg-[#010F21] border-[#010F21] text-white"
+                      : "bg-white border-slate-200 text-slate-700 hover:border-slate-400"
+                  }`}
+                >
+                  <span className="font-medium text-sm">{p.full_name}</span>
+                  {assigned && (
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Button size="xl" className="w-full" loading={saving} onClick={handleSave} disabled={!form.contract_id}>
+        Create Work Order
+      </Button>
+    </main>
+  );
+}
+
+export default function NewWorkOrderPage() {
+  return (
     <div className="min-h-screen bg-slate-50">
       <header className="bg-[#010F21] text-white px-4 py-4 sticky top-0 z-10 shadow-lg">
         <div className="flex items-center gap-3">
@@ -84,75 +159,9 @@ export default function NewWorkOrderPage() {
           <h1 className="text-lg font-bold">New Work Order</h1>
         </div>
       </header>
-
-      <main className="px-5 py-6 max-w-2xl mx-auto pb-24 space-y-4">
-        {contract && (
-          <Card>
-            <CardContent className="p-4">
-              <p className="font-semibold text-slate-900">
-                {contract.customer?.first_name} {contract.customer?.last_name}
-              </p>
-              <p className="text-sm text-slate-500">
-                {contract.contract_number} · {contract.show?.name ?? contract.location?.name ?? "—"}
-              </p>
-            </CardContent>
-          </Card>
-        )}
-
-        <Card>
-          <CardContent className="p-4 space-y-4">
-            <Input
-              label="Scheduled Date"
-              type="date"
-              value={form.scheduled_date}
-              onChange={(e) => setForm((f) => ({ ...f, scheduled_date: e.target.value }))}
-            />
-            <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-slate-700">Notes</label>
-              <textarea
-                value={form.notes}
-                onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-                rows={3}
-                placeholder="Access code, gate instructions, customer notes…"
-                className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#00929C] focus:border-transparent resize-none"
-              />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Assign Crew</p>
-            <div className="space-y-2">
-              {crew.map((p) => {
-                const assigned = form.assigned_crew_ids.includes(p.id);
-                return (
-                  <button
-                    key={p.id}
-                    onClick={() => toggleCrew(p.id)}
-                    className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border transition-all text-left ${
-                      assigned
-                        ? "bg-[#010F21] border-[#010F21] text-white"
-                        : "bg-white border-slate-200 text-slate-700 hover:border-slate-400"
-                    }`}
-                  >
-                    <span className="font-medium text-sm">{p.full_name}</span>
-                    {assigned && (
-                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                      </svg>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Button size="xl" className="w-full" loading={saving} onClick={handleSave} disabled={!form.contract_id}>
-          Create Work Order
-        </Button>
-      </main>
+      <Suspense fallback={<div className="flex items-center justify-center py-24 text-slate-400">Loading…</div>}>
+        <NewWorkOrderForm />
+      </Suspense>
     </div>
   );
 }

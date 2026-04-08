@@ -136,10 +136,17 @@ export async function POST(req: Request) {
     // Charge via Intuit Payments
     let chargeResult;
     try {
+      const chargeDescription = [
+        `Deposit — ${contract.contract_number}`,
+        customerFullName,
+        locationName,
+        lineItemsSummary,
+      ].filter(Boolean).join(" — ").slice(0, 500);
+
       chargeResult = await createCharge({
         amount: totalCharge,
         card_token: resolvedToken,
-        description: `Atlas Spas Deposit - ${contract.contract_number}`,
+        description: chargeDescription,
         customerName: customerFullName,
         capture: true,
         context: { mobile: true, isEcommerce: false },
