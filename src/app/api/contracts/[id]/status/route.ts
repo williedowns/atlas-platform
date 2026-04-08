@@ -31,7 +31,7 @@ export async function PATCH(
 
   const { data: contract } = await supabase
     .from("contracts")
-    .select("status, sales_rep_id")
+    .select("status, sales_rep_id, customer_id, line_items")
     .eq("id", id)
     .single();
 
@@ -65,6 +65,22 @@ export async function PATCH(
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // Auto-create equipment registry entries on delivery
+  if (newStatus === "delivered" && contract.customer_id) {
+    const lineItems: any[] = Array.isArray(contract.line_items) ? contract.line_items : [];
+    const products = lineItems.filter((i: any) => !i.waived && i.product_name);
+    if (products.length > 0) {
+      await supabase.from("equipment").insert(
+        products.map((item: any) => ({
+          customer_id: contract.customer_id,
+          contract_id: id,
+          product_name: item.product_name,
+          purchase_date: new Date().toISOString().slice(0, 10),
+        }))
+      );
+    }
+  }
 
   // Fire-and-forget audit log
   logAction({

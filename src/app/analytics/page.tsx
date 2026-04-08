@@ -164,8 +164,10 @@ export default async function AnalyticsPage({
     .select("rep_id, target_revenue")
     .eq("period_start", new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10));
 
-  const [{ data: contracts }, { data: priorContracts }, { data: outstanding }, { data: allOpps }, { data: goalRows }] =
-    await Promise.all([query, priorQuery, outstandingQuery, closingRatioQuery, goalsQuery]);
+  const commissionQuery = supabase.from("commission_rates").select("rep_id, rate_pct");
+
+  const [{ data: contracts }, { data: priorContracts }, { data: outstanding }, { data: allOpps }, { data: goalRows }, { data: commissionRows }] =
+    await Promise.all([query, priorQuery, outstandingQuery, closingRatioQuery, goalsQuery, commissionQuery]);
 
   const rows = contracts ?? [];
   const priorRows = priorContracts ?? [];
@@ -193,6 +195,8 @@ export default async function AnalyticsPage({
 
   // ── Sales rep leaderboard ───────────────────────────────────────────────────
   const goalMap = new Map((goalRows ?? []).map((g) => [g.rep_id, g.target_revenue]));
+  const commissionMap = new Map((commissionRows ?? []).map((r: any) => [r.rep_id, Number(r.rate_pct)]));
+  const hasCommissions = (commissionRows ?? []).length > 0;
   const repMap = new Map<string, { id: string; name: string; count: number; revenue: number }>();
   for (const c of rows) {
     const repId = (c.sales_rep as { id?: string } | null)?.id ?? "unknown";
@@ -336,21 +340,33 @@ export default async function AnalyticsPage({
 
       <main className="px-5 py-6 space-y-5 max-w-2xl mx-auto pb-24">
 
-        {/* ── Period selector ── */}
-        <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
-          {(["today", "week", "month", "year", "all"] as Period[]).map((p) => (
-            <Link
-              key={p}
-              href={`/analytics?period=${p}`}
-              className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-semibold transition-all ${
-                period === p
-                  ? "bg-[#00929C] text-white shadow-md"
-                  : "bg-white text-slate-600 border border-slate-200 hover:border-[#00929C]"
-              }`}
-            >
-              {PERIOD_LABELS[p]}
-            </Link>
-          ))}
+        {/* ── Period selector + Export ── */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 flex-1">
+            {(["today", "week", "month", "year", "all"] as Period[]).map((p) => (
+              <Link
+                key={p}
+                href={`/analytics?period=${p}`}
+                className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-semibold transition-all ${
+                  period === p
+                    ? "bg-[#00929C] text-white shadow-md"
+                    : "bg-white text-slate-600 border border-slate-200 hover:border-[#00929C]"
+                }`}
+              >
+                {PERIOD_LABELS[p]}
+              </Link>
+            ))}
+          </div>
+          <a
+            href={`/api/analytics/export?period=${period}`}
+            download
+            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm text-slate-600 hover:bg-slate-50 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            CSV
+          </a>
         </div>
 
         {/* ── KPI Strip ── */}
@@ -422,6 +438,7 @@ export default async function AnalyticsPage({
                       <th className="text-right py-3 px-4 font-medium text-slate-500">Revenue</th>
                       <th className="text-right py-3 px-4 font-medium text-slate-500">Avg</th>
                       <th className="text-right py-3 px-4 font-medium text-slate-500">Goal</th>
+                      {hasCommissions && <th className="text-right py-3 px-4 font-medium text-slate-500">Commission</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -430,6 +447,8 @@ export default async function AnalyticsPage({
                       const goalPct = targetRev && period === "month"
                         ? Math.min(999, Math.round((rep.revenue / targetRev) * 100))
                         : null;
+                      const ratePct = commissionMap.get(rep.id) ?? 0;
+                      const commissionEarned = ratePct > 0 ? (ratePct / 100) * rep.revenue : null;
                       return (
                       <tr
                         key={rep.name}
@@ -455,6 +474,15 @@ export default async function AnalyticsPage({
                             <span className="text-slate-300 text-sm">—</span>
                           )}
                         </td>
+                        {hasCommissions && (
+                          <td className="py-3 px-4 text-right">
+                            {commissionEarned !== null ? (
+                              <span className="font-semibold text-emerald-600">{formatCurrency(commissionEarned)}</span>
+                            ) : (
+                              <span className="text-slate-300 text-sm">—</span>
+                            )}
+                          </td>
+                        )}
                       </tr>
                       );
                     })}

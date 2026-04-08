@@ -23,12 +23,23 @@ export default async function AdminPage() {
 
   if (profile?.role !== "admin") redirect("/dashboard");
 
-  const [{ count: productCount }, { data: locations }, { count: userCount }, { data: qboToken }] = await Promise.all([
+  const [{ count: productCount }, { data: locations }, { count: userCount }, { data: qboToken }, { data: reorderProducts }, { data: availableUnits }, { count: pendingServiceRequests }] = await Promise.all([
     supabase.from("products").select("*", { count: "exact", head: true }),
     supabase.from("locations").select("*").order("type").order("name"),
     supabase.from("profiles").select("*", { count: "exact", head: true }),
     supabase.from("qbo_tokens").select("id").eq("id", 1).single(),
+    supabase.from("products").select("id, min_stock_qty").gt("min_stock_qty", 0),
+    supabase.from("inventory_units").select("product_id").not("status", "in", '("sold","delivered")'),
+    supabase.from("service_requests").select("*", { count: "exact", head: true }).eq("status", "new"),
   ]);
+
+  const unitCountMap = new Map<string, number>();
+  for (const u of availableUnits ?? []) {
+    unitCountMap.set(u.product_id, (unitCountMap.get(u.product_id) ?? 0) + 1);
+  }
+  const reorderCount = (reorderProducts ?? []).filter(
+    (p) => (unitCountMap.get(p.id) ?? 0) <= (p.min_stock_qty ?? 0)
+  ).length;
 
   const qboConnected = !!qboToken;
   const zampConfigured = !!process.env.ZAMP_API_TOKEN;
@@ -93,6 +104,43 @@ export default async function AdminPage() {
           </Card>
         </Link>
 
+        {/* Commission Rates */}
+        <Link href="/admin/commission" className="block">
+          <Card className="hover:border-slate-300 transition-colors cursor-pointer">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="font-semibold text-slate-900">Commission Rates</p>
+                <p className="text-sm text-slate-500">Rate per rep · Shows on analytics leaderboard</p>
+              </div>
+              <svg className="w-6 h-6 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </CardContent>
+          </Card>
+        </Link>
+
+        {/* Service Requests */}
+        <Link href="/admin/service-requests" className="block">
+          <Card className={`hover:border-slate-300 transition-colors cursor-pointer ${(pendingServiceRequests ?? 0) > 0 ? "border-red-200" : ""}`}>
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <p className="font-semibold text-slate-900">Service Requests</p>
+                  {(pendingServiceRequests ?? 0) > 0 && (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-semibold border border-red-300">
+                      {pendingServiceRequests} new
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm text-slate-500">Customer-submitted service & repair requests</p>
+              </div>
+              <svg className="w-6 h-6 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </CardContent>
+          </Card>
+        </Link>
+
         {/* Platform Settings */}
         <Link href="/admin/settings">
           <Card className="hover:border-slate-300 transition-colors cursor-pointer">
@@ -110,10 +158,17 @@ export default async function AdminPage() {
 
         {/* Inventory Management */}
         <Link href="/admin/inventory" className="block">
-          <Card className="border-slate-200 hover:border-[#00929C]/40 transition-colors">
+          <Card className={`border-slate-200 hover:border-[#00929C]/40 transition-colors ${reorderCount > 0 ? "border-amber-300" : ""}`}>
             <CardContent className="p-4 flex items-center justify-between">
               <div>
-                <p className="font-semibold text-slate-900">Inventory Management</p>
+                <div className="flex items-center gap-2">
+                  <p className="font-semibold text-slate-900">Inventory Management</p>
+                  {reorderCount > 0 && (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-semibold border border-amber-300">
+                      {reorderCount} reorder
+                    </span>
+                  )}
+                </div>
                 <p className="text-sm text-slate-500">Units · Transfers · Shows · Serial Numbers</p>
               </div>
               <svg className="w-6 h-6 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">

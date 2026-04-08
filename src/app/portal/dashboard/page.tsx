@@ -41,19 +41,28 @@ export default async function PortalDashboardPage() {
     .maybeSingle();
 
   const contracts: any[] = [];
+  const equipment: any[] = [];
   if (customer) {
-    const { data } = await supabase
-      .from("contracts")
-      .select(`
-        id, contract_number, status, total, deposit_paid, balance_due,
-        created_at, line_items,
-        show:shows(name),
-        location:locations(name)
-      `)
-      .eq("customer_id", customer.id)
-      .not("status", "in", '("draft","cancelled")')
-      .order("created_at", { ascending: false });
-    contracts.push(...(data ?? []));
+    const [{ data: contractData }, { data: equipmentData }] = await Promise.all([
+      supabase
+        .from("contracts")
+        .select(`
+          id, contract_number, status, total, deposit_paid, balance_due,
+          created_at, line_items,
+          show:shows(name),
+          location:locations(name)
+        `)
+        .eq("customer_id", customer.id)
+        .not("status", "in", '("draft","cancelled")')
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("equipment")
+        .select("id, product_name, serial_number, purchase_date, warranty_expires")
+        .eq("customer_id", customer.id)
+        .order("product_name"),
+    ]);
+    contracts.push(...(contractData ?? []));
+    equipment.push(...(equipmentData ?? []));
   }
 
   return (
@@ -71,7 +80,18 @@ export default async function PortalDashboardPage() {
       </header>
 
       <main className="px-4 py-6 max-w-2xl mx-auto space-y-4">
-        <h2 className="font-bold text-lg text-slate-900">Your Orders</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="font-bold text-lg text-slate-900">Your Orders</h2>
+          <Link
+            href="/portal/service-request"
+            className="flex items-center gap-1.5 text-sm font-semibold text-[#00929C] hover:text-[#007a82] transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            Request Service
+          </Link>
+        </div>
 
         {contracts.length === 0 ? (
           <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center">
@@ -109,6 +129,39 @@ export default async function PortalDashboardPage() {
               </Link>
             );
           })
+        )}
+
+        {/* Equipment */}
+        {equipment.length > 0 && (
+          <>
+            <h2 className="font-bold text-lg text-slate-900 pt-2">Your Equipment</h2>
+            {equipment.map((eq) => (
+              <div key={eq.id} className="bg-white rounded-2xl border border-slate-200 p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-slate-900">{eq.product_name}</p>
+                    {eq.serial_number && (
+                      <p className="text-xs text-slate-500 mt-0.5">S/N: {eq.serial_number}</p>
+                    )}
+                    {eq.purchase_date && (
+                      <p className="text-xs text-slate-400 mt-0.5">Purchased {formatDate(eq.purchase_date)}</p>
+                    )}
+                    {eq.warranty_expires && (
+                      <p className={`text-xs mt-0.5 font-medium ${new Date(eq.warranty_expires) > new Date() ? "text-emerald-600" : "text-slate-400"}`}>
+                        Warranty {new Date(eq.warranty_expires) > new Date() ? `expires ${formatDate(eq.warranty_expires)}` : "expired"}
+                      </p>
+                    )}
+                  </div>
+                  <Link
+                    href={`/portal/service-request?equipment_id=${eq.id}`}
+                    className="flex-shrink-0 text-xs font-semibold text-[#00929C] hover:text-[#007a82] border border-[#00929C]/30 rounded-lg px-3 py-1.5 hover:border-[#00929C]/60 transition-colors"
+                  >
+                    Request Service
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </>
         )}
       </main>
     </div>

@@ -66,6 +66,13 @@ export default async function ContractDetailPage({
   const canViewAudit = ["admin", "manager", "bookkeeper"].includes(profile?.role ?? "");
   const canRecordRefund = ["admin", "manager", "bookkeeper"].includes(profile?.role ?? "");
 
+  // Load registered equipment for this contract (visible after delivery)
+  const { data: contractEquipment } = await supabase
+    .from("equipment")
+    .select("id, product_name, serial_number, purchase_date, warranty_expires, notes")
+    .eq("contract_id", id)
+    .order("product_name");
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let auditLogs: any[] = [];
   if (canViewAudit) {
@@ -413,6 +420,38 @@ export default async function ContractDetailPage({
             </Button>
           </Link>
         </div>
+
+        {/* Equipment Registry */}
+        {(contractEquipment ?? []).length > 0 && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle>Registered Equipment</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <ul className="divide-y divide-slate-100">
+                {(contractEquipment ?? []).map((eq) => (
+                  <li key={eq.id} className="px-4 py-3">
+                    <p className="font-medium text-slate-900 text-sm">{eq.product_name}</p>
+                    {eq.serial_number && (
+                      <p className="text-xs text-slate-500 mt-0.5">S/N: {eq.serial_number}</p>
+                    )}
+                    {eq.purchase_date && (
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Purchased {new Date(eq.purchase_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                      </p>
+                    )}
+                    {eq.warranty_expires && (
+                      <p className={`text-xs mt-0.5 ${new Date(eq.warranty_expires) > new Date() ? "text-emerald-600" : "text-slate-400"}`}>
+                        Warranty {new Date(eq.warranty_expires) > new Date() ? `expires ${new Date(eq.warranty_expires).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}` : "expired"}
+                      </p>
+                    )}
+                    {eq.notes && <p className="text-xs text-slate-500 mt-0.5 italic">{eq.notes}</p>}
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Audit Trail (admin/manager/bookkeeper only) */}
         {canViewAudit && auditLogs.length > 0 && (

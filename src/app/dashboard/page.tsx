@@ -108,6 +108,15 @@ export default async function DashboardPage() {
     .eq("period_start", monthStart)
     .maybeSingle();
 
+  // ── Reorder alerts (admin/manager only) ──────────────────────────────────
+  const reorderProductsQuery = isAdmin
+    ? supabase.from("products").select("id, name, min_stock_qty").gt("min_stock_qty", 0)
+    : Promise.resolve({ data: null as null });
+
+  const reorderUnitsQuery = isAdmin
+    ? supabase.from("inventory_units").select("product_id").not("status", "in", '("sold","delivered")')
+    : Promise.resolve({ data: null as null });
+
   const [
     { data: confirmedContractsRaw },
     { data: contingentContractsRaw },
@@ -115,7 +124,17 @@ export default async function DashboardPage() {
     { data: leadsRaw },
     { data: monthStatsRaw },
     { data: goal },
-  ] = await Promise.all([confirmedQuery, contingentQuery, quotesQuery, leadsQuery, monthStatsQuery, goalQuery]);
+    { data: reorderProductsRaw },
+    { data: reorderUnitsRaw },
+  ] = await Promise.all([confirmedQuery, contingentQuery, quotesQuery, leadsQuery, monthStatsQuery, goalQuery, reorderProductsQuery, reorderUnitsQuery]);
+
+  const reorderUnitMap = new Map<string, number>();
+  for (const u of (reorderUnitsRaw ?? []) as { product_id: string }[]) {
+    reorderUnitMap.set(u.product_id, (reorderUnitMap.get(u.product_id) ?? 0) + 1);
+  }
+  const reorderAlerts = ((reorderProductsRaw ?? []) as { id: string; name: string; min_stock_qty: number }[]).filter(
+    (p) => (reorderUnitMap.get(p.id) ?? 0) <= p.min_stock_qty
+  );
 
   const confirmedContracts = (confirmedContractsRaw ?? []) as any[];
   const contingentContracts = (contingentContractsRaw ?? []) as any[];
@@ -191,6 +210,26 @@ export default async function DashboardPage() {
       </header>
 
       <main className="px-5 py-6 space-y-3 max-w-2xl mx-auto pb-24">
+
+        {/* ── Reorder Alerts ── */}
+        {isAdmin && reorderAlerts.length > 0 && (
+          <Link href="/admin/inventory" className="block">
+            <div className="bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 flex items-start gap-3 hover:bg-amber-100 transition-colors">
+              <svg className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <div>
+                <p className="font-semibold text-amber-800 text-sm">
+                  {reorderAlerts.length} product{reorderAlerts.length !== 1 ? "s" : ""} at or below reorder threshold
+                </p>
+                <p className="text-xs text-amber-700 mt-0.5">
+                  {reorderAlerts.slice(0, 3).map((p: any) => p.name).join(", ")}
+                  {reorderAlerts.length > 3 ? ` +${reorderAlerts.length - 3} more` : ""}
+                </p>
+              </div>
+            </div>
+          </Link>
+        )}
 
         {/* ── Today's Stats ── */}
         <div className="grid grid-cols-2 gap-3">
