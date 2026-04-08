@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createCharge, createToken } from "@/lib/payments/intuit";
 import { createQBODepositInvoice } from "@/lib/qbo/client";
+import { recordTransaction } from "@/lib/zamp/client";
 import { logAction } from "@/lib/audit";
 
 // ── Simple in-process rate limiter ────────────────────────────────────────────
@@ -61,7 +62,7 @@ export async function POST(req: Request) {
   // Fetch contract
   const { data: contract, error: contractError } = await supabase
     .from("contracts")
-    .select(`*, customer:customers(*), location:locations(qbo_deposit_account_id, qbo_department_id, name), show:shows(qbo_deposit_account_id, qbo_department_id, name)`)
+    .select(`*, customer:customers(*), location:locations(qbo_deposit_account_id, qbo_department_id, name, address, city, state, zip), show:shows(qbo_deposit_account_id, qbo_department_id, name, address, city, state, zip)`)
     .eq("id", contract_id)
     .single();
 
@@ -190,6 +191,33 @@ export async function POST(req: Request) {
         intuit_payment_id: chargeResult.id,
       })
       .eq("id", contract_id);
+
+    // Record transaction in Zamp for state filing & remittance (best-effort)
+    if (process.env.ZAMP_API_TOKEN && contract.tax_amount > 0) {
+      try {
+        const shipTo = show
+          ? { line1: (contract as any).show?.address ?? "", city: (contract as any).show?.city ?? "", state: (contract as any).show?.state ?? "", zip: (contract as any).show?.zip ?? "" }
+          : { line1: (contract as any).location?.address ?? "", city: (contract as any).location?.city ?? "", state: (contract as any).location?.state ?? "", zip: (contract as any).location?.zip ?? "" };
+        if (shipTo.state) {
+          await recordTransaction({
+            id: contract.contract_number,
+            transactedAt: new Date().toISOString(),
+            subtotal: Number(amount),
+            total: Number(amount),
+            shipToAddress: shipTo,
+            shipFromAddress: {
+              line1: process.env.SHIP_FROM_ADDRESS ?? "123 Main St",
+              city: process.env.SHIP_FROM_CITY ?? "Wichita",
+              state: process.env.SHIP_FROM_STATE ?? "KS",
+              zip: process.env.SHIP_FROM_ZIP ?? "67201",
+            },
+            lineItems: [{ id: "1", amount: Number(amount), quantity: 1, productName: "Hot Tub / Spa", productSku: "SPA", productTaxCode: "R_TPP" }],
+          });
+        }
+      } catch (err) {
+        console.error("Zamp transaction record failed (non-fatal):", err);
+      }
+    }
 
     // Create deposit invoice in QBO (best-effort)
     if (contract.customer?.qbo_customer_id) {

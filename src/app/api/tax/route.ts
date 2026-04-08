@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { calculateTax } from "@/lib/avalara/client";
+import { calculateTax } from "@/lib/zamp/client";
 import { createClient } from "@/lib/supabase/server";
 
 export async function POST(req: Request) {
@@ -19,7 +19,7 @@ export async function POST(req: Request) {
       .eq("id", show_id)
       .single();
     if (show) {
-      shipToAddress = { line1: show.address, city: show.city, region: show.state, postalCode: show.zip, country: "US" };
+      shipToAddress = { line1: show.address, city: show.city, state: show.state, zip: show.zip };
     }
   } else if (location_id) {
     const { data: loc } = await supabase
@@ -28,7 +28,7 @@ export async function POST(req: Request) {
       .eq("id", location_id)
       .single();
     if (loc) {
-      shipToAddress = { line1: loc.address, city: loc.city, region: loc.state, postalCode: loc.zip, country: "US" };
+      shipToAddress = { line1: loc.address, city: loc.city, state: loc.state, zip: loc.zip };
     }
   }
 
@@ -42,25 +42,40 @@ export async function POST(req: Request) {
     .reduce((sum: number, d) => sum + d.amount, 0);
   const taxableAmount = Math.max(0, subtotal - discountTotal);
 
+  const shipFrom = {
+    line1: process.env.SHIP_FROM_ADDRESS ?? "123 Main St",
+    city: process.env.SHIP_FROM_CITY ?? "Wichita",
+    state: process.env.SHIP_FROM_STATE ?? "KS",
+    zip: process.env.SHIP_FROM_ZIP ?? "67201",
+  };
+
   const taxResult = await calculateTax({
-    lines: [{ number: "1", amount: taxableAmount, itemCode: "SPA", description: "Hot Tub / Spa" }],
-    customerCode: customer_id ?? "GUEST",
-    date: new Date().toISOString().split("T")[0],
-    shipTo: shipToAddress,
-    shipFrom: {
-      line1: process.env.AVALARA_SHIP_FROM_ADDRESS ?? "123 Main St",
-      city: process.env.AVALARA_SHIP_FROM_CITY ?? "Wichita",
-      region: process.env.AVALARA_SHIP_FROM_STATE ?? "KS",
-      postalCode: process.env.AVALARA_SHIP_FROM_ZIP ?? "67201",
-      country: "US",
-    },
-    type: "SalesOrder",
-    commit: false,
+    id: `QUOTE-${customer_id ?? "GUEST"}-${Date.now()}`,
+    transactedAt: new Date().toISOString(),
+    subtotal: taxableAmount,
+    total: taxableAmount,
+    shipToAddress,
+    shipFromAddress: shipFrom,
+    lineItems: [
+      {
+        id: "1",
+        amount: taxableAmount,
+        quantity: 1,
+        productName: "Hot Tub / Spa",
+        productSku: "SPA",
+        productTaxCode: "R_TPP", // Tangible personal property — hot tubs/spas
+      },
+    ],
   });
 
+  const totalTax = taxResult.taxDue;
+  const effectiveRate = taxableAmount > 0 ? totalTax / taxableAmount : 0;
+  const topJurisdiction = taxResult.taxes?.[0]?.jurisdictionName ?? "State Tax";
+
   return NextResponse.json({
-    tax_amount: taxResult.totalTax,
-    tax_rate: taxableAmount > 0 ? taxResult.totalTax / taxableAmount : 0,
-    jurisdiction: taxResult.lines?.[0]?.details?.[0]?.taxName ?? "State Tax",
+    tax_amount: totalTax,
+    total_tax: totalTax,
+    tax_rate: effectiveRate,
+    jurisdiction: topJurisdiction,
   });
 }
