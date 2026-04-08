@@ -9,6 +9,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { ContingentToggle } from "@/components/contracts/ContingentToggle";
 import { CancelContractButton } from "@/components/contracts/CancelContractButton";
 import { TaxRefundButton } from "@/components/contracts/TaxRefundButton";
+import { CertViewButton } from "@/components/contracts/CertViewButton";
 import { StatusTimeline } from "@/components/contracts/StatusTimeline";
 
 const STATUS_COLORS: Record<string, "default" | "success" | "warning" | "destructive" | "secondary"> = {
@@ -258,18 +259,7 @@ export default async function ContractDetailPage({
                     TX Exemption Cert Received
                   </span>
                   {contract.tax_exempt_cert_url ? (
-                    <a
-                      href={contract.tax_exempt_cert_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[#00929C] font-semibold text-xs hover:underline flex items-center gap-1"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                      </svg>
-                      View Cert
-                    </a>
+                    <CertViewButton contractId={id} />
                   ) : (
                     <span className="text-xs text-slate-400">No file attached</span>
                   )}

@@ -141,6 +141,20 @@ export default async function DashboardPage() {
   const recentQuotes = (recentQuotesRaw ?? []) as any[];
   const leads = (leadsRaw ?? []) as any[];
 
+  // Overdue balances — delivered or ready_for_delivery with unpaid balance
+  let overdueContracts: any[] = [];
+  if (isAdmin) {
+    const { data: overdueData } = await supabase
+      .from("contracts")
+      .select("id, contract_number, status, balance_due, total, created_at, customer:customers(first_name, last_name)")
+      .in("status", ["delivered", "ready_for_delivery"])
+      .gt("balance_due", 0)
+      .order("balance_due", { ascending: false })
+      .limit(20);
+    overdueContracts = overdueData ?? [];
+  }
+  const totalOverdue = overdueContracts.reduce((s, c) => s + (c.balance_due ?? 0), 0);
+
   // Goal progress calculations
   const monthRevenue = (monthStatsRaw ?? []).reduce((s: number, c: any) => s + (c.total ?? 0), 0);
   const monthCount = (monthStatsRaw ?? []).length;
@@ -342,6 +356,37 @@ export default async function DashboardPage() {
 
         {/* ── Leads Pipeline ── */}
         <LeadsPipeline leads={leads} />
+
+        {/* ── Overdue Balances ── */}
+        {isAdmin && overdueContracts.length > 0 && (
+          <div className="mt-6">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h2 className="text-base font-bold text-slate-900">Overdue Balances</h2>
+                <p className="text-xs text-slate-500">{overdueContracts.length} contract{overdueContracts.length !== 1 ? "s" : ""} · {formatCurrency(totalOverdue)} outstanding</p>
+              </div>
+              <span className="px-2.5 py-1 rounded-full bg-red-100 text-red-700 text-xs font-bold">{formatCurrency(totalOverdue)}</span>
+            </div>
+            <div className="space-y-2">
+              {overdueContracts.map((c) => {
+                const customer = Array.isArray(c.customer) ? c.customer[0] : c.customer;
+                return (
+                  <Link key={c.id} href={`/contracts/${c.id}`} className="block">
+                    <div className="bg-white border border-red-100 rounded-xl px-4 py-3 hover:bg-red-50 transition-colors">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-semibold text-slate-900 text-sm">{c.contract_number}</p>
+                          <p className="text-xs text-slate-500">{customer?.first_name} {customer?.last_name} · {c.status.replace(/_/g, " ")}</p>
+                        </div>
+                        <p className="text-base font-bold text-red-600">{formatCurrency(c.balance_due)}</p>
+                      </div>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* ── Section 1: Recent Contracts ── */}
         <Card>
