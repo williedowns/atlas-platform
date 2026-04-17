@@ -70,7 +70,7 @@ const US_REGIONS = [
   { region: "South Central", states: ["TX", "OK", "AR", "LA"] },
   { region: "Mountain", states: ["CO", "UT", "NM", "AZ", "WY", "MT", "ID"] },
   { region: "West", states: ["CA", "OR", "WA", "NV"] },
-  { region: "International", states: ["ON", "QC", "BC", "AB", "UK", "DE", "AU", "JP"] },
+  { region: "International", states: ["ON", "QC", "BC", "AB", "UK", "GER", "AU", "JP"] },
 ];
 
 const DEALER_NAME_PREFIXES = [
@@ -171,7 +171,7 @@ const CITY_NAMES_BY_STATE: Record<string, string[]> = {
   BC: ["Vancouver", "Victoria"],
   AB: ["Calgary", "Edmonton"],
   UK: ["London", "Manchester", "Birmingham"],
-  DE: ["Munich", "Hamburg"],
+  GER: ["Munich", "Hamburg"],
   AU: ["Sydney", "Melbourne", "Brisbane"],
   JP: ["Tokyo", "Osaka"],
 };
@@ -305,7 +305,7 @@ function generateDealers(): Dealer[] {
           city,
           state,
           region,
-          country: state.length === 2 && !["ON", "QC", "BC", "AB"].includes(state) && !["UK", "DE", "AU", "JP"].includes(state) ? "US" : ["ON", "QC", "BC", "AB"].includes(state) ? "CA" : "INT",
+          country: state.length === 2 && !["ON", "QC", "BC", "AB"].includes(state) && !["UK", "GER", "AU", "JP"].includes(state) ? "US" : ["ON", "QC", "BC", "AB"].includes(state) ? "CA" : "INT",
           tier,
           yearsWithMS: rInt(1, 22),
           ytdRevenue,

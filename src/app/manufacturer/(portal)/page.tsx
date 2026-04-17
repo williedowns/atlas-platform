@@ -155,7 +155,7 @@ export default function OverviewPage() {
                 <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#64748B" }} />
                 <YAxis tick={{ fontSize: 11, fill: "#64748B" }} />
                 <Tooltip
-                  formatter={(v: number) => [v, "Units"]}
+                  formatter={(v) => [Number(v), "Units"]}
                   contentStyle={{ borderRadius: 8, border: "1px solid #E2E8F0", fontSize: 12 }}
                 />
                 <Area

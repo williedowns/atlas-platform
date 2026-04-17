@@ -117,7 +117,7 @@ export default function ShowroomsPage() {
                   ))}
                 </Pie>
                 <Tooltip
-                  formatter={(v: number) => fmtCurrency(v)}
+                  formatter={(v) => fmtCurrency(Number(v))}
                   contentStyle={{ borderRadius: 8, border: "1px solid #E2E8F0", fontSize: 12 }}
                 />
                 <Legend verticalAlign="bottom" iconType="circle" wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />

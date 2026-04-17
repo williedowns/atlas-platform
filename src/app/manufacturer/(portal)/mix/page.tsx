@@ -103,7 +103,7 @@ export default function MixPage() {
                 </Pie>
                 <Tooltip
                   contentStyle={{ borderRadius: 8, border: "1px solid #E2E8F0", fontSize: 12 }}
-                  formatter={(v: number) => [`${v} units`, ""]}
+                  formatter={(v) => [`${Number(v)} units`, ""]}
                 />
                 <Legend
                   verticalAlign="bottom"
