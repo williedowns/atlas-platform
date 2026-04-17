@@ -22,11 +22,11 @@ const PAYMENT_METHODS = [
   { value: "cash", label: "Cash" },
 ] as const;
 
-interface Step4ReviewProps {
+interface Step5ReviewProps {
   onNext: () => void;
 }
 
-export default function Step4Review({ onNext }: Step4ReviewProps) {
+export default function Step5Review({ onNext }: Step5ReviewProps) {
   const router = useRouter();
   const { draft, addDepositSplit, removeDepositSplit, updateLineItemSerial, setNotes } = useContractStore();
 

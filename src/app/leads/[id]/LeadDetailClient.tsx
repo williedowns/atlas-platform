@@ -35,7 +35,7 @@ const STATUS_COLORS: Record<LeadStatus, "default" | "success" | "warning" | "des
 const STATUS_LABELS: Record<LeadStatus, string> = {
   new: "New",
   contacted: "Contacted",
-  hot: "🔥 Hot",
+  hot: "Hot",
   converted: "Converted",
   lost: "Lost",
 };

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useContractStore } from "@/store/contractStore";
 
-interface StepDeliveryProps {
+interface Step6DeliveryProps {
   onNext: () => void;
 }
 
@@ -306,7 +306,7 @@ const SCENARIOS: Scenario[] = [
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function StepDelivery({ onNext }: StepDeliveryProps) {
+export default function Step6Delivery({ onNext }: Step6DeliveryProps) {
   const { setDeliveryDiagram } = useContractStore();
 
   const [selectedId, setSelectedId] = useState<number | null>(null);

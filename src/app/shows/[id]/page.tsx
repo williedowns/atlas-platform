@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { AppHeader } from "@/components/ui/AppHeader";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 const STATUS_COLORS: Record<string, "default" | "success" | "warning" | "destructive" | "secondary"> = {
@@ -45,22 +46,11 @@ export default async function ShowDetailPage({
 
   return (
     <div className="min-h-screen bg-slate-50">
-      {/* Header */}
-      <header className="bg-[#010F21] text-white px-4 py-4 sticky top-0 z-10 shadow-lg">
-        <div className="flex items-center gap-3">
-          <Link href="/shows" className="p-2 rounded-lg hover:bg-white/10">
-            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </Link>
-          <div>
-            <h1 className="text-lg font-bold">{show.name}</h1>
-            <p className="text-[#00929C] text-xs">
-              {show.venue_name} · {show.city}, {show.state}
-            </p>
-          </div>
-        </div>
-      </header>
+      <AppHeader
+        title={show.name}
+        subtitle={`${show.venue_name} · ${show.city}, ${show.state}`}
+        backHref="/shows"
+      />
 
       <main className="px-5 py-6 space-y-4 max-w-2xl mx-auto pb-24">
         {/* Show Info */}
@@ -105,7 +95,7 @@ export default async function ShowDetailPage({
           </Link>
           <Link href={`/shows/${id}/checkin`} className="col-span-2">
             <Button variant="default" size="lg" className="w-full bg-slate-700 hover:bg-slate-800 text-white font-semibold">
-              📋 Check-In Leads
+              Check-In Leads
             </Button>
           </Link>
         </div>

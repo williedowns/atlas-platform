@@ -31,44 +31,44 @@ const PRODUCT_LINES: { label: string; section: string; logoUrl: string; categori
   {
     label: "MP Legend Series",
     section: "Hot Tubs",
-    logoUrl: "https://www.masterspas.com/img/logos/legend/MPL_Color_R.svg",
+    logoUrl: "/logos/ms/mpl.svg",
     categories: ["MP Legend Series"],
   },
   {
     label: "Twilight Series",
     section: "Hot Tubs",
-    logoUrl: "https://www.masterspas.com/img/logos/twilight/Twilight_Color_TM.svg",
+    logoUrl: "/logos/ms/twilight.svg",
     categories: ["Twilight Series"],
   },
   {
     label: "Clarity Series",
     section: "Hot Tubs",
-    logoUrl: "https://www.masterspas.com/img/logos/clarity/Clarity_Color_R.svg",
+    logoUrl: "/logos/ms/clarity.svg",
     categories: ["Clarity Series"],
   },
   {
     label: "Getaway Series",
     section: "Hot Tubs",
-    logoUrl: "https://www.masterspas.com/img/logos/getaway/Getaway_Color_TM.svg",
+    logoUrl: "/logos/ms/getaway.svg",
     categories: ["Getaway Series"],
   },
   {
     label: "LH Series",
     section: "Hot Tubs",
-    logoUrl: "https://www.masterspas.com/img/logos/lh/LH_Color_TM.svg",
+    logoUrl: "/logos/ms/lh.svg",
     categories: ["LH Series"],
   },
   // ── SWIM SPAS ────────────────────────────────────────────────────────────
   {
     label: "Michael Phelps Swim Spas",
     section: "Swim Spas",
-    logoUrl: "https://www.masterspas.com/img/logos/michaelphelpsswimspas/MPSS_Color_TM.svg",
+    logoUrl: "/logos/ms/mpss.svg",
     categories: ["Michael Phelps Swim Spas"],
   },
   {
     label: "H2X Swim Spas",
     section: "Swim Spas",
-    logoUrl: "https://www.masterspas.com/img/logos/h2x/H2X_Color_R.svg",
+    logoUrl: "/logos/ms/h2x.svg",
     categories: ["H2X Trainer Swim Spas", "H2X Therapool Swim Spas", "H2X Challenger Swim Spas"],
   },
   // ── COLD TUBS ────────────────────────────────────────────────────────────
@@ -184,7 +184,7 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
       if (response.ok) {
         const data = await response.json();
         if (data.unconfigured) {
-          console.warn("[tax] ZAMP_API_TOKEN not configured — tax will be $0 until token is added to environment");
+          console.warn("[tax] Avalara not configured — tax will be $0 until credentials are added to environment");
         }
         setTax(data.total_tax ?? 0, data.tax_rate ?? 0);
       } else {

@@ -29,7 +29,7 @@ const STATUS_COLORS: Record<LeadStatus, "default" | "success" | "warning" | "des
 const STATUS_LABELS: Record<LeadStatus, string> = {
   new: "New",
   contacted: "Contacted",
-  hot: "🔥 Hot",
+  hot: "Hot",
   converted: "Converted",
   lost: "Lost",
 };
@@ -41,7 +41,7 @@ const FILTER_OPTIONS: { label: string; value: FilterStatus }[] = [
   { label: "All", value: "all" },
   { label: "New", value: "new" },
   { label: "Contacted", value: "contacted" },
-  { label: "Hot 🔥", value: "hot" },
+  { label: "Hot", value: "hot" },
   { label: "Converted", value: "converted" },
   { label: "Lost", value: "lost" },
 ];
@@ -73,7 +73,7 @@ export default function LeadsPipeline({ leads }: { leads: Lead[] }) {
           )}
           {hotCount > 0 && (
             <span className="bg-amber-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
-              {hotCount} 🔥
+              {hotCount} hot
             </span>
           )}
         </div>

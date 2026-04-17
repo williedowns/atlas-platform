@@ -280,7 +280,7 @@ export default async function DashboardPage() {
         }
       />
 
-      <main className="px-5 py-6 space-y-3 max-w-2xl mx-auto pb-24">
+      <main className="px-5 py-6 space-y-3 max-w-4xl mx-auto pb-24">
 
         {/* ── Reorder Alerts ── */}
         {isAdmin && reorderAlerts.length > 0 && (

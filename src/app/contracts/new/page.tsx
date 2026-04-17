@@ -9,10 +9,10 @@ import Step1Show from "@/components/contracts/Step1Show";
 import Step2Customer from "@/components/contracts/Step2Customer";
 import Step3Products from "@/components/contracts/Step3Products";
 import Step4Financing from "@/components/contracts/Step4Financing";
-import Step5Review from "@/components/contracts/Step4Review";
-import Step6Delivery from "@/components/contracts/StepDelivery";
-import Step7Sign from "@/components/contracts/Step5Sign";
-import Step8Payment from "@/components/contracts/Step6Payment";
+import Step5Review from "@/components/contracts/Step5Review";
+import Step6Delivery from "@/components/contracts/Step6Delivery";
+import Step7Sign from "@/components/contracts/Step7Sign";
+import Step8Payment from "@/components/contracts/Step8Payment";
 
 const STEPS = [
   { id: 1, label: "Show" },

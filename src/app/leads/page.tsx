@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/utils";
 import AppShell from "@/components/layout/AppShell";
+import { AppHeader } from "@/components/ui/AppHeader";
 
 const STATUS_COLORS: Record<string, "default" | "success" | "warning" | "destructive" | "secondary"> = {
   new: "default",
@@ -17,7 +18,7 @@ const STATUS_COLORS: Record<string, "default" | "success" | "warning" | "destruc
 const STATUS_LABELS: Record<string, string> = {
   new: "New",
   contacted: "Contacted",
-  hot: "🔥 Hot",
+  hot: "Hot",
   converted: "Converted",
   lost: "Lost",
 };
@@ -75,7 +76,7 @@ export default async function LeadsPage({
     { label: `All (${counts.total ?? 0})`, value: "all" },
     { label: `New (${counts.new ?? 0})`, value: "new" },
     { label: `Contacted (${counts.contacted ?? 0})`, value: "contacted" },
-    { label: `Hot 🔥 (${counts.hot ?? 0})`, value: "hot" },
+    { label: `Hot (${counts.hot ?? 0})`, value: "hot" },
     { label: `Converted (${counts.converted ?? 0})`, value: "converted" },
     { label: `Lost (${counts.lost ?? 0})`, value: "lost" },
   ];
@@ -84,21 +85,11 @@ export default async function LeadsPage({
 
   return (
     <AppShell role={profile?.role} userName={profile?.full_name} orgPerms={orgPerms}>
-      <header className="bg-[#010F21] text-white px-4 py-4 sticky top-0 z-10 shadow-lg">
-        <div className="flex items-center gap-3">
-          <Link href="/dashboard" className="p-2 rounded-lg hover:bg-white/10">
-            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </Link>
-          <div>
-            <h1 className="text-lg font-bold">Leads Pipeline</h1>
-            <p className="text-white/60 text-xs mt-0.5">
-              {profile?.full_name} · {leads.length} leads
-            </p>
-          </div>
-        </div>
-      </header>
+      <AppHeader
+        title="Leads Pipeline"
+        subtitle={`${leads.length} lead${leads.length === 1 ? "" : "s"}`}
+        backHref="/dashboard"
+      />
 
       {/* Status filter chips */}
       <div className="flex gap-2 px-4 py-3 overflow-x-auto bg-white border-b border-slate-100 scrollbar-hide sticky top-[65px] z-10">
@@ -117,7 +108,7 @@ export default async function LeadsPage({
         ))}
       </div>
 
-      <main className="max-w-2xl mx-auto pb-24">
+      <main className="max-w-4xl mx-auto pb-24">
         {leads.length === 0 ? (
           <div className="text-center py-16 px-4">
             <p className="text-slate-500">No leads found.</p>

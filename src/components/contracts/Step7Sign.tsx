@@ -27,11 +27,11 @@ const SignatureCanvas = dynamic(() => import("react-signature-canvas"), {
   toDataURL?: (type?: string) => string;
 }>;
 
-interface Step5SignProps {
+interface Step7SignProps {
   onNext: () => void;
 }
 
-export default function Step5Sign({ onNext }: Step5SignProps) {
+export default function Step7Sign({ onNext }: Step7SignProps) {
   const { draft, setCreatedContractId } = useContractStore();
   const sigCanvasRef = useRef<any>(null);
 

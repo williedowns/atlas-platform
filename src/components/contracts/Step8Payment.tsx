@@ -19,7 +19,7 @@ const METHOD_LABEL: Record<string, string> = {
   financing: "Financing (GreenSky / WF)",
 };
 
-export default function Step6Payment() {
+export default function Step8Payment() {
   const router = useRouter();
   const { draft, resetDraft } = useContractStore();
 

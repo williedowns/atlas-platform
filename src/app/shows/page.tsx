@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/utils";
 import AppShell from "@/components/layout/AppShell";
+import { AppHeader } from "@/components/ui/AppHeader";
 
 export default async function ShowsPage() {
   const supabase = await createClient();
@@ -40,18 +41,19 @@ export default async function ShowsPage() {
 
   return (
     <AppShell role={profile?.role} userName={profile?.full_name} orgPerms={orgPerms}>
-      <header className="bg-[#010F21] text-white px-4 py-4 sticky top-0 z-10 shadow-lg">
-        <div className="flex items-center justify-between">
-          <h1 className="text-lg font-bold">Shows & Events</h1>
-          {canCreateShows && (
+      <AppHeader
+        title="Shows & Events"
+        subtitle={`${upcoming.length} upcoming`}
+        actions={
+          canCreateShows && (
             <Link href="/admin/shows/new">
               <Button variant="accent" size="sm">+ New Show</Button>
             </Link>
-          )}
-        </div>
-      </header>
+          )
+        }
+      />
 
-      <main className="px-5 py-6 space-y-6 max-w-2xl mx-auto pb-24">
+      <main className="px-5 py-6 space-y-6 max-w-4xl mx-auto pb-24">
         {/* Upcoming */}
         <section>
           <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">
