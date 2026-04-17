@@ -94,16 +94,27 @@ async function main() {
     process.exit(1);
   }
 
-  const link = data?.properties?.action_link;
-  if (!link) {
-    console.error("No action_link returned. Supabase response:", data);
+  const hashedToken = data?.properties?.hashed_token;
+  const actionLink = data?.properties?.action_link;
+  if (!hashedToken) {
+    console.error("No hashed_token returned. Supabase response:", data);
     process.exit(1);
   }
 
-  console.log(`\n✅ Magic link for ${email}:\n`);
-  console.log(link);
-  console.log(`\n   Open this link in your browser and you'll be signed in directly.`);
-  console.log(`   Once logged in, change your password at /profile.\n`);
+  // Prefer CLI --base arg, fall back to env, then common defaults.
+  const base =
+    process.argv.find((a) => a.startsWith("--base="))?.split("=")[1] ??
+    process.env.SITE_URL ??
+    "https://getsalta.com";
+
+  const callbackUrl = `${base.replace(/\/$/, "")}/auth/callback?token_hash=${hashedToken}&type=magiclink`;
+
+  console.log(`\n✅ Magic link for ${email} (via /auth/callback on ${base}):\n`);
+  console.log(callbackUrl);
+  console.log(`\n   Supabase verify URL (alternate, lands at default Site URL):`);
+  console.log(`   ${actionLink}`);
+  console.log(`\n   Open the first URL — it hits your /auth/callback route so the`);
+  console.log(`   session cookie lands on the correct domain. One-time use.\n`);
 }
 
 main().catch((err) => {

@@ -7,9 +7,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/utils";
 import LeadsPipeline from "@/components/dashboard/LeadsPipeline";
+import { RevenueTrendChart } from "@/components/dashboard/RevenueTrendChart";
 import AppShell from "@/components/layout/AppShell";
 import { AppHeader } from "@/components/ui/AppHeader";
 import { KpiCard } from "@/components/ui/KpiCard";
+import { SectionCard } from "@/components/ui/SectionCard";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -80,6 +82,40 @@ export default async function DashboardPage() {
   const revDelta = pctDelta(todayRevenue, yRevenue);
   const depDelta = pctDelta(todayDeposits, yDeposits);
   const cntDelta = pctDelta(todayCount, yCount);
+
+  // ── 30-day revenue trend for chart ──────────────────────────────────────────
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString().split("T")[0];
+  const trendStatsQuery = supabase
+    .from("contracts")
+    .select("total, created_at")
+    .gte("created_at", `${thirtyDaysAgo}T00:00:00`)
+    .not("status", "in", '("quote","draft","cancelled")')
+    .eq("is_contingent", false)
+    .gt("deposit_paid", 0);
+  if (!isAdmin) trendStatsQuery.eq("sales_rep_id", user.id);
+  const { data: trendRows } = await trendStatsQuery;
+
+  // Bucket by day (inclusive of today)
+  const trendMap = new Map<string, { revenue: number; contracts: number }>();
+  for (let i = 30; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 86400000).toISOString().split("T")[0];
+    trendMap.set(d, { revenue: 0, contracts: 0 });
+  }
+  for (const row of trendRows ?? []) {
+    const d = row.created_at?.split("T")[0];
+    if (!d || !trendMap.has(d)) continue;
+    const bucket = trendMap.get(d)!;
+    bucket.revenue += row.total ?? 0;
+    bucket.contracts += 1;
+  }
+  const trendData = Array.from(trendMap.entries()).map(([date, vals]) => ({
+    date,
+    label: new Date(date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+    revenue: vals.revenue,
+    contracts: vals.contracts,
+  }));
+  const trendTotal = trendData.reduce((s, d) => s + d.revenue, 0);
+  const trendHasData = trendTotal > 0;
 
   // Active show today for "Today at the Show" context chip
   const { data: activeShowToday } = await supabase
@@ -302,6 +338,32 @@ export default async function DashboardPage() {
           </Link>
         )}
 
+        {/* ── Primary CTA banner ── */}
+        <Link
+          href="/contracts/new"
+          className="block rounded-xl p-5 text-white relative overflow-hidden group transition-transform hover:scale-[1.005] shadow-md"
+          style={{
+            background: "linear-gradient(135deg, #010F21 0%, #00929C 140%)",
+          }}
+        >
+          <div className="relative z-10 flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <div className="text-[10px] uppercase tracking-widest text-white/60 mb-1">
+                {activeShowChip ? "Active show" : "Ready when you are"}
+              </div>
+              <div className="text-xl md:text-2xl font-black leading-tight">
+                Start a New Contract →
+              </div>
+              <div className="text-sm text-white/80 mt-1 truncate">
+                {activeShowChip?.label ?? "From quote to signed in eight steps."}
+              </div>
+            </div>
+            <div className="text-5xl md:text-6xl font-black text-white/10 select-none">
+              NEW
+            </div>
+          </div>
+        </Link>
+
         {/* ── Today's Stats ── */}
         <div className="grid grid-cols-2 gap-3">
           <KpiCard
@@ -335,6 +397,18 @@ export default async function DashboardPage() {
             accentColor="#d97706"
           />
         </div>
+
+        {/* ── 30-Day Revenue Trend ── */}
+        {trendHasData && (
+          <SectionCard
+            title={isAdmin ? "Revenue — Last 30 Days" : "My Revenue — Last 30 Days"}
+            subtitle={`${formatCurrency(trendTotal)} total`}
+            viewAllHref={isAdmin ? "/analytics?period=month" : undefined}
+            viewAllLabel="Full analytics →"
+          >
+            <RevenueTrendChart data={trendData} />
+          </SectionCard>
+        )}
 
         {/* ── Monthly Goal Progress ── */}
         {goal && (goalRevPct !== null || goalCntPct !== null) && (
@@ -442,95 +516,82 @@ export default async function DashboardPage() {
         )}
 
         {/* ── Section 1: Recent Contracts ── */}
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle>Recent Contracts</CardTitle>
-              <Link href="/contracts?filter=contracts" className="text-sm text-[#00929C] font-medium">View all</Link>
+        <SectionCard
+          title="Recent Contracts"
+          subtitle={confirmedContracts?.length ? `${confirmedContracts.length} most recent` : undefined}
+          viewAllHref="/contracts?filter=contracts"
+          bodyClassName="p-0"
+        >
+          {!confirmedContracts?.length ? (
+            <div className="px-5 py-8 text-center text-slate-500">
+              <p className="text-sm">No confirmed contracts yet.</p>
             </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            {!confirmedContracts?.length ? (
-              <div className="px-5 pb-6 pt-2 text-center text-slate-500">
-                <p className="text-sm">No confirmed contracts yet.</p>
-              </div>
-            ) : (
-              <ul className="divide-y divide-slate-100">
-                {confirmedContracts.map((c) => (
-                  <ContractRow key={c.id} contract={c} href={`/contracts/${c.id}`} />
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {confirmedContracts.map((c) => (
+                <ContractRow key={c.id} contract={c} href={`/contracts/${c.id}`} />
+              ))}
+            </ul>
+          )}
+        </SectionCard>
 
         {/* ── Section 2: Contingent Contracts ── */}
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <CardTitle>Recent Contingent Contracts</CardTitle>
-                <Badge variant="warning" className="text-xs">Pending Conditions</Badge>
-              </div>
-              <Link href="/contracts?filter=contingent" className="text-sm text-[#00929C] font-medium">View all</Link>
+        <SectionCard
+          title="Recent Contingent Contracts"
+          viewAllHref="/contracts?filter=contingent"
+          bodyClassName="p-0"
+          headerAccessory={<Badge variant="warning" className="text-xs">Pending Conditions</Badge>}
+        >
+          {!contingentContracts?.length ? (
+            <div className="px-5 py-8 text-center text-slate-500">
+              <p className="text-sm">No contingent contracts.</p>
             </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            {!contingentContracts?.length ? (
-              <div className="px-5 pb-6 pt-2 text-center text-slate-500">
-                <p className="text-sm">No contingent contracts.</p>
-              </div>
-            ) : (
-              <ul className="divide-y divide-slate-100">
-                {contingentContracts.map((c) => (
-                  <ContractRow key={c.id} contract={c} href={`/contracts/${c.id}`} />
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {contingentContracts.map((c) => (
+                <ContractRow key={c.id} contract={c} href={`/contracts/${c.id}`} />
+              ))}
+            </ul>
+          )}
+        </SectionCard>
 
         {/* ── Section 3: Recent Quotes ── */}
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle>Recent Quotes</CardTitle>
-              <Link href="/contracts?filter=quote" className="text-sm text-[#00929C] font-medium">View all</Link>
+        <SectionCard
+          title="Recent Quotes"
+          viewAllHref="/contracts?filter=quote"
+          bodyClassName="p-0"
+        >
+          {!recentQuotes?.length ? (
+            <div className="px-5 py-8 text-center text-slate-500">
+              <p className="text-sm">No quotes yet.</p>
             </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            {!recentQuotes?.length ? (
-              <div className="px-5 pb-6 pt-2 text-center text-slate-500">
-                <p className="text-sm">No quotes yet.</p>
-              </div>
-            ) : (
-              <ul className="divide-y divide-slate-100">
-                {recentQuotes.map((c) => (
-                  <li key={c.id}>
-                    <Link
-                      href={`/quotes/${c.id}`}
-                      className="flex items-center justify-between px-5 py-4 hover:bg-slate-50 active:bg-slate-100 transition-colors"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-slate-900 truncate">
-                          {c.customer?.first_name} {c.customer?.last_name}
-                        </p>
-                        <p className="text-sm text-slate-500 truncate">
-                          {c.contract_number}
-                          {c.show?.name ? ` · ${c.show.name}` : ""}
-                        </p>
-                      </div>
-                      <div className="flex flex-col items-end gap-1 ml-3">
-                        <p className="font-semibold text-slate-900">{formatCurrency(c.total)}</p>
-                        <Badge variant="secondary">Quote</Badge>
-                      </div>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {recentQuotes.map((c) => (
+                <li key={c.id}>
+                  <Link
+                    href={`/quotes/${c.id}`}
+                    className="flex items-center justify-between px-5 py-4 hover:bg-slate-50 active:bg-slate-100 transition-colors"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-slate-900 truncate">
+                        {c.customer?.first_name} {c.customer?.last_name}
+                      </p>
+                      <p className="text-sm text-slate-500 truncate">
+                        {c.contract_number}
+                        {c.show?.name ? ` · ${c.show.name}` : ""}
+                      </p>
+                    </div>
+                    <div className="flex flex-col items-end gap-1 ml-3">
+                      <p className="font-semibold text-slate-900">{formatCurrency(c.total)}</p>
+                      <Badge variant="secondary">Quote</Badge>
+                    </div>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </SectionCard>
 
       </main>
     </AppShell>

@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/utils";
 import AppShell from "@/components/layout/AppShell";
 import { AppHeader } from "@/components/ui/AppHeader";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 const STATUS_COLORS: Record<string, "default" | "success" | "warning" | "destructive" | "secondary"> = {
   new: "default",
@@ -110,10 +111,16 @@ export default async function LeadsPage({
 
       <main className="max-w-4xl mx-auto pb-24">
         {leads.length === 0 ? (
-          <div className="text-center py-16 px-4">
-            <p className="text-slate-500">No leads found.</p>
-            <p className="text-sm text-slate-400 mt-1">Go to a show and use Check-In Leads to capture walk-ins.</p>
-          </div>
+          <EmptyState
+            icon={
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            }
+            title="No leads yet"
+            description="Capture walk-ins at a show using Check-In Leads, or add a lead manually from a show page."
+            action={{ label: "View active shows", href: "/shows" }}
+          />
         ) : (
           <ul className="divide-y divide-slate-100 bg-white">
             {leads.map((lead) => (

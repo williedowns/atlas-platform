@@ -13,6 +13,17 @@ interface AppHeaderProps {
   actions?: ReactNode;
   backHref?: string;
   status?: StatusChip;
+  /** Show the current date in the right rail. Defaults to true. */
+  showDate?: boolean;
+}
+
+function formatDateShort(d: Date): string {
+  return d.toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 export function AppHeader({
@@ -21,7 +32,9 @@ export function AppHeader({
   actions,
   backHref,
   status,
+  showDate = true,
 }: AppHeaderProps) {
+  const today = new Date();
   return (
     <header
       className="sticky top-0 z-10 h-16 px-5 flex items-center gap-3 border-b border-white/5 text-white"
@@ -55,6 +68,15 @@ export function AppHeader({
           <span className="text-xs font-medium text-white/80 truncate max-w-[260px]">
             {status.label}
           </span>
+        </div>
+      )}
+
+      {showDate && (
+        <div
+          className="hidden md:block text-xs text-white/50 flex-shrink-0 tabular-nums"
+          suppressHydrationWarning
+        >
+          {formatDateShort(today)}
         </div>
       )}
 

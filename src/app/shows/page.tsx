@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/utils";
 import AppShell from "@/components/layout/AppShell";
 import { AppHeader } from "@/components/ui/AppHeader";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 export default async function ShowsPage() {
   const supabase = await createClient();
@@ -61,10 +62,17 @@ export default async function ShowsPage() {
           </h2>
           {upcoming.length === 0 ? (
             <Card>
-              <CardContent className="py-8 text-center text-slate-500">
-                <p className="text-lg">No upcoming shows.</p>
-                <p className="text-sm mt-1">Check back with your manager.</p>
-              </CardContent>
+              <EmptyState
+                icon={
+                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                }
+                title="No upcoming shows"
+                description={canCreateShows ? "Schedule your next event from Admin → Shows." : "Check back with your manager."}
+                action={canCreateShows ? { label: "Schedule a show", href: "/admin/shows/new" } : undefined}
+              />
             </Card>
           ) : (
             <div className="space-y-3">

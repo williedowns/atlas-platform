@@ -93,9 +93,17 @@ export default async function ShowDetailPage({
               + Start New Contract
             </Button>
           </Link>
-          <Link href={`/shows/${id}/checkin`} className="col-span-2">
+          <Link href={`/shows/${id}/checkin`}>
             <Button variant="default" size="lg" className="w-full bg-slate-700 hover:bg-slate-800 text-white font-semibold">
               Check-In Leads
+            </Button>
+          </Link>
+          <Link href={`/shows/${id}/floor`}>
+            <Button variant="default" size="lg" className="w-full bg-[#010F21] hover:bg-[#0B1929] text-white font-semibold border border-[#00929C]/40">
+              <span className="inline-flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                Floor Mode
+              </span>
             </Button>
           </Link>
         </div>

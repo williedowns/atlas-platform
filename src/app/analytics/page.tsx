@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/utils";
 import AppShell from "@/components/layout/AppShell";
 import { AppHeader } from "@/components/ui/AppHeader";
+import { KpiCard } from "@/components/ui/KpiCard";
 
 // ── Period helpers ────────────────────────────────────────────────────────────
 
@@ -362,29 +363,32 @@ export default async function AnalyticsPage({
         </div>
 
         {/* ── KPI Strip ── */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <KpiCard
             label="Gross Revenue"
             value={formatCurrency(totalRevenue)}
-            delta={revDelta}
-            accent="teal"
+            trend={revDelta == null ? undefined : revDelta >= 0 ? "up" : "down"}
+            trendValue={revDelta == null ? undefined : `${Math.abs(revDelta).toFixed(1)}%`}
+            accentColor="#00929C"
           />
           <KpiCard
             label="Total Deposits"
             value={formatCurrency(totalDeposits)}
-            delta={depDelta}
-            accent="green"
+            trend={depDelta == null ? undefined : depDelta >= 0 ? "up" : "down"}
+            trendValue={depDelta == null ? undefined : `${Math.abs(depDelta).toFixed(1)}%`}
+            accentColor="#10b981"
           />
           <KpiCard
             label="Contracts"
             value={contractCount.toString()}
-            delta={cntDelta}
-            accent="slate"
+            trend={cntDelta == null ? undefined : cntDelta >= 0 ? "up" : "down"}
+            trendValue={cntDelta == null ? undefined : `${Math.abs(cntDelta).toFixed(1)}%`}
+            accentColor="#0f172a"
           />
           <KpiCard
             label="Avg Deal Size"
             value={formatCurrency(avgDeal)}
-            accent="amber"
+            accentColor="#d97706"
           />
         </div>
 
@@ -446,8 +450,20 @@ export default async function AnalyticsPage({
                         key={rep.name}
                         className={`border-b border-slate-100 ${i === 0 ? "bg-amber-50" : ""}`}
                       >
-                        <td className="py-3 px-4 text-slate-500">
-                          {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : i + 1}
+                        <td className="py-3 px-4">
+                          <span
+                            className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold ${
+                              i === 0
+                                ? "bg-amber-400 text-amber-900"
+                                : i === 1
+                                ? "bg-slate-300 text-slate-800"
+                                : i === 2
+                                ? "bg-orange-300 text-orange-900"
+                                : "bg-slate-100 text-slate-600"
+                            }`}
+                          >
+                            {i + 1}
+                          </span>
                         </td>
                         <td className="py-3 px-4 font-semibold text-slate-900">{rep.name}</td>
                         <td className="py-3 px-4 text-right text-slate-700">{rep.count}</td>
@@ -735,37 +751,3 @@ export default async function AnalyticsPage({
   );
 }
 
-// ── KPI Card sub-component ────────────────────────────────────────────────────
-
-function KpiCard({
-  label,
-  value,
-  delta,
-  accent,
-}: {
-  label: string;
-  value: string;
-  delta?: number | null;
-  accent: "teal" | "green" | "amber" | "slate";
-}) {
-  const accentColor = {
-    teal: "text-[#00929C]",
-    green: "text-emerald-600",
-    amber: "text-amber-600",
-    slate: "text-slate-900",
-  }[accent];
-
-  return (
-    <Card>
-      <CardContent className="p-4">
-        <p className="text-xs text-slate-500 uppercase tracking-wide font-medium">{label}</p>
-        <p className={`text-2xl font-bold mt-1 ${accentColor}`}>{value}</p>
-        {delta != null && (
-          <p className={`text-xs mt-1 font-medium ${delta >= 0 ? "text-emerald-600" : "text-red-500"}`}>
-            {delta >= 0 ? "▲" : "▼"} {Math.abs(delta).toFixed(1)}% vs prior period
-          </p>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
