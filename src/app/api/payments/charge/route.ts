@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createCharge, createToken } from "@/lib/payments/intuit";
-import { createQBODepositInvoice } from "@/lib/qbo/client";
-import { recordTransaction } from "@/lib/zamp/client";
+import { createQBODeposit } from "@/lib/qbo/client";
+import { calculateTax } from "@/lib/avalara/client";
 import { logAction } from "@/lib/audit";
 
 // ── Simple in-process rate limiter ────────────────────────────────────────────
@@ -62,7 +62,7 @@ export async function POST(req: Request) {
   // Fetch contract
   const { data: contract, error: contractError } = await supabase
     .from("contracts")
-    .select(`*, customer:customers(*), location:locations(qbo_deposit_account_id, qbo_department_id, name, address, city, state, zip), show:shows(qbo_deposit_account_id, qbo_department_id, name, address, city, state, zip)`)
+    .select(`*, customer:customers(*), location:locations(qbo_deposit_account_id, qbo_department_id, qbo_deposit_income_item_id, qbo_deposit_liability_item_id, name, address, city, state, zip), show:shows(qbo_deposit_account_id, qbo_department_id, qbo_deposit_income_item_id, qbo_deposit_liability_item_id, name, address, city, state, zip)`)
     .eq("id", contract_id)
     .single();
 
@@ -96,8 +96,8 @@ export async function POST(req: Request) {
     .filter(Boolean).join(" ") || undefined;
 
   // QBO context: prefer show over location (show-based sales track to the expo)
-  const show = (contract as any).show as { qbo_deposit_account_id?: string; qbo_department_id?: string; name?: string } | null;
-  const location = (contract as any).location as { qbo_deposit_account_id?: string; qbo_department_id?: string; name?: string } | null;
+  const show = (contract as any).show as { qbo_deposit_account_id?: string; qbo_department_id?: string; qbo_deposit_income_item_id?: string; qbo_deposit_liability_item_id?: string; name?: string } | null;
+  const location = (contract as any).location as { qbo_deposit_account_id?: string; qbo_department_id?: string; qbo_deposit_income_item_id?: string; qbo_deposit_liability_item_id?: string; name?: string } | null;
   const qboContext = show ?? location;
   const locationName = show?.name ?? location?.name ?? undefined;
 
@@ -192,37 +192,39 @@ export async function POST(req: Request) {
       })
       .eq("id", contract_id);
 
-    // Record transaction in Zamp for state filing & remittance (best-effort)
-    if (process.env.ZAMP_API_TOKEN && contract.tax_amount > 0) {
+    // Record tax transaction in Avalara for state filing & remittance (best-effort)
+    if (process.env.AVALARA_ACCOUNT_ID && contract.tax_amount > 0) {
       try {
-        const shipTo = show
-          ? { line1: (contract as any).show?.address ?? "", city: (contract as any).show?.city ?? "", state: (contract as any).show?.state ?? "", zip: (contract as any).show?.zip ?? "" }
-          : { line1: (contract as any).location?.address ?? "", city: (contract as any).location?.city ?? "", state: (contract as any).location?.state ?? "", zip: (contract as any).location?.zip ?? "" };
-        if (shipTo.state) {
-          await recordTransaction({
-            id: contract.contract_number,
-            transactedAt: new Date().toISOString(),
-            subtotal: Number(amount),
-            total: Number(amount),
-            shipToAddress: shipTo,
-            shipFromAddress: {
+        const addr = show
+          ? { line1: (contract as any).show?.address ?? "", city: (contract as any).show?.city ?? "", region: (contract as any).show?.state ?? "", postalCode: (contract as any).show?.zip ?? "", country: "US" }
+          : { line1: (contract as any).location?.address ?? "", city: (contract as any).location?.city ?? "", region: (contract as any).location?.state ?? "", postalCode: (contract as any).location?.zip ?? "", country: "US" };
+        if (addr.region) {
+          await calculateTax({
+            customerCode: contract.customer_id ?? "GUEST",
+            date: new Date().toISOString().slice(0, 10),
+            type: "SalesInvoice",
+            commit: true,
+            purchaseOrderNo: contract.contract_number,
+            shipTo: addr,
+            shipFrom: {
               line1: process.env.SHIP_FROM_ADDRESS ?? "123 Main St",
               city: process.env.SHIP_FROM_CITY ?? "Wichita",
-              state: process.env.SHIP_FROM_STATE ?? "KS",
-              zip: process.env.SHIP_FROM_ZIP ?? "67201",
+              region: process.env.SHIP_FROM_STATE ?? "KS",
+              postalCode: process.env.SHIP_FROM_ZIP ?? "67201",
+              country: "US",
             },
-            lineItems: [{ id: "1", amount: Number(amount), quantity: 1, productName: "Hot Tub / Spa", productSku: "SPA", productTaxCode: "R_TPP" }],
+            lines: [{ number: "1", amount: Number(amount), description: "Hot Tub / Spa", itemCode: "SPA" }],
           });
         }
       } catch (err) {
-        console.error("Zamp transaction record failed (non-fatal):", err);
+        console.error("Avalara transaction record failed (non-fatal):", err);
       }
     }
 
     // Create deposit invoice in QBO (best-effort)
     if (contract.customer?.qbo_customer_id) {
       try {
-        const invoice = await createQBODepositInvoice({
+        const invoice = await createQBODeposit({
           qbo_customer_id: contract.customer.qbo_customer_id,
           deposit_amount: amount,
           contract_number: contract.contract_number,
@@ -231,6 +233,8 @@ export async function POST(req: Request) {
           line_items_summary: lineItemsSummary,
           deposit_account_id: qboContext?.qbo_deposit_account_id ?? undefined,
           department_id: qboContext?.qbo_department_id ?? undefined,
+          qbo_deposit_income_item_id: qboContext?.qbo_deposit_income_item_id ?? undefined,
+          qbo_deposit_liability_item_id: qboContext?.qbo_deposit_liability_item_id ?? undefined,
         });
         await supabase
           .from("contracts")

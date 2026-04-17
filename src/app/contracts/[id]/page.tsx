@@ -11,6 +11,7 @@ import { CancelContractButton } from "@/components/contracts/CancelContractButto
 import { TaxRefundButton } from "@/components/contracts/TaxRefundButton";
 import { CertViewButton } from "@/components/contracts/CertViewButton";
 import { StatusTimeline } from "@/components/contracts/StatusTimeline";
+import { DeliveryConfirmDialog } from "@/components/contracts/DeliveryConfirmDialog";
 
 const STATUS_COLORS: Record<string, "default" | "success" | "warning" | "destructive" | "secondary"> = {
   draft: "secondary",
@@ -389,6 +390,23 @@ export default async function ContractDetailPage({
 
         {/* Actions */}
         <div className="space-y-3 pt-2">
+          {contract.status === "ready_for_delivery" && (
+            <DeliveryConfirmDialog
+              contractId={contract.id}
+              contractNumber={contract.contract_number}
+              total={contract.total ?? 0}
+              depositPaid={contract.deposit_paid ?? 0}
+              balanceDue={computedBalanceDue}
+              taxAmount={contract.tax_amount ?? 0}
+              lineItems={(Array.isArray(contract.line_items) ? contract.line_items : []).filter(
+                (i: any) => !i.waived && i.product_name
+              ).map((i: any) => ({
+                product_name: i.product_name ?? "Product",
+                quantity: i.quantity ?? 1,
+                sell_price: i.sell_price ?? 0,
+              }))}
+            />
+          )}
           {computedBalanceDue > 0 && !["cancelled", "delivered"].includes(contract.status) && (
             <Link href={`/contracts/${id}/collect-payment`} className="block">
               <Button variant="success" size="xl" className="w-full">

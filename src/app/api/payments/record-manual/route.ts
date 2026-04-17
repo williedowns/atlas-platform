@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { logAction } from "@/lib/audit";
-import { createQBODepositInvoice } from "@/lib/qbo/client";
+import { createQBODeposit } from "@/lib/qbo/client";
 
 export async function POST(req: Request) {
   const supabase = await createClient();
@@ -16,7 +16,7 @@ export async function POST(req: Request) {
 
   const { data: contract, error: contractError } = await supabase
     .from("contracts")
-    .select("total, deposit_paid, financing, contract_number, line_items, location:locations(qbo_deposit_account_id, qbo_department_id, name), show:shows(qbo_deposit_account_id, qbo_department_id, name), customer:customers(qbo_customer_id, first_name, last_name)")
+    .select("total, deposit_paid, financing, contract_number, line_items, location:locations(qbo_deposit_account_id, qbo_department_id, qbo_deposit_income_item_id, qbo_deposit_liability_item_id, name), show:shows(qbo_deposit_account_id, qbo_department_id, qbo_deposit_income_item_id, qbo_deposit_liability_item_id, name), customer:customers(qbo_customer_id, first_name, last_name)")
     .eq("id", contract_id)
     .single();
 
@@ -62,8 +62,8 @@ export async function POST(req: Request) {
 
   // Sync to QBO (best-effort — non-fatal)
   const customer = contract.customer as any;
-  const show = (contract as any).show as { qbo_deposit_account_id?: string; qbo_department_id?: string; name?: string } | null;
-  const location = (contract as any).location as { qbo_deposit_account_id?: string; qbo_department_id?: string; name?: string } | null;
+  const show = (contract as any).show as { qbo_deposit_account_id?: string; qbo_department_id?: string; qbo_deposit_income_item_id?: string; qbo_deposit_liability_item_id?: string; name?: string } | null;
+  const location = (contract as any).location as { qbo_deposit_account_id?: string; qbo_department_id?: string; qbo_deposit_income_item_id?: string; qbo_deposit_liability_item_id?: string; name?: string } | null;
   const qboContext = show ?? location;
   const locationName = show?.name ?? location?.name ?? undefined;
   const customerFullName = [customer?.first_name, customer?.last_name].filter(Boolean).join(" ") || undefined;
@@ -72,7 +72,7 @@ export async function POST(req: Request) {
     ? rawLineItems.map((i) => `${i.product_name ?? "Item"}${i.quantity && i.quantity > 1 ? ` (${i.quantity})` : ""}`).join(", ")
     : undefined;
   if (customer?.qbo_customer_id) {
-    createQBODepositInvoice({
+    createQBODeposit({
       qbo_customer_id: customer.qbo_customer_id,
       deposit_amount: Number(amount),
       contract_number: (contract as any).contract_number ?? contract_id,
@@ -81,6 +81,8 @@ export async function POST(req: Request) {
       line_items_summary: lineItemsSummary,
       deposit_account_id: qboContext?.qbo_deposit_account_id ?? undefined,
       department_id: qboContext?.qbo_department_id ?? undefined,
+      qbo_deposit_income_item_id: qboContext?.qbo_deposit_income_item_id ?? undefined,
+      qbo_deposit_liability_item_id: qboContext?.qbo_deposit_liability_item_id ?? undefined,
     }).catch((err) => console.error("QBO manual payment sync failed (non-fatal):", err));
   }
 
