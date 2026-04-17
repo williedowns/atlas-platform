@@ -4,6 +4,7 @@ import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { formatCurrency } from "@/lib/utils";
+import { AutoRefresh } from "@/components/AutoRefresh";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function compact(n: number): string {
@@ -92,6 +93,7 @@ export default async function FloorModePage({
 
   return (
     <div className="min-h-screen bg-[#010F21] text-white">
+      <AutoRefresh intervalMs={20_000} />
       {/* Header strip */}
       <header className="px-10 py-6 flex items-center justify-between border-b border-white/5">
         <div className="flex items-center gap-5">

@@ -15,14 +15,14 @@ import Step7Sign from "@/components/contracts/Step7Sign";
 import Step8Payment from "@/components/contracts/Step8Payment";
 
 const STEPS = [
-  { id: 1, label: "Show" },
+  { id: 1, label: "Pick Show" },
   { id: 2, label: "Customer" },
   { id: 3, label: "Products" },
   { id: 4, label: "Financing" },
-  { id: 5, label: "Review" },
+  { id: 5, label: "Review & Quote" },
   { id: 6, label: "Delivery" },
-  { id: 7, label: "Sign" },
-  { id: 8, label: "Payment" },
+  { id: 7, label: "Signature" },
+  { id: 8, label: "Deposit" },
 ];
 
 // Quote phase = steps 1–6, Contract phase = steps 7–8
@@ -96,6 +96,15 @@ function NewContractContent() {
     }
   }
 
+  function exit() {
+    const msg = step >= 5
+      ? "Exit the wizard? Your progress so far will be lost unless you've already saved it as a quote."
+      : "Exit the wizard? Your progress will be lost.";
+    if (typeof window !== "undefined" && window.confirm(msg)) {
+      router.push("/dashboard");
+    }
+  }
+
   const isQuotePhase = QUOTE_STEPS.has(step);
 
   if (loadingQuote) {
@@ -119,23 +128,33 @@ function NewContractContent() {
         <div className="flex items-center gap-3">
           <button
             onClick={back}
-            className="p-2 rounded-lg hover:bg-white/10 active:bg-white/20 transition-colors"
+            aria-label="Back"
+            className="p-2 -ml-2 rounded-lg hover:bg-white/10 active:bg-white/20 transition-colors flex-shrink-0"
           >
             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
           </button>
-          <div>
-            <h1 className="text-lg font-bold">
+          <div className="flex-1 min-w-0">
+            <h1 className="text-lg font-bold truncate">
               {isQuotePhase ? "New Quote" : "Complete Contract"}
             </h1>
-            <p className="text-[#00929C] text-xs">
+            <p className="text-[#00929C] text-xs truncate">
               Step {step} of {STEPS.length} · {STEPS[step - 1].label}
               {isQuotePhase
                 ? " · Quote"
                 : " · Contract"}
             </p>
           </div>
+          <button
+            onClick={exit}
+            aria-label="Exit wizard"
+            className="p-2 -mr-2 rounded-lg hover:bg-white/10 active:bg-white/20 transition-colors flex-shrink-0 text-white/60 hover:text-white"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
 
         {/* Step indicator — teal for quote steps, amber for contract steps */}

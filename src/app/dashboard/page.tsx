@@ -10,6 +10,7 @@ import LeadsPipeline from "@/components/dashboard/LeadsPipeline";
 import { RevenueTrendChart } from "@/components/dashboard/RevenueTrendChart";
 import AppShell from "@/components/layout/AppShell";
 import { AppHeader } from "@/components/ui/AppHeader";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { SectionCard } from "@/components/ui/SectionCard";
 
@@ -523,9 +524,12 @@ export default async function DashboardPage() {
           bodyClassName="p-0"
         >
           {!confirmedContracts?.length ? (
-            <div className="px-5 py-8 text-center text-slate-500">
-              <p className="text-sm">No confirmed contracts yet.</p>
-            </div>
+            <EmptyState
+              compact
+              title="No confirmed contracts yet"
+              description="When a rep collects a deposit, the contract lands here."
+              action={{ label: "+ New Contract", href: "/contracts/new" }}
+            />
           ) : (
             <ul className="divide-y divide-slate-100">
               {confirmedContracts.map((c) => (
@@ -543,9 +547,11 @@ export default async function DashboardPage() {
           headerAccessory={<Badge variant="warning" className="text-xs">Pending Conditions</Badge>}
         >
           {!contingentContracts?.length ? (
-            <div className="px-5 py-8 text-center text-slate-500">
-              <p className="text-sm">No contingent contracts.</p>
-            </div>
+            <EmptyState
+              compact
+              title="No contingent contracts"
+              description="Deals waiting on a co-signer, financing, or trade-in will appear here."
+            />
           ) : (
             <ul className="divide-y divide-slate-100">
               {contingentContracts.map((c) => (
@@ -562,9 +568,12 @@ export default async function DashboardPage() {
           bodyClassName="p-0"
         >
           {!recentQuotes?.length ? (
-            <div className="px-5 py-8 text-center text-slate-500">
-              <p className="text-sm">No quotes yet.</p>
-            </div>
+            <EmptyState
+              compact
+              title="No quotes yet"
+              description="Start a new contract and save at Step 5 to generate a quote without collecting a deposit."
+              action={{ label: "+ New Quote", href: "/contracts/new" }}
+            />
           ) : (
             <ul className="divide-y divide-slate-100">
               {recentQuotes.map((c) => (
