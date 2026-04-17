@@ -48,6 +48,9 @@ function FinancingIcon() {
 function AdminIcon() {
   return <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>;
 }
+function AuditIcon() {
+  return <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>;
+}
 function CustomersIcon() {
   return <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>;
 }
@@ -71,6 +74,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { href: "/admin/customers", label: "Customers", icon: <CustomersIcon />, roles: ["admin","manager"] },
   { href: "/bookkeeper", label: "Books",       icon: <FinanceIcon />,     roles: ["admin","manager","bookkeeper"],             feature: "bookkeeper" },
   { href: "/financing",  label: "Financing",   icon: <FinancingIcon />,   roles: ["admin","manager","bookkeeper"] },
+  { href: "/admin/audit", label: "Audit Trail", icon: <AuditIcon />,       roles: ["admin"] },
   { href: "/admin",      label: "Admin",       icon: <AdminIcon />,       roles: ["admin"] },
 ];
 
@@ -83,6 +87,14 @@ function checkPermission(
   const perms = orgPerms ?? DEFAULT_PERMISSIONS;
   return perms[role]?.[feature] ?? DEFAULT_PERMISSIONS[role]?.[feature] ?? false;
 }
+
+const ROLE_LABELS: Record<string, string> = {
+  admin: "Admin",
+  manager: "Manager",
+  sales_rep: "Sales Rep",
+  bookkeeper: "Bookkeeper",
+  field_crew: "Field Crew",
+};
 
 function SidebarNav({
   role,
@@ -98,9 +110,7 @@ function SidebarNav({
   const pathname = usePathname();
 
   const visibleItems = ALL_NAV_ITEMS.filter((item) => {
-    // Role check
     if (item.roles && !item.roles.includes(role ?? "")) return false;
-    // Feature / orgPerms check (admin always passes)
     if (item.feature && role && role !== "admin") {
       if (!checkPermission(orgPerms, role, item.feature)) return false;
     }
@@ -113,58 +123,86 @@ function SidebarNav({
   const initials = userName
     ? userName.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)
     : "?";
+  const roleLabel = role ? ROLE_LABELS[role] ?? role.replace("_", " ") : "";
 
   return (
     <div className="flex flex-col h-full">
-      {/* Logo */}
+      {/* Brand block */}
       <div className="px-5 py-5 border-b border-white/10">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/salta-logo-white.svg" alt="Salta" className="h-7 w-auto" />
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-white flex items-center justify-center shrink-0 shadow-sm">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.png" alt="Atlas" className="h-7 w-7 object-contain" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-white font-bold text-sm leading-tight truncate">
+              {process.env.NEXT_PUBLIC_COMPANY_NAME ?? "Atlas Spas"}
+            </div>
+            <div className="text-white/50 text-[10px] uppercase tracking-widest leading-tight mt-0.5">
+              Sales Platform
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Nav items */}
-      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         {visibleItems.map((item) => {
           const active = isActive(item.href);
           return (
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+              className={`relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
                 active
-                  ? "bg-[#00929C] text-white"
-                  : "text-white/70 hover:text-white hover:bg-white/10"
+                  ? "bg-white/10 text-white font-semibold"
+                  : "text-white/70 hover:text-white hover:bg-white/5"
               }`}
             >
-              <span className={active ? "text-white" : "text-white/60"}>{item.icon}</span>
-              {item.label}
+              {active && (
+                <span
+                  aria-hidden
+                  className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-r"
+                  style={{ backgroundColor: "#00929C" }}
+                />
+              )}
+              <span className={active ? "text-[#00929C]" : "text-white/60"}>{item.icon}</span>
+              <span className="truncate">{item.label}</span>
             </Link>
           );
         })}
       </nav>
 
-      {/* User + sign out */}
-      <div className="px-3 py-4 border-t border-white/10 space-y-1">
+      {/* User card + sign out */}
+      <div className="px-4 py-4 border-t border-white/10 space-y-3">
         <Link
           href="/profile"
-          className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
-            pathname === "/profile" ? "bg-[#00929C] text-white" : "text-white/70 hover:text-white hover:bg-white/10"
-          }`}
+          className="flex items-center gap-3 group"
         >
-          <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center text-xs font-bold text-white shrink-0">
+          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#00929C] to-[#007a82] flex items-center justify-center text-white font-bold text-sm shrink-0 shadow-sm">
             {initials}
           </div>
-          <span className="truncate">{userName ?? "Profile"}</span>
+          <div className="min-w-0 flex-1">
+            <div className="text-white text-sm font-semibold leading-tight truncate group-hover:text-[#00929C] transition-colors">
+              {userName ?? "Profile"}
+            </div>
+            <div className="text-white/50 text-xs leading-tight truncate">
+              {roleLabel}
+            </div>
+          </div>
         </Link>
         <button
           onClick={onSignOut}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-white/50 hover:text-white hover:bg-white/10 transition-colors"
+          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-white/60 hover:text-white hover:bg-white/5 transition-colors border border-white/10"
         >
-          <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
           </svg>
           Sign out
         </button>
+        <div className="text-[10px] text-white/25 uppercase tracking-widest text-center">
+          Powered by Salta
+        </div>
       </div>
     </div>
   );
@@ -180,14 +218,15 @@ export default function AppShell({ role, userName, orgPerms, children }: AppShel
   }
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", background: "#f8fafc" }}>
-      {/* Left sidebar — always visible */}
-      <aside style={{ width: "224px", flexShrink: 0, position: "fixed", left: 0, top: 0, bottom: 0, background: "#010F21", zIndex: 30, boxShadow: "4px 0 20px rgba(0,0,0,0.3)", display: "flex", flexDirection: "column" }}>
+    <div className="flex min-h-screen bg-slate-50">
+      <aside
+        className="fixed left-0 top-0 bottom-0 w-64 flex-shrink-0 flex flex-col z-30"
+        style={{ backgroundColor: "#010F21", boxShadow: "4px 0 20px rgba(0,0,0,0.25)" }}
+      >
         <SidebarNav role={role} userName={userName} orgPerms={orgPerms} onSignOut={handleSignOut} />
       </aside>
 
-      {/* Content area — offset by sidebar */}
-      <div style={{ marginLeft: "224px", flex: 1, minHeight: "100vh", minWidth: 0 }}>
+      <div className="flex-1 min-w-0 ml-64">
         {children}
       </div>
     </div>

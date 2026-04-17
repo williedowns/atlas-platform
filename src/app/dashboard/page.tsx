@@ -8,6 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/utils";
 import LeadsPipeline from "@/components/dashboard/LeadsPipeline";
 import AppShell from "@/components/layout/AppShell";
+import { AppHeader } from "@/components/ui/AppHeader";
+import { KpiCard } from "@/components/ui/KpiCard";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -28,6 +30,7 @@ export default async function DashboardPage() {
 
   const isAdmin = profile?.role === "admin" || profile?.role === "manager";
   const today = new Date().toISOString().split("T")[0];
+  const yesterday = new Date(Date.now() - 86400000).toISOString().split("T")[0];
   const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split("T")[0];
 
   // ── Today's stats ─────────────────────────────────────────────────────────
@@ -42,11 +45,67 @@ export default async function DashboardPage() {
 
   if (!isAdmin) todayStatsQuery.eq("sales_rep_id", user.id);
 
-  const { data: todayStats } = await todayStatsQuery;
+  // Yesterday's stats for trend comparison
+  const yesterdayStatsQuery = supabase
+    .from("contracts")
+    .select("total, deposit_paid")
+    .gte("created_at", `${yesterday}T00:00:00`)
+    .lt("created_at", `${today}T00:00:00`)
+    .not("status", "in", '("quote","draft","cancelled")')
+    .eq("is_contingent", false)
+    .gt("deposit_paid", 0);
+  if (!isAdmin) yesterdayStatsQuery.eq("sales_rep_id", user.id);
+
+  const [{ data: todayStats }, { data: yesterdayStats }] = await Promise.all([
+    todayStatsQuery,
+    yesterdayStatsQuery,
+  ]);
 
   const todayRevenue = todayStats?.reduce((s, c) => s + (c.total ?? 0), 0) ?? 0;
   const todayDeposits = todayStats?.reduce((s, c) => s + (c.deposit_paid ?? 0), 0) ?? 0;
   const todayCount = todayStats?.length ?? 0;
+
+  const yRevenue = yesterdayStats?.reduce((s, c) => s + (c.total ?? 0), 0) ?? 0;
+  const yDeposits = yesterdayStats?.reduce((s, c) => s + (c.deposit_paid ?? 0), 0) ?? 0;
+  const yCount = yesterdayStats?.length ?? 0;
+
+  function pctDelta(current: number, prior: number): { trend: "up" | "down" | "flat"; label: string } | null {
+    if (prior === 0 && current === 0) return null;
+    if (prior === 0) return { trend: "up", label: "new" };
+    const pct = Math.round(((current - prior) / prior) * 100);
+    if (pct === 0) return { trend: "flat", label: "0%" };
+    return { trend: pct > 0 ? "up" : "down", label: `${Math.abs(pct)}%` };
+  }
+
+  const revDelta = pctDelta(todayRevenue, yRevenue);
+  const depDelta = pctDelta(todayDeposits, yDeposits);
+  const cntDelta = pctDelta(todayCount, yCount);
+
+  // Active show today for "Today at the Show" context chip
+  const { data: activeShowToday } = await supabase
+    .from("shows")
+    .select("id, name, start_date, end_date")
+    .lte("start_date", today)
+    .gte("end_date", today)
+    .eq("active", true)
+    .order("start_date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  let activeShowChip: { label: string; pulsing: boolean } | undefined;
+  if (activeShowToday) {
+    const start = new Date(activeShowToday.start_date);
+    const end = new Date(activeShowToday.end_date);
+    const totalDays = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
+    const todayDate = new Date(today);
+    const dayNum = Math.min(totalDays, Math.max(1, Math.round((todayDate.getTime() - start.getTime()) / 86400000) + 1));
+    activeShowChip = {
+      label: totalDays > 1
+        ? `${activeShowToday.name} · Day ${dayNum} of ${totalDays}`
+        : activeShowToday.name,
+      pulsing: true,
+    };
+  }
 
   // ── Recent confirmed contracts (non-contingent, any status except quote/draft/cancelled) ──
   const confirmedQuery = supabase
@@ -208,20 +267,18 @@ export default async function DashboardPage() {
 
   return (
     <AppShell role={profile?.role} userName={profile?.full_name} orgPerms={orgPerms}>
-      {/* Header */}
-      <header className="bg-[#010F21] text-white px-4 py-4 flex items-center justify-between sticky top-0 z-10 shadow-lg">
-        <div>
-          <img src="/logo.png" alt="Atlas Spas & Swim Spas" className="h-8 w-auto bg-white rounded px-2 py-0.5" />
-          <p className="text-white/60 text-xs mt-0.5">
-            {profile?.full_name} · {profile?.role?.replace("_", " ")}
-          </p>
-        </div>
-        <Link href="/contracts/new">
-          <Button variant="accent" size="lg" className="font-bold">
-            + New Contract
-          </Button>
-        </Link>
-      </header>
+      <AppHeader
+        title={profile?.full_name ?? "Dashboard"}
+        subtitle={profile?.role?.replace("_", " ")}
+        status={activeShowChip}
+        actions={
+          <Link href="/contracts/new">
+            <Button variant="accent" size="lg" className="font-bold">
+              + New Contract
+            </Button>
+          </Link>
+        }
+      />
 
       <main className="px-5 py-6 space-y-3 max-w-2xl mx-auto pb-24">
 
@@ -247,40 +304,36 @@ export default async function DashboardPage() {
 
         {/* ── Today's Stats ── */}
         <div className="grid grid-cols-2 gap-3">
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-xs text-slate-500 uppercase tracking-wide font-medium">
-                {isAdmin ? "Today's Revenue" : "My Revenue Today"}
-              </p>
-              <p className="text-2xl font-bold text-[#00929C] mt-1">{formatCurrency(todayRevenue)}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-xs text-slate-500 uppercase tracking-wide font-medium">
-                {isAdmin ? "Deposits Collected" : "My Deposits Today"}
-              </p>
-              <p className="text-2xl font-bold text-emerald-600 mt-1">{formatCurrency(todayDeposits)}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-xs text-slate-500 uppercase tracking-wide font-medium">
-                {isAdmin ? "Contracts Today" : "My Contracts Today"}
-              </p>
-              <p className="text-2xl font-bold text-slate-900 mt-1">{todayCount}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-xs text-slate-500 uppercase tracking-wide font-medium">
-                {isAdmin ? "Contingent Today" : "My Contingent"}
-              </p>
-              <p className="text-2xl font-bold text-amber-600 mt-1">
-                {contingentContracts?.filter(c => c.created_at?.startsWith(today)).length ?? 0}
-              </p>
-            </CardContent>
-          </Card>
+          <KpiCard
+            label={isAdmin ? "Today's Revenue" : "My Revenue Today"}
+            value={formatCurrency(todayRevenue)}
+            sublabel={yRevenue > 0 ? `${formatCurrency(yRevenue)} yesterday` : undefined}
+            trend={revDelta?.trend}
+            trendValue={revDelta?.label}
+            accentColor="#00929C"
+          />
+          <KpiCard
+            label={isAdmin ? "Deposits Collected" : "My Deposits Today"}
+            value={formatCurrency(todayDeposits)}
+            sublabel={yDeposits > 0 ? `${formatCurrency(yDeposits)} yesterday` : undefined}
+            trend={depDelta?.trend}
+            trendValue={depDelta?.label}
+            accentColor="#10b981"
+          />
+          <KpiCard
+            label={isAdmin ? "Contracts Today" : "My Contracts Today"}
+            value={todayCount}
+            sublabel={yCount > 0 ? `${yCount} yesterday` : undefined}
+            trend={cntDelta?.trend}
+            trendValue={cntDelta?.label}
+            accentColor="#0f172a"
+          />
+          <KpiCard
+            label={isAdmin ? "Contingent Today" : "My Contingent"}
+            value={contingentContracts?.filter(c => c.created_at?.startsWith(today)).length ?? 0}
+            sublabel="Pending conditions"
+            accentColor="#d97706"
+          />
         </div>
 
         {/* ── Monthly Goal Progress ── */}
