@@ -166,24 +166,65 @@ export async function createQBOEstimate(params: {
   });
 }
 
-// ─── Invoices (Deposits) ─────────────────────────────────────────────────────
+// ─── Deposits (SalesReceipt → Income or Liability Account) ─────────────────
+// SalesReceipt is the correct QBO entity for received cash.
+//
+// CONFIG FLAG: env var QBO_DEPOSIT_MODE controls where deposits post.
+//   "income"    (DEFAULT) — deposits post to an Income account via the income item.
+//                            Matches Lori's current workflow. SAFE for Atlas go-live.
+//   "liability" — deposits post to Customer Deposits liability via the liability item.
+//                 Target accrual workflow; requires Ian/Lori sign-off before enabling.
+//
+// Item resolution priority (highest to lowest):
+//   1. Per-location/per-show item ID passed in params (qbo_deposit_income_item_id
+//      or qbo_deposit_liability_item_id depending on mode)
+//   2. Global env var (QBO_DEPOSIT_INCOME_ITEM_ID or QBO_DEPOSIT_LIABILITY_ITEM_ID)
+//   3. Legacy env var QBO_DEPOSIT_ITEM_ID (backwards compat)
 
-export async function createQBODepositInvoice(params: {
+export type QBODepositMode = "income" | "liability";
+
+export function getQBODepositMode(): QBODepositMode {
+  const raw = (process.env.QBO_DEPOSIT_MODE ?? "").toLowerCase().trim();
+  return raw === "liability" ? "liability" : "income";
+}
+
+export async function createQBODeposit(params: {
   qbo_customer_id: string;
   deposit_amount: number;
   contract_number: string;
-  customer_name?: string;       // shown on invoice and in QBO customer activity
-  location_name?: string;       // store location or show/expo name
-  line_items_summary?: string;  // e.g. "Hot Tub X (1), Steps (1), Chemicals (2)"
-  class_id?: string;            // QBO Class tracking (optional)
-  department_id?: string;       // QBO Location (Department) for tax allocation
-  deposit_account_id?: string;  // Per-location bank account override
+  customer_name?: string;
+  location_name?: string;
+  line_items_summary?: string;
+  class_id?: string;
+  department_id?: string;
+  deposit_account_id?: string;
+  // Per-location/per-show item overrides — selected by QBO_DEPOSIT_MODE
+  qbo_deposit_income_item_id?: string;
+  qbo_deposit_liability_item_id?: string;
 }) {
-  // Prefer the location-specific account, fall back to global env var
+  const mode = getQBODepositMode();
+
+  const depositItemId =
+    mode === "income"
+      ? (params.qbo_deposit_income_item_id
+          ?? process.env.QBO_DEPOSIT_INCOME_ITEM_ID
+          ?? process.env.QBO_DEPOSIT_ITEM_ID)
+      : (params.qbo_deposit_liability_item_id
+          ?? process.env.QBO_DEPOSIT_LIABILITY_ITEM_ID
+          ?? process.env.QBO_DEPOSIT_ITEM_ID);
+
+  if (!depositItemId) {
+    throw new Error(
+      `QBO deposit item not configured for mode="${mode}". ` +
+      `Set ${mode === "income" ? "QBO_DEPOSIT_INCOME_ITEM_ID" : "QBO_DEPOSIT_LIABILITY_ITEM_ID"} ` +
+      `env var or add the item ID to the location/show record.`
+    );
+  }
+
   const depositAccountId =
     params.deposit_account_id ?? process.env.QBO_CUSTOMER_DEPOSITS_ACCOUNT_ID;
 
-  return qboFetch("/invoice", {
+  return qboFetch("/salesreceipt", {
     method: "POST",
     body: JSON.stringify({
       DocNumber: `DEP-${params.contract_number}`,
@@ -201,7 +242,7 @@ export async function createQBODepositInvoice(params: {
           Amount: params.deposit_amount,
           DetailType: "SalesItemLineDetail",
           SalesItemLineDetail: {
-            ItemRef: { value: process.env.QBO_DEPOSIT_ITEM_ID },
+            ItemRef: { value: depositItemId },
             UnitPrice: params.deposit_amount,
             Qty: 1,
           },
@@ -212,6 +253,130 @@ export async function createQBODepositInvoice(params: {
       ClassRef: params.class_id ? { value: params.class_id } : undefined,
     }),
   });
+}
+
+// Backwards-compatible alias — existing callers use this name
+export const createQBODepositInvoice = createQBODeposit;
+
+// ─── Final Invoice (Revenue Recognition at Delivery) ────────────────────────
+
+export async function createQBOFinalInvoice(params: {
+  qbo_customer_id: string;
+  contract_number: string;
+  line_items: { qbo_item_id?: string; description: string; qty: number; unit_price: number }[];
+  discounts: { description: string; amount: number }[];
+  tax_amount: number;
+  customer_name?: string;
+  location_name?: string;
+  department_id?: string;
+  deposit_account_id?: string;
+}) {
+  const lines: any[] = [];
+
+  // Product line items — use QBO Item ID if available, otherwise generic service item
+  const fallbackItemId = process.env.QBO_DEFAULT_SALES_ITEM_ID;
+  params.line_items.forEach((item, i) => {
+    const itemRef = item.qbo_item_id || fallbackItemId;
+    if (!itemRef) return; // skip if no item mapping available
+    lines.push({
+      LineNum: i + 1,
+      Amount: item.unit_price * item.qty,
+      Description: item.description,
+      DetailType: "SalesItemLineDetail",
+      SalesItemLineDetail: {
+        ItemRef: { value: itemRef },
+        Qty: item.qty,
+        UnitPrice: item.unit_price,
+      },
+    });
+  });
+
+  // Discount line items
+  params.discounts.forEach((d, i) => {
+    lines.push({
+      LineNum: lines.length + 1,
+      Amount: Math.abs(d.amount),
+      Description: d.description,
+      DetailType: "DiscountLineDetail",
+      DiscountLineDetail: {
+        PercentBased: false,
+        DiscountPercent: 0,
+      },
+    });
+  });
+
+  const invoiceBody: any = {
+    DocNumber: params.contract_number,
+    CustomerRef: { value: params.qbo_customer_id },
+    CustomerMemo: {
+      value: [
+        `Final Invoice — Contract ${params.contract_number}`,
+        params.customer_name,
+        params.location_name,
+        `Delivered ${new Date().toLocaleDateString("en-US")}`,
+      ].filter(Boolean).join(" — ").slice(0, 1000),
+    },
+    TxnDate: new Date().toISOString().slice(0, 10),
+    Line: lines,
+  };
+
+  // Add tax if present
+  if (params.tax_amount > 0) {
+    invoiceBody.TxnTaxDetail = { TotalTax: params.tax_amount };
+  }
+
+  if (params.department_id) {
+    invoiceBody.DepartmentRef = { value: params.department_id };
+  }
+
+  return qboFetch("/invoice", {
+    method: "POST",
+    body: JSON.stringify(invoiceBody),
+  });
+}
+
+// ─── Apply Deposits as Payment Against Invoice ──────────────────────────────
+
+export async function applyDepositsToInvoice(params: {
+  qbo_customer_id: string;
+  invoice_id: string;
+  deposit_amount: number;
+  deposit_account_id?: string;
+}) {
+  const paymentBody: any = {
+    CustomerRef: { value: params.qbo_customer_id },
+    TotalAmt: params.deposit_amount,
+    Line: [
+      {
+        Amount: params.deposit_amount,
+        LinkedTxn: [
+          {
+            TxnId: params.invoice_id,
+            TxnType: "Invoice",
+          },
+        ],
+      },
+    ],
+  };
+
+  if (params.deposit_account_id) {
+    paymentBody.DepositToAccountRef = { value: params.deposit_account_id };
+  }
+
+  return qboFetch("/payment", {
+    method: "POST",
+    body: JSON.stringify(paymentBody),
+  });
+}
+
+// ─── Accounts Query ─────────────────────────────────────────────────────────
+
+export async function queryQBOAccounts(type?: string) {
+  const query = type
+    ? `select * from Account where AccountType = '${type}' and Active = true MAXRESULTS 200`
+    : `select * from Account where Active = true MAXRESULTS 200`;
+  const data = await qboFetch(`/query?query=${encodeURIComponent(query)}`);
+  return data.QueryResponse?.Account ?? [];
 }
 
 // ─── OAuth Token Refresh ─────────────────────────────────────────────────────

@@ -39,6 +39,10 @@ export default function EditShowPage({ params }: { params: { id: string } }) {
     qbo_deposit_account_name: "",
     qbo_department_id: "",
     qbo_department_name: "",
+    qbo_deposit_income_item_id: "",
+    qbo_deposit_income_item_name: "",
+    qbo_deposit_liability_item_id: "",
+    qbo_deposit_liability_item_name: "",
   });
 
   const [qboAccounts, setQboAccounts] = useState<QBOAccount[]>([]);
@@ -71,6 +75,10 @@ export default function EditShowPage({ params }: { params: { id: string } }) {
             qbo_deposit_account_name: (data as any).qbo_deposit_account_name ?? "",
             qbo_department_id: (data as any).qbo_department_id ?? "",
             qbo_department_name: (data as any).qbo_department_name ?? "",
+            qbo_deposit_income_item_id: (data as any).qbo_deposit_income_item_id ?? "",
+            qbo_deposit_income_item_name: (data as any).qbo_deposit_income_item_name ?? "",
+            qbo_deposit_liability_item_id: (data as any).qbo_deposit_liability_item_id ?? "",
+            qbo_deposit_liability_item_name: (data as any).qbo_deposit_liability_item_name ?? "",
           });
         }
         setLoading(false);
@@ -117,6 +125,10 @@ export default function EditShowPage({ params }: { params: { id: string } }) {
         qbo_deposit_account_name: form.qbo_deposit_account_name || null,
         qbo_department_id: form.qbo_department_id || null,
         qbo_department_name: form.qbo_department_name || null,
+        qbo_deposit_income_item_id: form.qbo_deposit_income_item_id || null,
+        qbo_deposit_income_item_name: form.qbo_deposit_income_item_name || null,
+        qbo_deposit_liability_item_id: form.qbo_deposit_liability_item_id || null,
+        qbo_deposit_liability_item_name: form.qbo_deposit_liability_item_name || null,
       } as Record<string, unknown>)
       .eq("id", params.id);
 
@@ -310,6 +322,64 @@ export default function EditShowPage({ params }: { params: { id: string } }) {
                   )}
                 </div>
               )}
+            </CardContent>
+          </Card>
+
+          {/* QBO Deposit Item IDs — income vs liability mode */}
+          <Card>
+            <CardContent className="p-4 space-y-3">
+              <div>
+                <h2 className="font-semibold text-slate-700">QuickBooks Deposit Items</h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Salta posts deposits through one of these QBO Items based on <code className="text-[11px] bg-slate-100 px-1 py-0.5 rounded">QBO_DEPOSIT_MODE</code> env var.
+                  Configure both so flipping the flag requires no show changes.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium text-slate-700">
+                  Income Item ID <span className="text-slate-400 font-normal">(used when mode=income — Lori's current workflow)</span>
+                </label>
+                <Input
+                  value={form.qbo_deposit_income_item_id}
+                  onChange={(e) => set("qbo_deposit_income_item_id", e.target.value)}
+                  placeholder="e.g. 42 (QBO Item ID, numeric)"
+                />
+                <Input
+                  label="Income Item Name (for reference)"
+                  value={form.qbo_deposit_income_item_name}
+                  onChange={(e) => set("qbo_deposit_income_item_name", e.target.value)}
+                  placeholder="e.g. Shows Sales - Hot Tub Deposit"
+                />
+                <p className="text-xs text-slate-500">
+                  Must be a QBO Item mapped to an <strong>Income</strong> account.
+                </p>
+              </div>
+
+              <div className="border-t border-slate-200 pt-3 flex flex-col gap-1.5">
+                <label className="text-sm font-medium text-slate-700">
+                  Liability Item ID <span className="text-slate-400 font-normal">(used when mode=liability — accrual workflow)</span>
+                </label>
+                <Input
+                  value={form.qbo_deposit_liability_item_id}
+                  onChange={(e) => set("qbo_deposit_liability_item_id", e.target.value)}
+                  placeholder="e.g. 57 (QBO Item ID, numeric)"
+                />
+                <Input
+                  label="Liability Item Name (for reference)"
+                  value={form.qbo_deposit_liability_item_name}
+                  onChange={(e) => set("qbo_deposit_liability_item_name", e.target.value)}
+                  placeholder="e.g. Deposit - Shows"
+                />
+                <p className="text-xs text-slate-500">
+                  Must be a QBO Item mapped to the <strong>Customer Deposits - Shows</strong> liability account.
+                </p>
+              </div>
+
+              <p className="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2 border border-slate-200">
+                💡 <strong>Where to find Item IDs:</strong> In QBO, go to Sales → Products &amp; Services, click the item,
+                and copy the number from the URL (<code className="text-[11px]">…/app/item?id=<strong>42</strong></code>).
+              </p>
             </CardContent>
           </Card>
 
