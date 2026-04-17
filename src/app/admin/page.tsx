@@ -42,7 +42,7 @@ export default async function AdminPage() {
   ).length;
 
   const qboConnected = !!qboToken;
-  const zampConfigured = !!process.env.ZAMP_API_TOKEN;
+  const avalaraConfigured = !!process.env.AVALARA_ACCOUNT_ID && !!process.env.AVALARA_LICENSE_KEY;
 
   return (
     <AppShell role={profile?.role} userName={(profile as any)?.full_name}>
@@ -276,22 +276,22 @@ export default async function AdminPage() {
           </Card>
         </Link>
 
-        {/* Zamp Sales Tax */}
+        {/* Avalara Sales Tax */}
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
-              <CardTitle>Zamp Sales Tax</CardTitle>
-              <Badge variant={zampConfigured ? "success" : "destructive"}>
-                {zampConfigured ? "Configured" : "Not Configured"}
+              <CardTitle>Avalara AvaTax</CardTitle>
+              <Badge variant={avalaraConfigured ? "success" : "destructive"}>
+                {avalaraConfigured ? "Configured" : "Not Configured"}
               </Badge>
             </div>
           </CardHeader>
           <CardContent>
-            {zampConfigured ? (
+            {avalaraConfigured ? (
               <PingButton />
             ) : (
               <p className="text-sm text-slate-500">
-                Add <code className="bg-slate-100 px-1 rounded text-xs">ZAMP_API_TOKEN</code> to environment variables to enable sales tax calculation and filing.
+                Add <code className="bg-slate-100 px-1 rounded text-xs">AVALARA_ACCOUNT_ID</code> and <code className="bg-slate-100 px-1 rounded text-xs">AVALARA_LICENSE_KEY</code> to environment variables to enable sales tax calculation and filing.
               </p>
             )}
           </CardContent>

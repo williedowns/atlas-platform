@@ -11,7 +11,7 @@ export function PingButton() {
     setLoading(true);
     setResult(null);
     try {
-      const res = await fetch("/api/zamp/ping", { method: "POST" });
+      const res = await fetch("/api/avalara/ping", { method: "POST" });
       const data = await res.json();
       setResult(data);
     } catch {
