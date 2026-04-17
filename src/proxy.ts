@@ -36,7 +36,9 @@ export async function proxy(request: NextRequest) {
     request.nextUrl.pathname.startsWith("/_next") ||
     request.nextUrl.pathname === "/favicon.ico" ||
     request.nextUrl.pathname.startsWith("/salta-") ||
-    request.nextUrl.pathname.startsWith("/portal");
+    request.nextUrl.pathname.startsWith("/portal") ||
+    request.nextUrl.pathname.startsWith("/manufacturer") ||
+    request.nextUrl.pathname.startsWith("/demo");
 
   if (!user && !isPublicPath) {
     return NextResponse.redirect(new URL("/login", request.url));
