@@ -1,7 +1,7 @@
 "use client";
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -12,6 +12,18 @@ const DEMO_EMAIL = "demo@atlasspas.com";
 const DEMO_PASSWORD = "demo2026";
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={<LoginFallback />}>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginFallback() {
+  return <div className="min-h-screen bg-[#010F21]" />;
+}
+
+function LoginForm() {
   const router = useRouter();
   const supabase = createClient();
   const searchParams = useSearchParams();
