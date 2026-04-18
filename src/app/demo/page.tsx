@@ -40,7 +40,7 @@ export default function DemoGatewayPage() {
               "Signed in as the platform admin — full access",
             ]}
             ctaLabel="Enter Dealer Demo →"
-            ctaHref="/login?demo=1"
+            ctaHref="/dealer/login"
             accentBg="#024452"
             credsLabel="Demo credentials"
             credsEmail="demo@atlasspas.com"

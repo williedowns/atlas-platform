@@ -38,7 +38,8 @@ export async function proxy(request: NextRequest) {
     request.nextUrl.pathname.startsWith("/salta-") ||
     request.nextUrl.pathname.startsWith("/portal") ||
     request.nextUrl.pathname.startsWith("/manufacturer") ||
-    request.nextUrl.pathname.startsWith("/demo");
+    request.nextUrl.pathname.startsWith("/demo") ||
+    request.nextUrl.pathname.startsWith("/dealer/login");
 
   if (!user && !isPublicPath) {
     return NextResponse.redirect(new URL("/login", request.url));
