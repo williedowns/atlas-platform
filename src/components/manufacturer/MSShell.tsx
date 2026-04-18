@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { href: "/manufacturer/warranty", label: "Warranty & Service", icon: "wrench" },
   { href: "/manufacturer/finance", label: "Finance & AR", icon: "dollar" },
   { href: "/manufacturer/marketing", label: "Marketing Hub", icon: "megaphone" },
+  { href: "/manufacturer/training", label: "Training & Certification", icon: "grad" },
   { href: "/manufacturer/dealers", label: "Dealers", icon: "users" },
   { href: "/manufacturer/showrooms", label: "Showrooms", icon: "store" },
   { href: "/manufacturer/leaderboard", label: "Leaderboard", icon: "trophy" },
@@ -103,6 +104,14 @@ function Icon({ name }: { name: string }) {
       return (
         <svg className={common} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M3 21V10l6 3V10l6 3V4l6 3v14H3zM7 18h2M11 18h2M15 18h2" />
+        </svg>
+      );
+    case "grad":
+      return (
+        <svg className={common} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 14l9-5-9-5-9 5 9 5z" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14zm-4 6v-7.5l4-2.222" />
         </svg>
       );
     case "megaphone":

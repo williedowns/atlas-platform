@@ -3423,6 +3423,492 @@ export function dealerLeadPerformance(n = 10) {
     .slice(0, n);
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// Training & Certification (Module 6 of comprehensive build-out)
+// Dealer onboarding, product training, certifications, content library.
+// ═══════════════════════════════════════════════════════════════════
+
+export type CourseCategory =
+  | "onboarding"
+  | "product"
+  | "sales"
+  | "service"
+  | "compliance"
+  | "brand";
+
+export const COURSE_CATEGORY_LABELS: Record<CourseCategory, string> = {
+  onboarding: "Onboarding",
+  product: "Product Knowledge",
+  sales: "Sales & Selling",
+  service: "Service & Install",
+  compliance: "Compliance",
+  brand: "Brand & Messaging",
+};
+
+export const COURSE_CATEGORY_COLORS: Record<CourseCategory, string> = {
+  onboarding: "#0891B2",
+  product: "#DC2626",
+  sales: "#059669",
+  service: "#D97706",
+  compliance: "#7C3AED",
+  brand: "#EA580C",
+};
+
+export type CourseLevel = "foundation" | "intermediate" | "advanced" | "certification_exam";
+
+export interface Course {
+  id: string;
+  code: string;
+  title: string;
+  category: CourseCategory;
+  level: CourseLevel;
+  lessons: number;
+  durationMin: number;
+  required: boolean; // required for dealer-tier unlock?
+  description: string;
+  enrolled: number;
+  completed: number;
+  completionRate: number;
+  passRate: number;
+  publishedAt: Date;
+  rating: number;
+}
+
+export type EnrollmentStatus = "not_started" | "in_progress" | "completed" | "expired";
+
+export interface Enrollment {
+  id: string;
+  courseId: string;
+  courseTitle: string;
+  courseCategory: CourseCategory;
+  profileId: string;
+  profileName: string;
+  dealerId: string;
+  dealerName: string;
+  assignedAt: Date;
+  startedAt?: Date;
+  completedAt?: Date;
+  progress: number; // 0-100
+  score?: number; // 0-100 on pass
+  status: EnrollmentStatus;
+  dueAt?: Date;
+}
+
+export interface Certification {
+  id: string;
+  code: string;
+  title: string;
+  category: CourseCategory;
+  requiredCourses: string[]; // course ids
+  validMonths: number;
+  unlocks: string; // e.g., "Platinum tier pricing"
+}
+
+export type CertificationStatus = "certified" | "expiring_soon" | "expired" | "in_progress" | "not_started";
+
+export interface RepCertification {
+  id: string;
+  certificationId: string;
+  certificationTitle: string;
+  profileId: string;
+  profileName: string;
+  profileRole: string;
+  dealerId: string;
+  dealerName: string;
+  status: CertificationStatus;
+  issuedAt?: Date;
+  expiresAt?: Date;
+  progress: number; // 0-100
+}
+
+export type ContentType = "video" | "pdf" | "image" | "ad_template" | "doc";
+
+export interface ContentAsset {
+  id: string;
+  title: string;
+  type: ContentType;
+  category: "brand" | "product" | "sales_tool" | "social" | "print" | "video_asset";
+  sizeKb: number;
+  downloads: number;
+  updatedAt: Date;
+  tags: string[];
+}
+
+const COURSE_TITLES: { title: string; cat: CourseCategory; level: CourseLevel; lessons: number; durationMin: number; required: boolean; description: string }[] = [
+  { title: "Welcome to Master Spas", cat: "onboarding", level: "foundation", lessons: 5, durationMin: 45, required: true, description: "Company history, brand pillars, mission, and the 30-year story." },
+  { title: "Dealer Operations 101", cat: "onboarding", level: "foundation", lessons: 8, durationMin: 90, required: true, description: "How to place orders, manage inventory, claim co-op, access support." },
+  { title: "Michael Phelps Legend Series Deep Dive", cat: "product", level: "intermediate", lessons: 12, durationMin: 180, required: false, description: "Every feature of the LSX line — jet layout, seat therapy, tech packages." },
+  { title: "Twilight Series — Build & Sell", cat: "product", level: "foundation", lessons: 10, durationMin: 120, required: false, description: "The best-seller. Understand why Twilight converts." },
+  { title: "Clarity Series — Value Positioning", cat: "product", level: "foundation", lessons: 6, durationMin: 75, required: false, description: "Entry-tier done right. Pitch without undercutting premium." },
+  { title: "H2X Fitness Swim Spa", cat: "product", level: "intermediate", lessons: 9, durationMin: 135, required: false, description: "The swim spa story. Market size, buyer profile, features." },
+  { title: "MP Signature Swim Spa", cat: "product", level: "advanced", lessons: 14, durationMin: 210, required: false, description: "Our premium swim spa. Selling $35k+ units." },
+  { title: "Sales Methodology: The MS Way", cat: "sales", level: "foundation", lessons: 10, durationMin: 150, required: true, description: "Our proven 8-step showroom process." },
+  { title: "Objection Handling Masterclass", cat: "sales", level: "intermediate", lessons: 8, durationMin: 120, required: false, description: "Price, warranty, timing — how to overcome the top 12 objections." },
+  { title: "Show & Event Selling", cat: "sales", level: "intermediate", lessons: 7, durationMin: 90, required: false, description: "How to close in a high-traffic, time-pressured environment." },
+  { title: "Financing Conversations", cat: "sales", level: "foundation", lessons: 6, durationMin: 75, required: true, description: "Present financing without killing momentum." },
+  { title: "Service Technician Certification", cat: "service", level: "certification_exam", lessons: 20, durationMin: 480, required: true, description: "Authorized service cert — required for warranty work." },
+  { title: "Electrical & Plumbing Install", cat: "service", level: "advanced", lessons: 12, durationMin: 240, required: false, description: "Site prep, GFCI, bonding, plumbing connections." },
+  { title: "Water Care Basics", cat: "service", level: "foundation", lessons: 8, durationMin: 90, required: false, description: "Sanitation, pH, alkalinity, helping customers long-term." },
+  { title: "Customer Delivery Experience", cat: "service", level: "foundation", lessons: 5, durationMin: 60, required: true, description: "The first 15 minutes with a new customer drives NPS." },
+  { title: "FTC CARS Rule & Disclosure Compliance", cat: "compliance", level: "foundation", lessons: 4, durationMin: 45, required: true, description: "Annual refresher on federal retail disclosure rules." },
+  { title: "Brand Voice & Visual Guidelines", cat: "brand", level: "foundation", lessons: 6, durationMin: 60, required: false, description: "Logo use, photography, tone — keep the brand consistent." },
+  { title: "Master Spas Certified Platinum Partner", cat: "brand", level: "certification_exam", lessons: 18, durationMin: 420, required: false, description: "The big one. Unlocks Platinum tier pricing & co-op bump." },
+];
+
+function generateCourses(): Course[] {
+  const now = DEMO_NOW_REF;
+  return COURSE_TITLES.map((c, i) => {
+    const enrolledBase = c.required ? 180 : c.level === "certification_exam" ? 60 : 100;
+    const enrolled = enrolledBase + rInt(-40, 80);
+    const completionRate = c.level === "foundation" ? 0.7 + rng() * 0.2 : c.level === "intermediate" ? 0.55 + rng() * 0.25 : 0.4 + rng() * 0.3;
+    const completed = Math.round(enrolled * completionRate);
+    const passRate = 0.75 + rng() * 0.2;
+    return {
+      id: `course-${i + 1}`,
+      code: `MS-${c.cat.slice(0, 3).toUpperCase()}-${String(100 + i).padStart(3, "0")}`,
+      title: c.title,
+      category: c.cat,
+      level: c.level,
+      lessons: c.lessons,
+      durationMin: c.durationMin,
+      required: c.required,
+      description: c.description,
+      enrolled,
+      completed,
+      completionRate: +(completionRate * 100).toFixed(1),
+      passRate: +(passRate * 100).toFixed(1),
+      publishedAt: new Date(now - rInt(30, 540) * 24 * 60 * 60 * 1000),
+      rating: +(3.8 + rng() * 1.2).toFixed(2),
+    };
+  });
+}
+
+export const COURSES: Course[] = generateCourses();
+
+export function courseById(id: string): Course | undefined {
+  return COURSES.find((c) => c.id === id);
+}
+
+const CERTIFICATION_DEFS = [
+  {
+    code: "MS-CSR",
+    title: "Certified Sales Representative",
+    category: "sales" as CourseCategory,
+    courses: ["course-1", "course-2", "course-8", "course-11"],
+    validMonths: 24,
+    unlocks: "Unlocks dealer-tier pricing access",
+  },
+  {
+    code: "MS-PCI-TW",
+    title: "Product Certified — Twilight",
+    category: "product" as CourseCategory,
+    courses: ["course-4"],
+    validMonths: 36,
+    unlocks: "Required to sell new Twilight units",
+  },
+  {
+    code: "MS-PCI-MP",
+    title: "Product Certified — Michael Phelps",
+    category: "product" as CourseCategory,
+    courses: ["course-3"],
+    validMonths: 36,
+    unlocks: "Required to sell Legend series (premium tier)",
+  },
+  {
+    code: "MS-PCI-H2X",
+    title: "Product Certified — H2X / Swim Spa",
+    category: "product" as CourseCategory,
+    courses: ["course-6", "course-7"],
+    validMonths: 36,
+    unlocks: "Required to sell swim spa line",
+  },
+  {
+    code: "MS-STC",
+    title: "Authorized Service Technician",
+    category: "service" as CourseCategory,
+    courses: ["course-12", "course-13", "course-14"],
+    validMonths: 24,
+    unlocks: "Required for paid warranty work",
+  },
+  {
+    code: "MS-PPP",
+    title: "Platinum Partner Certification",
+    category: "brand" as CourseCategory,
+    courses: ["course-18", "course-1", "course-8"],
+    validMonths: 12,
+    unlocks: "Unlocks Platinum-tier pricing + 3.5% co-op rate",
+  },
+];
+
+export const CERTIFICATIONS: Certification[] = CERTIFICATION_DEFS.map((c) => ({
+  id: c.code.toLowerCase(),
+  code: c.code,
+  title: c.title,
+  category: c.category,
+  requiredCourses: c.courses,
+  validMonths: c.validMonths,
+  unlocks: c.unlocks,
+}));
+
+function generateRepCertifications(): RepCertification[] {
+  const now = DEMO_NOW_REF;
+  const out: RepCertification[] = [];
+  let counter = 1;
+
+  // Fake dealer reps — use dealer name + rep first name
+  const REP_NAMES = ["Alex", "Jordan", "Taylor", "Morgan", "Casey", "Jamie", "Pat", "Riley"];
+
+  for (const dealer of DEALERS) {
+    const repCount = dealer.tier === "Platinum" ? rInt(5, 8) : dealer.tier === "Gold" ? rInt(3, 5) : dealer.tier === "Silver" ? rInt(2, 3) : rInt(1, 2);
+    for (let r = 0; r < repCount; r++) {
+      const profileId = `prof-${dealer.id}-${r}`;
+      const profileName = `${REP_NAMES[(r + counter) % REP_NAMES.length]} ${["M.", "S.", "K.", "L.", "B.", "D.", "P.", "T."][(r + counter) % 8]}`;
+
+      // Each rep gets some mix of certifications
+      for (const cert of CERTIFICATIONS) {
+        // Higher-tier dealers more likely to have certs
+        const certProb = dealer.tier === "Platinum" ? 0.7 : dealer.tier === "Gold" ? 0.5 : dealer.tier === "Silver" ? 0.3 : 0.15;
+        if (rng() > certProb) continue;
+
+        const status = rPickWeighted<CertificationStatus>([
+          { value: "certified", weight: 55 },
+          { value: "expiring_soon", weight: 12 },
+          { value: "expired", weight: 8 },
+          { value: "in_progress", weight: 18 },
+          { value: "not_started", weight: 7 },
+        ]);
+
+        let issuedAt: Date | undefined;
+        let expiresAt: Date | undefined;
+        let progress: number;
+
+        if (status === "certified") {
+          issuedAt = new Date(now - rInt(30, 360) * 24 * 60 * 60 * 1000);
+          expiresAt = new Date(issuedAt.getTime() + cert.validMonths * 30 * 24 * 60 * 60 * 1000);
+          progress = 100;
+        } else if (status === "expiring_soon") {
+          issuedAt = new Date(now - (cert.validMonths * 30 - rInt(10, 60)) * 24 * 60 * 60 * 1000);
+          expiresAt = new Date(issuedAt.getTime() + cert.validMonths * 30 * 24 * 60 * 60 * 1000);
+          progress = 100;
+        } else if (status === "expired") {
+          issuedAt = new Date(now - (cert.validMonths * 30 + rInt(10, 180)) * 24 * 60 * 60 * 1000);
+          expiresAt = new Date(issuedAt.getTime() + cert.validMonths * 30 * 24 * 60 * 60 * 1000);
+          progress = 100;
+        } else if (status === "in_progress") {
+          progress = rInt(20, 85);
+        } else {
+          progress = 0;
+        }
+
+        out.push({
+          id: `cert-rep-${counter}`,
+          certificationId: cert.id,
+          certificationTitle: cert.title,
+          profileId,
+          profileName,
+          profileRole: r === 0 && dealer.tier !== "Bronze" ? "Sales Manager" : "Sales Rep",
+          dealerId: dealer.id,
+          dealerName: dealer.name,
+          status,
+          issuedAt,
+          expiresAt,
+          progress,
+        });
+        counter++;
+      }
+    }
+  }
+  return out;
+}
+
+export const REP_CERTIFICATIONS: RepCertification[] = generateRepCertifications();
+
+function generateEnrollments(): Enrollment[] {
+  const out: Enrollment[] = [];
+  let counter = 1;
+  const now = DEMO_NOW_REF;
+  // Sample enrollments — one per rep cert for context
+  for (const rc of REP_CERTIFICATIONS.slice(0, 400)) {
+    const cert = CERTIFICATIONS.find((c) => c.id === rc.certificationId);
+    if (!cert) continue;
+    for (const courseId of cert.requiredCourses.slice(0, 2)) {
+      const course = courseById(courseId);
+      if (!course) continue;
+      const assignedAt = new Date(now - rInt(1, 180) * 24 * 60 * 60 * 1000);
+      const status: EnrollmentStatus =
+        rc.status === "certified" ? "completed"
+        : rc.status === "in_progress" ? (rng() < 0.7 ? "in_progress" : "completed")
+        : rc.status === "not_started" ? "not_started"
+        : rng() < 0.3 ? "in_progress" : "completed";
+      const progress =
+        status === "completed" ? 100
+        : status === "in_progress" ? rInt(20, 85)
+        : 0;
+      const startedAt = status !== "not_started" ? new Date(assignedAt.getTime() + rInt(1, 14) * 24 * 60 * 60 * 1000) : undefined;
+      const completedAt = status === "completed" && startedAt
+        ? new Date(startedAt.getTime() + rInt(1, 30) * 24 * 60 * 60 * 1000)
+        : undefined;
+      out.push({
+        id: `enroll-${counter}`,
+        courseId: course.id,
+        courseTitle: course.title,
+        courseCategory: course.category,
+        profileId: rc.profileId,
+        profileName: rc.profileName,
+        dealerId: rc.dealerId,
+        dealerName: rc.dealerName,
+        assignedAt,
+        startedAt,
+        completedAt,
+        progress,
+        score: status === "completed" ? rInt(72, 98) : undefined,
+        status,
+        dueAt: new Date(assignedAt.getTime() + 90 * 24 * 60 * 60 * 1000),
+      });
+      counter++;
+    }
+  }
+  return out.sort((a, b) => b.assignedAt.getTime() - a.assignedAt.getTime());
+}
+
+export const ENROLLMENTS: Enrollment[] = generateEnrollments();
+
+const CONTENT_ASSETS_DEFS: { title: string; type: ContentType; cat: ContentAsset["category"]; sizeKb: number; tags: string[] }[] = [
+  { title: "Master Spas Logo Pack (AI, PNG, SVG)", type: "image", cat: "brand", sizeKb: 12400, tags: ["logo", "brand"] },
+  { title: "Brand Voice & Messaging Guide 2026", type: "pdf", cat: "brand", sizeKb: 4800, tags: ["brand", "messaging"] },
+  { title: "Michael Phelps Legend LSX 800 Hero Images", type: "image", cat: "product", sizeKb: 38000, tags: ["photo", "legend"] },
+  { title: "Twilight TS 8.25 Spec Sheet", type: "pdf", cat: "product", sizeKb: 1800, tags: ["spec", "twilight"] },
+  { title: "H2X Challenger 15D Walkaround Video", type: "video", cat: "product", sizeKb: 245000, tags: ["video", "swim-spa"] },
+  { title: "Seasonal Promo — Spring 2026 Ad Templates", type: "ad_template", cat: "print", sizeKb: 22000, tags: ["promo", "spring"] },
+  { title: "Financing 0% APR Promo Banner Pack", type: "ad_template", cat: "print", sizeKb: 18500, tags: ["financing", "promo"] },
+  { title: "Showroom Floor Plan Guide", type: "pdf", cat: "sales_tool", sizeKb: 6200, tags: ["retail", "layout"] },
+  { title: "Customer FAQ Handout", type: "pdf", cat: "sales_tool", sizeKb: 1200, tags: ["customer", "faq"] },
+  { title: "Warranty Terms Summary", type: "pdf", cat: "sales_tool", sizeKb: 2400, tags: ["warranty"] },
+  { title: "Instagram Story Templates — Q2", type: "ad_template", cat: "social", sizeKb: 14000, tags: ["instagram", "social"] },
+  { title: "Facebook Ad Creatives — H2X Line", type: "ad_template", cat: "social", sizeKb: 20000, tags: ["facebook", "swim-spa"] },
+  { title: "Michael Phelps Endorsement Commercial (60s)", type: "video", cat: "video_asset", sizeKb: 180000, tags: ["phelps", "commercial"] },
+  { title: "Factory Tour — Made in USA (3min)", type: "video", cat: "video_asset", sizeKb: 320000, tags: ["factory", "made-in-usa"] },
+  { title: "Service Technician Install Checklist", type: "doc", cat: "sales_tool", sizeKb: 400, tags: ["service", "install"] },
+  { title: "Pricing Sheet 2026 Q2", type: "pdf", cat: "sales_tool", sizeKb: 980, tags: ["pricing", "2026"] },
+];
+
+function generateContentAssets(): ContentAsset[] {
+  const now = DEMO_NOW_REF;
+  return CONTENT_ASSETS_DEFS.map((a, i) => ({
+    id: `asset-${i + 1}`,
+    title: a.title,
+    type: a.type,
+    category: a.cat,
+    sizeKb: a.sizeKb,
+    downloads: rInt(80, 1200),
+    updatedAt: new Date(now - rInt(1, 180) * 24 * 60 * 60 * 1000),
+    tags: a.tags,
+  }));
+}
+
+export const CONTENT_ASSETS: ContentAsset[] = generateContentAssets();
+
+export function trainingStats() {
+  const now = DEMO_NOW_REF;
+  const totalEnrollments = ENROLLMENTS.length;
+  const completedEnrollments = ENROLLMENTS.filter((e) => e.status === "completed").length;
+  const inProgressEnrollments = ENROLLMENTS.filter((e) => e.status === "in_progress").length;
+  const notStartedEnrollments = ENROLLMENTS.filter((e) => e.status === "not_started").length;
+  const overallCompletionRate = totalEnrollments > 0 ? (completedEnrollments / totalEnrollments) * 100 : 0;
+
+  const certifiedCount = REP_CERTIFICATIONS.filter((r) => r.status === "certified").length;
+  const expiringCount = REP_CERTIFICATIONS.filter((r) => r.status === "expiring_soon").length;
+  const expiredCount = REP_CERTIFICATIONS.filter((r) => r.status === "expired").length;
+  const inProgressCount = REP_CERTIFICATIONS.filter((r) => r.status === "in_progress").length;
+  const totalReps = new Set(REP_CERTIFICATIONS.map((r) => r.profileId)).size;
+
+  // Completed in last 30 days
+  const monthAgo = now - 30 * 24 * 60 * 60 * 1000;
+  const completedThisMonth = ENROLLMENTS.filter(
+    (e) => e.completedAt && e.completedAt.getTime() > monthAgo
+  ).length;
+
+  // Average score
+  const scoredEnrollments = ENROLLMENTS.filter((e) => e.score !== undefined);
+  const avgScore = scoredEnrollments.length > 0
+    ? scoredEnrollments.reduce((s, e) => s + (e.score ?? 0), 0) / scoredEnrollments.length
+    : 0;
+
+  const totalAssets = CONTENT_ASSETS.length;
+  const totalDownloads = CONTENT_ASSETS.reduce((s, a) => s + a.downloads, 0);
+
+  return {
+    totalCourses: COURSES.length,
+    totalEnrollments,
+    completedEnrollments,
+    inProgressEnrollments,
+    notStartedEnrollments,
+    completedThisMonth,
+    overallCompletionRate: +overallCompletionRate.toFixed(1),
+    avgScore: +avgScore.toFixed(1),
+    totalReps,
+    certifiedCount,
+    expiringCount,
+    expiredCount,
+    inProgressCount,
+    totalCertifications: CERTIFICATIONS.length,
+    totalAssets,
+    totalDownloads,
+  };
+}
+
+export function certificationStatusByDealer() {
+  const byDealer: Record<string, {
+    dealer: Dealer;
+    totalReps: number;
+    fullyCertifiedReps: number;
+    expiringReps: number;
+    expiredReps: number;
+  }> = {};
+
+  // Group certs by profileId to get rep-level view
+  const byProfile: Record<string, RepCertification[]> = {};
+  for (const rc of REP_CERTIFICATIONS) {
+    if (!byProfile[rc.profileId]) byProfile[rc.profileId] = [];
+    byProfile[rc.profileId].push(rc);
+  }
+
+  for (const [profileId, certs] of Object.entries(byProfile)) {
+    const dealerId = certs[0].dealerId;
+    const dealer = DEALERS.find((d) => d.id === dealerId);
+    if (!dealer) continue;
+    if (!byDealer[dealerId]) byDealer[dealerId] = {
+      dealer,
+      totalReps: 0,
+      fullyCertifiedReps: 0,
+      expiringReps: 0,
+      expiredReps: 0,
+    };
+    byDealer[dealerId].totalReps++;
+    const allCertified = certs.every((c) => c.status === "certified");
+    const anyExpiring = certs.some((c) => c.status === "expiring_soon");
+    const anyExpired = certs.some((c) => c.status === "expired");
+    if (allCertified) byDealer[dealerId].fullyCertifiedReps++;
+    if (anyExpiring) byDealer[dealerId].expiringReps++;
+    if (anyExpired) byDealer[dealerId].expiredReps++;
+    // profileId unused but clarifies structure
+    void profileId;
+  }
+
+  return Object.values(byDealer).sort((a, b) => b.totalReps - a.totalReps);
+}
+
+export function expiringCertifications(limit = 15) {
+  return REP_CERTIFICATIONS
+    .filter((r) => r.status === "expiring_soon" || r.status === "expired")
+    .sort((a, b) => (a.expiresAt?.getTime() ?? 0) - (b.expiresAt?.getTime() ?? 0))
+    .slice(0, limit);
+}
+
+export function recentEnrollments(limit = 15) {
+  return ENROLLMENTS.slice(0, limit);
+}
+
 export function orderModelMix() {
   const mix: Record<ModelLine, { units: number; value: number }> = {
     "Michael Phelps Legend": { units: 0, value: 0 },
