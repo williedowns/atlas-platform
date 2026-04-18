@@ -169,14 +169,17 @@ export default function Step8Payment() {
   if (state === "success") {
     return (
       <div className="flex flex-col items-center gap-6 py-12 px-4 text-center">
-        <div className="w-20 h-20 rounded-full bg-emerald-100 flex items-center justify-center">
-          <svg className="w-10 h-10 text-emerald-600" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-          </svg>
+        <div className="relative w-24 h-24">
+          <div className="absolute inset-0 rounded-full bg-emerald-200 animate-ping opacity-40" />
+          <div className="relative w-24 h-24 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shadow-xl">
+            <svg className="w-12 h-12 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+            </svg>
+          </div>
         </div>
         <div>
-          <h2 className="text-3xl font-bold text-emerald-700">All Deposits Collected!</h2>
-          <p className="text-slate-500 mt-2 text-lg">Everything is confirmed and saved</p>
+          <h2 className="text-3xl md:text-4xl font-black text-emerald-700 tracking-tight">Deal Done.</h2>
+          <p className="text-slate-500 mt-2 text-lg">Deposits collected and saved. Contract emailed to customer.</p>
         </div>
 
         <Card className="w-full">
@@ -222,14 +225,19 @@ export default function Step8Payment() {
   return (
     <div className="flex flex-col gap-6 pb-8">
       {/* Signed confirmation */}
-      <div className="text-center py-4">
-        <div className="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-3">
-          <svg className="w-7 h-7 text-emerald-600" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-          </svg>
+      <div className="text-center py-6 rounded-2xl bg-gradient-to-b from-emerald-50 to-white border border-emerald-100">
+        <p className="text-[10px] uppercase tracking-widest text-amber-600 font-bold">Step 8 of 8 · Final</p>
+        <div className="relative w-16 h-16 mx-auto my-3">
+          <div className="absolute inset-0 rounded-full bg-emerald-200 animate-ping opacity-40" />
+          <div className="relative w-16 h-16 rounded-full bg-emerald-500 flex items-center justify-center shadow-lg">
+            <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+            </svg>
+          </div>
         </div>
-        <h2 className="text-2xl font-bold text-emerald-700">Contract Signed!</h2>
-        <Badge variant="success" className="mt-2 text-sm px-3 py-1">{contractNumber}</Badge>
+        <h2 className="text-2xl md:text-3xl font-black text-emerald-700 tracking-tight">Contract Signed!</h2>
+        <p className="text-sm text-emerald-600/80 mt-1">Collect the deposit to lock this deal in.</p>
+        <Badge variant="success" className="mt-3 text-sm px-3 py-1">{contractNumber}</Badge>
       </div>
 
       {customerEmail && (

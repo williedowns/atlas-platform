@@ -102,7 +102,16 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
 
   return (
     <div className="flex flex-col gap-6 pb-8">
-      {/* ── Header ─────────────────────────────────────────── */}
+      {/* ── Step label ─────────────────────────────────────── */}
+      <div>
+        <p className="text-[10px] uppercase tracking-widest text-[#00929C] font-bold">Step 5 of 8</p>
+        <h2 className="text-2xl font-black text-slate-900 mt-1">Review &amp; Quote</h2>
+        <p className="text-sm text-slate-500 mt-1">
+          Double-check every line. You can save as a quote or continue to signature.
+        </p>
+      </div>
+
+      {/* ── Contract header card ──────────────────────────── */}
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">

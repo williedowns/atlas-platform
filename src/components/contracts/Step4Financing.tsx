@@ -113,9 +113,10 @@ export default function Step4Financing({ onNext }: Step4FinancingProps) {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-[#00929C]">Financing</h2>
-        <p className="text-base text-slate-500 mt-1">
-          Contract total: <span className="font-semibold text-slate-700">{formatCurrency(draft.total)}</span>
+        <p className="text-[10px] uppercase tracking-widest text-[#00929C] font-bold">Step 4 of 8</p>
+        <h2 className="text-2xl font-black text-slate-900 mt-1">Financing</h2>
+        <p className="text-sm text-slate-500 mt-1">
+          Contract total <span className="font-semibold text-slate-900">{formatCurrency(draft.total)}</span>. Add a lender plan or skip if paid in full.
         </p>
       </div>
 

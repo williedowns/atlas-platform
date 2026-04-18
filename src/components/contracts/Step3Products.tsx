@@ -292,8 +292,9 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-[#00929C]">Products</h2>
-        <p className="text-base text-slate-500 mt-1">Select a product line to get started.</p>
+        <p className="text-[10px] uppercase tracking-widest text-[#00929C] font-bold">Step 3 of 8</p>
+        <h2 className="text-2xl font-black text-slate-900 mt-1">What are they buying?</h2>
+        <p className="text-sm text-slate-500 mt-1">Pick a product line, choose a model, add options.</p>
       </div>
 
       {/* Cart summary */}

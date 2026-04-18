@@ -117,32 +117,39 @@ export default function Step1Show({ onNext }: Step1ShowProps) {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-[#00929C]">
-          Select Show or Location
+        <p className="text-[10px] uppercase tracking-widest text-[#00929C] font-bold">Step 1 of 8</p>
+        <h2 className="text-2xl font-black text-slate-900 mt-1">
+          Where is this sale happening?
         </h2>
-        <p className="text-base text-slate-500 mt-1">
-          Where is this sale taking place?
+        <p className="text-sm text-slate-500 mt-1">
+          Pick an active show or select a store location.
         </p>
       </div>
 
-      {/* Mode toggle */}
-      <div className="flex gap-2">
-        <Button
-          variant={mode === "shows" ? "default" : "outline"}
-          size="lg"
+      {/* Segmented mode toggle */}
+      <div className="inline-flex rounded-xl p-1 bg-slate-100 w-full">
+        <button
+          type="button"
           onClick={() => setMode("shows")}
-          className="flex-1"
+          className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+            mode === "shows"
+              ? "bg-white text-slate-900 shadow-sm"
+              : "text-slate-600 hover:text-slate-900"
+          }`}
         >
           Active Shows
-        </Button>
-        <Button
-          variant={mode === "store" ? "default" : "outline"}
-          size="lg"
+        </button>
+        <button
+          type="button"
           onClick={() => setMode("store")}
-          className="flex-1"
+          className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+            mode === "store"
+              ? "bg-white text-slate-900 shadow-sm"
+              : "text-slate-600 hover:text-slate-900"
+          }`}
         >
           Store Sale
-        </Button>
+        </button>
       </div>
 
       {mode === "shows" && (

@@ -144,30 +144,37 @@ export default function Step2Customer({ onNext }: Step2CustomerProps) {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-[#00929C]">Customer</h2>
-        <p className="text-base text-slate-500 mt-1">
-          Search for an existing customer or create a new one.
+        <p className="text-[10px] uppercase tracking-widest text-[#00929C] font-bold">Step 2 of 8</p>
+        <h2 className="text-2xl font-black text-slate-900 mt-1">Who's buying?</h2>
+        <p className="text-sm text-slate-500 mt-1">
+          Search for an existing customer or add a new one.
         </p>
       </div>
 
-      {/* Mode toggle tabs */}
-      <div className="flex gap-2">
-        <Button
-          variant={mode === "search" ? "default" : "outline"}
-          size="lg"
+      {/* Segmented mode toggle */}
+      <div className="inline-flex rounded-xl p-1 bg-slate-100 w-full">
+        <button
+          type="button"
           onClick={() => setMode("search")}
-          className="flex-1"
+          className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+            mode === "search"
+              ? "bg-white text-slate-900 shadow-sm"
+              : "text-slate-600 hover:text-slate-900"
+          }`}
         >
           Search Existing
-        </Button>
-        <Button
-          variant={mode === "new" ? "default" : "outline"}
-          size="lg"
+        </button>
+        <button
+          type="button"
           onClick={() => setMode("new")}
-          className="flex-1"
+          className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all ${
+            mode === "new"
+              ? "bg-white text-slate-900 shadow-sm"
+              : "text-slate-600 hover:text-slate-900"
+          }`}
         >
           New Customer
-        </Button>
+        </button>
       </div>
 
       {/* Search mode */}

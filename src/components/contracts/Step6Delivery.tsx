@@ -340,9 +340,10 @@ export default function Step6Delivery({ onNext }: Step6DeliveryProps) {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-xl font-bold text-slate-900">Delivery Setup</h2>
+        <p className="text-[10px] uppercase tracking-widest text-[#00929C] font-bold">Step 6 of 8</p>
+        <h2 className="text-2xl font-black text-slate-900 mt-1">Delivery Setup</h2>
         <p className="text-sm text-slate-500 mt-1">
-          Select the scenario that best matches the customer&apos;s delivery situation.
+          Pick the scenario that matches where the spa is going.
         </p>
       </div>
 

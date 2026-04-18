@@ -133,13 +133,14 @@ export default function Step7Sign({ onNext }: Step7SignProps) {
 
   return (
     <div className="flex flex-col gap-6 pb-8">
-      {/* ── Instruction ────────────────────────────────────── */}
-      <div className="text-center py-4">
-        <h2 className="text-2xl font-bold text-[#00929C]">
-          Please have your customer sign below
+      {/* ── Step label + instruction ───────────────────────── */}
+      <div>
+        <p className="text-[10px] uppercase tracking-widest text-amber-600 font-bold">Step 7 of 8 · Contract phase</p>
+        <h2 className="text-2xl font-black text-slate-900 mt-1">
+          Customer signature
         </h2>
-        <p className="text-slate-500 mt-1">
-          Review the summary, then sign to complete the agreement
+        <p className="text-sm text-slate-500 mt-1">
+          Review the summary one more time, then capture the customer's signature below.
         </p>
       </div>
 
