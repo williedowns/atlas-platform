@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { href: "/manufacturer/finance", label: "Finance & AR", icon: "dollar" },
   { href: "/manufacturer/marketing", label: "Marketing Hub", icon: "megaphone" },
   { href: "/manufacturer/training", label: "Training & Certification", icon: "grad" },
+  { href: "/manufacturer/iot", label: "Connected Fleet (IoT)", icon: "broadcast" },
   { href: "/manufacturer/dealers", label: "Dealers", icon: "users" },
   { href: "/manufacturer/showrooms", label: "Showrooms", icon: "store" },
   { href: "/manufacturer/leaderboard", label: "Leaderboard", icon: "trophy" },
@@ -104,6 +105,12 @@ function Icon({ name }: { name: string }) {
       return (
         <svg className={common} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M3 21V10l6 3V10l6 3V4l6 3v14H3zM7 18h2M11 18h2M15 18h2" />
+        </svg>
+      );
+    case "broadcast":
+      return (
+        <svg className={common} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0" />
         </svg>
       );
     case "grad":

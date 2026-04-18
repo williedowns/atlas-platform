@@ -3909,6 +3909,432 @@ export function recentEnrollments(limit = 15) {
   return ENROLLMENTS.slice(0, limit);
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// IoT / Connected Product (Module 8 of comprehensive build-out)
+// Spa telemetry, predictive alerts, firmware, consumer app.
+// ═══════════════════════════════════════════════════════════════════
+
+export type ConnectedUnitStatus = "online" | "offline" | "degraded" | "maintenance" | "never_connected";
+
+export const CONNECTED_STATUS_LABELS: Record<ConnectedUnitStatus, string> = {
+  online: "Online",
+  offline: "Offline",
+  degraded: "Degraded",
+  maintenance: "Maintenance",
+  never_connected: "Never Connected",
+};
+
+export const CONNECTED_STATUS_COLORS: Record<ConnectedUnitStatus, string> = {
+  online: "#059669",
+  offline: "#DC2626",
+  degraded: "#D97706",
+  maintenance: "#0891B2",
+  never_connected: "#94A3B8",
+};
+
+export type PredictiveAlertSeverity = "critical" | "warning" | "advisory";
+
+export const ALERT_SEVERITY_COLORS: Record<PredictiveAlertSeverity, string> = {
+  critical: "#DC2626",
+  warning: "#D97706",
+  advisory: "#0891B2",
+};
+
+export interface TelemetryReading {
+  waterTempF: number;
+  setpointF: number;
+  pH: number;
+  sanitizerPpm: number;
+  flowRatePsi: number;
+  pumpHoursMTD: number;
+  heaterHoursMTD: number;
+  filterCycleHoursMTD: number;
+  lastReadingAt: Date;
+}
+
+export interface PredictiveAlert {
+  id: string;
+  unitId: string;
+  severity: PredictiveAlertSeverity;
+  component: DefectCategory;
+  prediction: string;
+  confidence: number; // 0-100
+  detectedAt: Date;
+  minutesAgo: number;
+  recommendedAction: string;
+  resolved: boolean;
+}
+
+export interface ConnectedUnit {
+  id: string;
+  serialNumber: string;
+  contractId?: string;
+  orderId?: string;
+  dealerId: string;
+  dealerName: string;
+  customerName: string;
+  customerCity: string;
+  customerState: string;
+  modelLine: ModelLine;
+  model: string;
+  installedAt: Date;
+  monthsInService: number;
+  status: ConnectedUnitStatus;
+  lastSeenAt: Date;
+  uptimePct30d: number;
+  firmwareVersion: string;
+  firmwareCompliant: boolean;
+  telemetry: TelemetryReading;
+  openAlerts: number;
+  totalAlerts: number;
+  consumerAppInstalled: boolean;
+  appSessionsLast30d: number;
+  heavyUse: boolean;
+  lifetimeUsageHours: number;
+}
+
+export interface FirmwareVersion {
+  version: string;
+  releasedAt: Date;
+  description: string;
+  deployedUnits: number;
+  pctOfFleet: number;
+  isCurrent: boolean;
+}
+
+const FIRMWARE_VERSIONS_DATA: { version: string; releasedDaysAgo: number; description: string }[] = [
+  { version: "v2.4.1", releasedDaysAgo: 14,  description: "Heater efficiency + circulation pump telemetry fix" },
+  { version: "v2.4.0", releasedDaysAgo: 60,  description: "Consumer app pairing overhaul, BLE stability" },
+  { version: "v2.3.2", releasedDaysAgo: 120, description: "Security patch — remote session hardening" },
+  { version: "v2.3.1", releasedDaysAgo: 210, description: "Water chemistry calibration fixes" },
+  { version: "v2.2.0", releasedDaysAgo: 330, description: "Initial predictive alerts rollout" },
+];
+
+const ALERT_PREDICTIONS: Record<DefectCategory, { pred: string; action: string }[]> = {
+  pump: [
+    { pred: "Pump seal likely to fail within 14 days (vibration spike)", action: "Schedule service call · part MS-PMP-SEAL ready" },
+    { pred: "Flow drop trending toward failure threshold", action: "Remote diagnostic scheduled · dealer notified" },
+  ],
+  jets: [
+    { pred: "Jet venturi clog pattern detected", action: "Prompt customer to run descale cycle via app" },
+  ],
+  shell: [
+    { pred: "Water-loss signal > 0.4gal/day for 3d — possible pinhole leak", action: "Escalate to regional service manager" },
+  ],
+  electrical: [
+    { pred: "GFCI trip pattern — 4 trips in 7 days, rising", action: "Authorized tech dispatch within 5 days" },
+    { pred: "Control pack current draw anomaly", action: "Review last firmware log · consider swap" },
+  ],
+  heater: [
+    { pred: "Heater element cycling 40% longer than baseline", action: "Preemptive element replacement · ship within 7d" },
+    { pred: "Flow switch stuck reading detected", action: "Remote reset attempted · schedule visit if repeats" },
+  ],
+  controls: [
+    { pred: "Topside panel unresponsive in 2 out of 10 sessions", action: "OTA firmware reflash queued" },
+  ],
+  cover: [
+    { pred: "Cover left open > 4hr/day average (energy loss)", action: "Educate customer via consumer app" },
+  ],
+  filter: [
+    { pred: "Filter pressure drop — replacement recommended", action: "Ship filter cartridge at no charge (promo)" },
+  ],
+  lighting: [
+    { pred: "LED driver current instability", action: "Log · evaluate on next service" },
+  ],
+  other: [
+    { pred: "Ozonator output below spec", action: "Schedule replacement part" },
+  ],
+};
+
+function generateConnectedUnits(orders: DealerOrder[]): ConnectedUnit[] {
+  const now = DEMO_NOW_REF;
+  const out: ConnectedUnit[] = [];
+  let counter = 1;
+
+  const CUSTOMER_FIRST = ["Michael", "Jennifer", "Robert", "Patricia", "David", "Linda", "James", "Mary", "Chris", "Susan"];
+  const CUSTOMER_LAST = ["Anderson", "Thompson", "Garcia", "Wilson", "Walker", "Hall", "Young", "King", "Roberts", "Carter"];
+
+  // Only delivered orders that have a recorded deliveredAt become connected units
+  const delivered = orders.filter((o) => o.status === "delivered" && o.deliveredAt);
+
+  for (const order of delivered) {
+    for (const line of order.lines) {
+      for (let unitIdx = 0; unitIdx < line.qty; unitIdx++) {
+        const installedAt = order.deliveredAt!;
+        const monthsInService = Math.max(
+          0,
+          (now - installedAt.getTime()) / (30 * 24 * 60 * 60 * 1000)
+        );
+
+        // 82% of delivered units come online (assume some never get connected)
+        const status: ConnectedUnitStatus = (() => {
+          const r = rng();
+          if (r < 0.73) return "online";
+          if (r < 0.83) return "offline";
+          if (r < 0.91) return "degraded";
+          if (r < 0.96) return "maintenance";
+          return "never_connected";
+        })();
+
+        // Last seen
+        const lastSeenAt = status === "online" || status === "degraded"
+          ? new Date(now - rInt(1, 59) * 60 * 1000)
+          : status === "offline"
+          ? new Date(now - rInt(1, 21) * 24 * 60 * 60 * 1000)
+          : status === "maintenance"
+          ? new Date(now - rInt(60, 720) * 60 * 1000)
+          : new Date(installedAt);
+
+        const uptimePct30d = status === "online" ? 95 + rng() * 5
+          : status === "degraded" ? 70 + rng() * 20
+          : status === "maintenance" ? 50 + rng() * 30
+          : status === "offline" ? 30 + rng() * 40
+          : 0;
+
+        // Firmware: ~60% on latest, rest older
+        const firmwareIdx = rPickWeighted<number>([
+          { value: 0, weight: 60 },
+          { value: 1, weight: 20 },
+          { value: 2, weight: 12 },
+          { value: 3, weight: 6 },
+          { value: 4, weight: 2 },
+        ]);
+        const firmwareVersion = FIRMWARE_VERSIONS_DATA[firmwareIdx].version;
+        const firmwareCompliant = firmwareIdx <= 1;
+
+        // Telemetry
+        const setpointF = 100 + rInt(0, 4);
+        const waterTempF = status === "online" ? setpointF + rInt(-2, 1) : status === "degraded" ? setpointF + rInt(-8, 3) : 0;
+        const telemetry: TelemetryReading = {
+          waterTempF,
+          setpointF,
+          pH: status === "never_connected" ? 0 : +(7.0 + (rng() * 1.2 - 0.4)).toFixed(2),
+          sanitizerPpm: status === "never_connected" ? 0 : +(1.5 + rng() * 3).toFixed(1),
+          flowRatePsi: status === "never_connected" ? 0 : +(2 + rng() * 2).toFixed(1),
+          pumpHoursMTD: Math.round(rng() * 200),
+          heaterHoursMTD: Math.round(rng() * 160),
+          filterCycleHoursMTD: Math.round(rng() * 150),
+          lastReadingAt: lastSeenAt,
+        };
+
+        // Heavy use = top 20% usage, drives different predictive behavior
+        const heavyUse = telemetry.pumpHoursMTD > 150;
+        const lifetimeUsageHours = Math.round(monthsInService * (40 + rng() * 120));
+
+        // Generate predictive alerts ~ 18% of units have at least one open alert
+        const openAlerts: number = (() => {
+          if (status === "never_connected") return 0;
+          const r = rng();
+          if (r < 0.82) return 0;
+          if (r < 0.94) return 1;
+          if (r < 0.985) return 2;
+          return 3;
+        })();
+
+        // Consumer app: ~65% of connected units have app paired
+        const consumerAppInstalled = status !== "never_connected" && rng() < 0.65;
+        const appSessionsLast30d = consumerAppInstalled ? rInt(0, 60) : 0;
+
+        const serialNumber =
+          "MS" +
+          installedAt.getFullYear().toString().slice(-2) +
+          (line.modelLine === "Michael Phelps Legend" ? "L" :
+           line.modelLine === "Twilight" ? "T" :
+           line.modelLine === "Clarity" ? "C" :
+           line.modelLine === "H2X Fitness" ? "H" : "S") +
+          String(100000 + counter * 23).slice(-6);
+
+        const customerName = `${CUSTOMER_FIRST[counter % CUSTOMER_FIRST.length]} ${CUSTOMER_LAST[(counter * 3) % CUSTOMER_LAST.length]}`;
+
+        out.push({
+          id: `iot-${counter}`,
+          serialNumber,
+          contractId: order.id,
+          orderId: order.id,
+          dealerId: order.dealerId,
+          dealerName: order.dealerName,
+          customerName,
+          customerCity: order.dealerCity,
+          customerState: order.dealerState,
+          modelLine: line.modelLine,
+          model: line.model,
+          installedAt,
+          monthsInService: +monthsInService.toFixed(1),
+          status,
+          lastSeenAt,
+          uptimePct30d: +uptimePct30d.toFixed(1),
+          firmwareVersion,
+          firmwareCompliant,
+          telemetry,
+          openAlerts,
+          totalAlerts: openAlerts + (rng() < 0.5 ? rInt(0, 3) : 0),
+          consumerAppInstalled,
+          appSessionsLast30d,
+          heavyUse,
+          lifetimeUsageHours,
+        });
+        counter++;
+      }
+    }
+  }
+  return out;
+}
+
+export const CONNECTED_UNITS: ConnectedUnit[] = generateConnectedUnits(DEALER_ORDERS);
+
+function generatePredictiveAlerts(): PredictiveAlert[] {
+  const now = DEMO_NOW_REF;
+  const out: PredictiveAlert[] = [];
+  let counter = 1;
+  for (const unit of CONNECTED_UNITS) {
+    if (unit.openAlerts === 0) continue;
+    for (let a = 0; a < unit.openAlerts; a++) {
+      const category = rPickWeighted<DefectCategory>([
+        { value: "pump", weight: 20 },
+        { value: "heater", weight: 18 },
+        { value: "electrical", weight: 15 },
+        { value: "controls", weight: 12 },
+        { value: "jets", weight: 10 },
+        { value: "filter", weight: 8 },
+        { value: "cover", weight: 7 },
+        { value: "shell", weight: 4 },
+        { value: "lighting", weight: 4 },
+        { value: "other", weight: 2 },
+      ]);
+
+      const severity = rPickWeighted<PredictiveAlertSeverity>([
+        { value: "advisory", weight: 55 },
+        { value: "warning", weight: 35 },
+        { value: "critical", weight: 10 },
+      ]);
+
+      const options = ALERT_PREDICTIONS[category];
+      const { pred, action } = options[counter % options.length];
+
+      const detectedAt = new Date(now - rInt(1, 14) * 24 * 60 * 60 * 1000 - rInt(0, 1440) * 60 * 1000);
+      const minutesAgo = Math.max(0, Math.floor((now - detectedAt.getTime()) / 60000));
+
+      out.push({
+        id: `alert-${counter}`,
+        unitId: unit.id,
+        severity,
+        component: category,
+        prediction: pred,
+        confidence: 70 + rInt(0, 28),
+        detectedAt,
+        minutesAgo,
+        recommendedAction: action,
+        resolved: false,
+      });
+      counter++;
+    }
+  }
+  return out.sort((a, b) => a.minutesAgo - b.minutesAgo);
+}
+
+export const PREDICTIVE_ALERTS: PredictiveAlert[] = generatePredictiveAlerts();
+
+function generateFirmwareVersions(): FirmwareVersion[] {
+  const now = DEMO_NOW_REF;
+  const total = CONNECTED_UNITS.length;
+  const distribution: Record<string, number> = {};
+  for (const u of CONNECTED_UNITS) {
+    distribution[u.firmwareVersion] = (distribution[u.firmwareVersion] ?? 0) + 1;
+  }
+  return FIRMWARE_VERSIONS_DATA.map((f, i) => {
+    const deployedUnits = distribution[f.version] ?? 0;
+    return {
+      version: f.version,
+      releasedAt: new Date(now - f.releasedDaysAgo * 24 * 60 * 60 * 1000),
+      description: f.description,
+      deployedUnits,
+      pctOfFleet: total > 0 ? +((deployedUnits / total) * 100).toFixed(1) : 0,
+      isCurrent: i === 0,
+    };
+  });
+}
+
+export const FIRMWARE_VERSIONS: FirmwareVersion[] = generateFirmwareVersions();
+
+export function connectedUnitById(id: string): ConnectedUnit | undefined {
+  return CONNECTED_UNITS.find((u) => u.id === id);
+}
+
+export function alertsForUnit(unitId: string): PredictiveAlert[] {
+  return PREDICTIVE_ALERTS.filter((a) => a.unitId === unitId);
+}
+
+export function iotStats() {
+  const total = CONNECTED_UNITS.length;
+  const online = CONNECTED_UNITS.filter((u) => u.status === "online").length;
+  const offline = CONNECTED_UNITS.filter((u) => u.status === "offline").length;
+  const degraded = CONNECTED_UNITS.filter((u) => u.status === "degraded").length;
+  const neverConnected = CONNECTED_UNITS.filter((u) => u.status === "never_connected").length;
+  const connectedRate = total > 0 ? ((total - neverConnected) / total) * 100 : 0;
+
+  const onlineUnits = CONNECTED_UNITS.filter((u) => u.status !== "never_connected");
+  const avgUptime = onlineUnits.length > 0
+    ? onlineUnits.reduce((s, u) => s + u.uptimePct30d, 0) / onlineUnits.length
+    : 0;
+
+  const firmwareCompliant = CONNECTED_UNITS.filter((u) => u.firmwareCompliant).length;
+  const firmwareComplianceRate = total > 0 ? (firmwareCompliant / total) * 100 : 0;
+
+  const openAlertsTotal = PREDICTIVE_ALERTS.length;
+  const criticalAlerts = PREDICTIVE_ALERTS.filter((a) => a.severity === "critical").length;
+  const warningAlerts = PREDICTIVE_ALERTS.filter((a) => a.severity === "warning").length;
+
+  const consumerAppInstalled = CONNECTED_UNITS.filter((u) => u.consumerAppInstalled).length;
+  const consumerAppRate = total > 0 ? (consumerAppInstalled / total) * 100 : 0;
+  const totalAppSessions = CONNECTED_UNITS.reduce((s, u) => s + u.appSessionsLast30d, 0);
+
+  const heavyUseCount = CONNECTED_UNITS.filter((u) => u.heavyUse).length;
+
+  return {
+    total,
+    online, offline, degraded, neverConnected,
+    connectedRate: +connectedRate.toFixed(1),
+    avgUptime: +avgUptime.toFixed(1),
+    firmwareComplianceRate: +firmwareComplianceRate.toFixed(1),
+    firmwareCompliant,
+    openAlertsTotal,
+    criticalAlerts,
+    warningAlerts,
+    advisoryAlerts: openAlertsTotal - criticalAlerts - warningAlerts,
+    consumerAppInstalled,
+    consumerAppRate: +consumerAppRate.toFixed(1),
+    totalAppSessions,
+    heavyUseCount,
+  };
+}
+
+export function topAlerts(limit = 12) {
+  return [...PREDICTIVE_ALERTS]
+    .sort((a, b) => {
+      const sevOrder: Record<PredictiveAlertSeverity, number> = { critical: 0, warning: 1, advisory: 2 };
+      if (sevOrder[a.severity] !== sevOrder[b.severity]) return sevOrder[a.severity] - sevOrder[b.severity];
+      return a.minutesAgo - b.minutesAgo;
+    })
+    .slice(0, limit);
+}
+
+export function fleetHealthByModel() {
+  const byModel: Record<ModelLine, { total: number; online: number; offline: number; withAlerts: number }> = {
+    "Michael Phelps Legend": { total: 0, online: 0, offline: 0, withAlerts: 0 },
+    Twilight: { total: 0, online: 0, offline: 0, withAlerts: 0 },
+    Clarity: { total: 0, online: 0, offline: 0, withAlerts: 0 },
+    "H2X Fitness": { total: 0, online: 0, offline: 0, withAlerts: 0 },
+    "MP Signature Swim Spa": { total: 0, online: 0, offline: 0, withAlerts: 0 },
+  };
+  for (const u of CONNECTED_UNITS) {
+    byModel[u.modelLine].total++;
+    if (u.status === "online") byModel[u.modelLine].online++;
+    if (u.status === "offline") byModel[u.modelLine].offline++;
+    if (u.openAlerts > 0) byModel[u.modelLine].withAlerts++;
+  }
+  return byModel;
+}
+
 export function orderModelMix() {
   const mix: Record<ModelLine, { units: number; value: number }> = {
     "Michael Phelps Legend": { units: 0, value: 0 },
