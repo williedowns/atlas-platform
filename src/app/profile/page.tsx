@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import AppShell from "@/components/layout/AppShell";
+import { AppHeader } from "@/components/ui/AppHeader";
 
 type Profile = {
   full_name: string;
@@ -51,28 +52,34 @@ export default function ProfilePage() {
 
   return (
     <AppShell role={profile?.role} userName={profile?.full_name}>
-      <header className="bg-[#010F21] text-white px-4 py-4 sticky top-0 z-10 shadow-lg">
-        <h1 className="text-lg font-bold">Profile</h1>
-      </header>
+      <AppHeader title="Profile" backHref="/dashboard" />
 
       <main className="px-5 py-6 space-y-4 max-w-2xl mx-auto pb-24">
-        {/* Avatar + Info */}
-        <Card>
-          <CardContent className="p-6 flex items-center gap-4">
-            <div className="w-16 h-16 rounded-full bg-[#00929C] flex items-center justify-center flex-shrink-0">
-              <span className="text-white text-2xl font-bold">{initials}</span>
+        {/* Hero identity card */}
+        <div
+          className="rounded-2xl p-6 text-white shadow-lg relative overflow-hidden"
+          style={{ background: "linear-gradient(135deg, #010F21 0%, #00929C 180%)" }}
+        >
+          <div className="relative z-10 flex items-center gap-5">
+            <div className="w-20 h-20 rounded-full bg-white/10 border border-white/20 flex items-center justify-center flex-shrink-0 shadow-inner">
+              <span className="text-white text-3xl font-black tracking-tight">{initials}</span>
             </div>
-            <div>
-              <p className="text-xl font-bold text-slate-900">{profile?.full_name ?? "Loading..."}</p>
-              <p className="text-slate-500 text-sm">{profile?.email}</p>
+            <div className="min-w-0 flex-1">
+              <p className="text-2xl font-black leading-tight truncate">
+                {profile?.full_name ?? "Loading…"}
+              </p>
+              <p className="text-white/70 text-sm truncate">{profile?.email}</p>
               {profile?.role && (
-                <Badge variant={ROLE_COLORS[profile.role] ?? "secondary"} className="mt-2 capitalize">
+                <span className="inline-block mt-2 px-2.5 py-0.5 rounded-full bg-white/15 border border-white/20 text-[10px] font-bold uppercase tracking-widest">
                   {profile.role.replace(/_/g, " ")}
-                </Badge>
+                </span>
               )}
             </div>
-          </CardContent>
-        </Card>
+          </div>
+          <div className="absolute right-4 bottom-2 text-7xl font-black text-white/5 select-none">
+            {initials}
+          </div>
+        </div>
 
         {/* Admin link */}
         {profile?.role === "admin" && (

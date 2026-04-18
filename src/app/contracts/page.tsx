@@ -4,6 +4,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { ContractsList } from "@/components/contracts/ContractsList";
 import AppShell from "@/components/layout/AppShell";
+import { AppHeader } from "@/components/ui/AppHeader";
 import { Button } from "@/components/ui/button";
 
 export default async function ContractsPage({
@@ -53,23 +54,30 @@ export default async function ContractsPage({
 
   return (
     <AppShell role={profile?.role} userName={profile?.full_name} orgPerms={orgPerms}>
-      <header className="bg-[#010F21] text-white px-4 py-4 sticky top-0 z-10 shadow-lg">
-        <h1 className="text-lg font-bold">Contracts</h1>
-      </header>
+      <AppHeader
+        title="Contracts"
+        subtitle={contracts?.length ? `${contracts.length} ${contracts.length === 1 ? "contract" : "contracts"}` : undefined}
+        actions={
+          <Link href="/contracts/new">
+            <Button variant="accent" size="sm" className="font-bold">
+              + New
+            </Button>
+          </Link>
+        }
+      />
 
-      <main className="pb-28">
+      <main className="pb-28 max-w-4xl mx-auto w-full">
         <ContractsList contracts={(contracts ?? []) as any[]} initialFilter={initialFilter} />
       </main>
 
-      {/* FAB */}
-      <div className="fixed bottom-20 right-4 z-10">
-        <Link href="/contracts/new">
-          <Button variant="accent" size="xl" className="rounded-full w-16 h-16 text-2xl shadow-xl">
+      {/* FAB — mobile only */}
+      <div className="fixed bottom-6 right-6 z-20 md:hidden">
+        <Link href="/contracts/new" aria-label="New contract">
+          <Button variant="accent" size="xl" className="rounded-full w-14 h-14 text-2xl shadow-xl">
             +
           </Button>
         </Link>
       </div>
-
     </AppShell>
   );
 }

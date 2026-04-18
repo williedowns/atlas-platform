@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import AppShell from "@/components/layout/AppShell";
+import { AppHeader } from "@/components/ui/AppHeader";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 const STATUS_LABEL: Record<string, string> = {
   scheduled: "Scheduled", in_progress: "In Progress", completed: "Completed", cancelled: "Cancelled",
@@ -59,21 +61,17 @@ export default async function FieldPage({
 
   return (
     <AppShell role={profile?.role} userName={profile?.full_name}>
-      <header className="bg-[#010F21] text-white px-4 py-4 sticky top-0 z-10 shadow-lg">
-        <div className="flex items-center justify-between max-w-2xl mx-auto">
-          <div>
-            <h1 className="text-lg font-bold">Field App</h1>
-            <p className="text-white/60 text-xs mt-0.5">Hi, {firstName}</p>
-          </div>
-          <Link href="/profile" className="w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-            </svg>
-          </Link>
-        </div>
-      </header>
+      <AppHeader
+        title="Field App"
+        subtitle={`Hi, ${firstName}`}
+        status={
+          upcoming.length > 0
+            ? { label: `${upcoming.length} upcoming`, color: "#00929C", pulsing: true }
+            : undefined
+        }
+      />
 
-      <main className="max-w-2xl mx-auto px-4 py-5 space-y-5">
+      <main className="max-w-3xl mx-auto px-4 py-5 space-y-5">
         {/* Tabs */}
         <div className="flex gap-2 border-b border-slate-200 pb-0">
           <Link href="/field?tab=deliveries">
@@ -94,9 +92,11 @@ export default async function FieldPage({
             <section>
               <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">Upcoming ({upcoming.length})</h2>
               {upcoming.length === 0 ? (
-                <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center">
-                  <p className="text-slate-500 font-medium">No upcoming work orders</p>
-                  <p className="text-slate-400 text-sm mt-1">Check back when your crew is assigned a delivery.</p>
+                <div className="bg-white rounded-2xl border border-slate-200">
+                  <EmptyState
+                    title="No upcoming work orders"
+                    description="Check back when your crew is assigned a delivery."
+                  />
                 </div>
               ) : (
                 <ul className="space-y-3">
@@ -168,9 +168,11 @@ export default async function FieldPage({
               My Service Jobs ({serviceJobs?.length ?? 0})
             </h2>
             {(serviceJobs?.length ?? 0) === 0 ? (
-              <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center">
-                <p className="text-slate-500 font-medium">No service jobs assigned</p>
-                <p className="text-slate-400 text-sm mt-1">Jobs assigned to you will appear here.</p>
+              <div className="bg-white rounded-2xl border border-slate-200">
+                <EmptyState
+                  title="No service jobs assigned"
+                  description="Jobs assigned to you will appear here."
+                />
               </div>
             ) : (
               <ul className="space-y-3">

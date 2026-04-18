@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AppHeader } from "@/components/ui/AppHeader";
+import { SectionCard } from "@/components/ui/SectionCard";
 import { formatDate } from "@/lib/utils";
 
 type LeadStatus = "new" | "contacted" | "hot" | "converted" | "lost";
@@ -80,28 +82,23 @@ export default function LeadDetailClient({ lead }: { lead: Lead }) {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <header className="bg-[#010F21] text-white px-4 py-4 sticky top-0 z-10 shadow-lg">
-        <div className="flex items-center gap-3">
-          <Link href="/leads" className="p-2 rounded-lg hover:bg-white/10">
-            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </Link>
-          <div className="flex-1 min-w-0">
-            <h1 className="text-lg font-bold truncate">
-              {lead.first_name} {lead.last_name ?? ""}
-            </h1>
-            <p className="text-[#00929C] text-xs">
-              {lead.show?.name ?? "No show"} · {formatDate(lead.created_at)}
-            </p>
-          </div>
-          <Badge variant={STATUS_COLORS[status]} className="flex-shrink-0">
-            {STATUS_LABELS[status]}
-          </Badge>
-        </div>
-      </header>
+      <AppHeader
+        title={`${lead.first_name} ${lead.last_name ?? ""}`.trim()}
+        subtitle={`${lead.show?.name ?? "No show"} · ${formatDate(lead.created_at)}`}
+        backHref="/leads"
+        status={{
+          label: STATUS_LABELS[status],
+          color:
+            status === "converted" ? "#10b981" :
+            status === "lost" ? "#ef4444" :
+            status === "hot" ? "#f59e0b" :
+            status === "contacted" ? "#3b82f6" :
+            "#64748b",
+          pulsing: status === "hot",
+        }}
+      />
 
-      <main className="px-4 py-5 max-w-lg mx-auto space-y-4 pb-10">
+      <main className="px-4 py-5 max-w-2xl mx-auto space-y-4 pb-10">
 
         {saved && (
           <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 text-emerald-800 font-medium text-sm">
@@ -115,66 +112,72 @@ export default function LeadDetailClient({ lead }: { lead: Lead }) {
         )}
 
         {/* Contact info */}
-        <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
-          <h2 className="font-semibold text-slate-900 text-sm">Contact Info</h2>
-          <div>
-            <label className="text-xs font-medium text-slate-600 mb-1 block">Phone</label>
-            <Input
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="(555) 000-0000"
-            />
+        <SectionCard title="Contact Info">
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-medium text-slate-600 mb-1 block">Phone</label>
+              <Input
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="(555) 000-0000"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-600 mb-1 block">Email</label>
+              <Input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="email@example.com"
+              />
+            </div>
+            {lead.interest && (
+              <div className="flex items-start gap-2 pt-1 text-sm text-slate-600">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 pt-0.5">Interest</span>
+                <span>{lead.interest}</span>
+              </div>
+            )}
+            {lead.assigned_to_profile?.full_name && (
+              <div className="flex items-start gap-2 text-sm text-slate-600">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 pt-0.5">Rep</span>
+                <span>{lead.assigned_to_profile.full_name}</span>
+              </div>
+            )}
           </div>
-          <div>
-            <label className="text-xs font-medium text-slate-600 mb-1 block">Email</label>
-            <Input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="email@example.com"
-            />
-          </div>
-          {lead.interest && (
-            <p className="text-sm text-slate-600">
-              <span className="font-medium">Interested in:</span> {lead.interest}
-            </p>
-          )}
-          {lead.assigned_to_profile?.full_name && (
-            <p className="text-sm text-slate-500">
-              <span className="font-medium">Rep:</span> {lead.assigned_to_profile.full_name}
-            </p>
-          )}
-        </div>
+        </SectionCard>
 
         {/* Status */}
-        <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
-          <h2 className="font-semibold text-slate-900 text-sm">Status</h2>
+        <SectionCard title="Status">
           <div className="flex flex-wrap gap-2">
-            {STATUS_OPTIONS.map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => setStatus(s)}
-                className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors border ${
-                  status === s
-                    ? s === "lost"
-                      ? "bg-red-500 text-white border-red-500"
-                      : s === "converted"
-                        ? "bg-emerald-500 text-white border-emerald-500"
-                        : "bg-[#00929C] text-white border-[#00929C]"
-                    : "bg-white text-slate-600 border-slate-200"
-                }`}
-              >
-                {STATUS_LABELS[s]}
-              </button>
-            ))}
+            {STATUS_OPTIONS.map((s) => {
+              const active = status === s;
+              const baseClass = "px-3.5 py-1.5 rounded-full text-sm font-medium transition-all border";
+              const activeClass =
+                s === "lost"
+                  ? "bg-red-500 text-white border-red-500 shadow-sm"
+                  : s === "converted"
+                  ? "bg-emerald-500 text-white border-emerald-500 shadow-sm"
+                  : s === "hot"
+                  ? "bg-amber-500 text-white border-amber-500 shadow-sm"
+                  : "bg-[#00929C] text-white border-[#00929C] shadow-sm";
+              const inactiveClass = "bg-white text-slate-600 border-slate-200 hover:border-slate-300";
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setStatus(s)}
+                  className={`${baseClass} ${active ? activeClass : inactiveClass}`}
+                >
+                  {STATUS_LABELS[s]}
+                </button>
+              );
+            })}
           </div>
-        </div>
+        </SectionCard>
 
         {/* Notes */}
-        <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-2">
-          <h2 className="font-semibold text-slate-900 text-sm">Notes</h2>
+        <SectionCard title="Notes">
           <textarea
             className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#00929C]/30 resize-none"
             rows={4}
@@ -182,7 +185,7 @@ export default function LeadDetailClient({ lead }: { lead: Lead }) {
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
           />
-        </div>
+        </SectionCard>
 
         {/* Save */}
         {isDirty && (
@@ -195,18 +198,27 @@ export default function LeadDetailClient({ lead }: { lead: Lead }) {
           </Button>
         )}
 
-        {/* Start Contract CTA */}
-        <div className="bg-white rounded-xl border border-slate-200 p-4">
-          <p className="text-sm font-semibold text-slate-900 mb-1">Ready to Buy?</p>
-          <p className="text-xs text-slate-500 mb-3">
-            Start a contract for {lead.first_name}. You&apos;ll fill in their info in the contract wizard.
-          </p>
-          <Link href="/contracts/new">
-            <Button variant="default" className="w-full bg-slate-800 hover:bg-slate-900 text-white font-semibold">
-              Start Contract →
-            </Button>
-          </Link>
-        </div>
+        {/* Convert CTA — prominent gradient */}
+        <Link
+          href="/contracts/new"
+          className="block rounded-xl p-5 text-white relative overflow-hidden group transition-transform hover:scale-[1.005] shadow-md"
+          style={{ background: "linear-gradient(135deg, #010F21 0%, #00929C 140%)" }}
+        >
+          <div className="relative z-10 flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <div className="text-[10px] uppercase tracking-widest text-white/60 mb-1">
+                Ready to buy?
+              </div>
+              <div className="text-lg md:text-xl font-black leading-tight">
+                Start Contract for {lead.first_name} →
+              </div>
+              <div className="text-xs text-white/70 mt-1">
+                Pre-fills name, phone, and email in the contract wizard.
+              </div>
+            </div>
+            <div className="text-4xl md:text-5xl font-black text-white/10 select-none">GO</div>
+          </div>
+        </Link>
 
       </main>
     </div>

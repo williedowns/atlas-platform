@@ -6,6 +6,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getStatusColor, getUnitTypeLabel, getCabinetName, INVENTORY_STATUSES } from "@/lib/inventory-constants";
 import AppShell from "@/components/layout/AppShell";
+import { AppHeader } from "@/components/ui/AppHeader";
+import { KpiCard } from "@/components/ui/KpiCard";
+import { Button } from "@/components/ui/button";
 
 export default async function InventoryPage({
   searchParams,
@@ -97,41 +100,26 @@ export default async function InventoryPage({
 
   return (
     <AppShell role={profile?.role} userName={profile?.full_name} orgPerms={orgPerms}>
-      <header className="bg-[#010F21] text-white px-4 py-4 sticky top-0 z-10 shadow-lg">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-bold">Inventory</h1>
-            <p className="text-white/60 text-xs mt-0.5">{rows.length} units shown</p>
-          </div>
-          {isAdmin && (
-            <Link
-              href="/admin/inventory/new"
-              className="flex items-center gap-1.5 bg-[#00929C] text-white text-sm font-semibold px-4 py-2 rounded-lg"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-              </svg>
-              Add Unit
+      <AppHeader
+        title="Inventory"
+        subtitle={`${rows.length} unit${rows.length === 1 ? "" : "s"} shown`}
+        actions={
+          isAdmin && (
+            <Link href="/admin/inventory/new">
+              <Button variant="accent" size="sm" className="font-bold">
+                + Add Unit
+              </Button>
             </Link>
-          )}
-        </div>
-      </header>
+          )
+        }
+      />
 
-      <main className="pb-24">
+      <main className="pb-24 max-w-4xl mx-auto w-full">
         {/* Stats Strip */}
         <div className="grid grid-cols-3 gap-3 px-4 pt-4 pb-2">
-          {[
-            { label: "Available", count: availableCount, color: "text-emerald-600" },
-            { label: "Allocated", count: allocatedCount, color: "text-amber-600" },
-            { label: "On Order",  count: onOrderCount,   color: "text-slate-500" },
-          ].map((s) => (
-            <Card key={s.label}>
-              <CardContent className="p-3 text-center">
-                <p className={`text-xl font-bold ${s.color}`}>{s.count}</p>
-                <p className="text-xs text-slate-500 mt-0.5">{s.label}</p>
-              </CardContent>
-            </Card>
-          ))}
+          <KpiCard label="Available" value={availableCount} accentColor="#059669" />
+          <KpiCard label="Allocated" value={allocatedCount} accentColor="#d97706" />
+          <KpiCard label="On Order" value={onOrderCount} accentColor="#64748b" />
         </div>
 
         {/* Search */}

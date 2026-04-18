@@ -67,14 +67,27 @@ export default async function PortalDashboardPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <header className="bg-[#010F21] text-white px-4 py-4 sticky top-0 z-10">
-        <div className="flex items-center justify-between max-w-2xl mx-auto">
-          <div>
-            <img src="/logo.png" alt="Atlas Spas" className="h-8 w-auto bg-white rounded px-2 py-0.5" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-            <p className="text-white/60 text-xs mt-0.5">Welcome back, {customer?.first_name ?? user.email}</p>
+      <header className="bg-[#010F21] text-white sticky top-0 z-10 shadow-lg">
+        <div className="max-w-3xl mx-auto h-16 px-5 flex items-center justify-between">
+          <div className="flex items-center gap-3 min-w-0">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/logo.png"
+              alt="Atlas Spas"
+              className="h-9 w-9 object-contain bg-white rounded-lg p-1 shadow-sm shrink-0"
+              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+            />
+            <div className="min-w-0">
+              <p className="text-sm font-bold leading-tight truncate">Your Atlas Spas Account</p>
+              <p className="text-white/50 text-xs leading-tight truncate">
+                Welcome back, {customer?.first_name ?? user.email}
+              </p>
+            </div>
           </div>
           <form action="/auth/signout" method="post">
-            <button type="submit" className="text-white/50 text-xs hover:text-white">Sign out</button>
+            <button type="submit" className="text-white/50 text-xs hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-white/5">
+              Sign out
+            </button>
           </form>
         </div>
       </header>

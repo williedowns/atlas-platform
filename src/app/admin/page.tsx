@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { SyncProductsButton } from "@/components/admin/SyncProductsButton";
 import { PingButton } from "@/components/admin/PingButton";
 import AppShell from "@/components/layout/AppShell";
+import { AppHeader } from "@/components/ui/AppHeader";
 
 
 export default async function AdminPage() {
@@ -46,18 +47,13 @@ export default async function AdminPage() {
 
   return (
     <AppShell role={profile?.role} userName={(profile as any)?.full_name}>
-      <header className="bg-[#010F21] text-white px-4 py-4 sticky top-0 z-10 shadow-lg">
-        <div className="flex items-center gap-3">
-          <Link href="/dashboard" className="p-2 rounded-lg hover:bg-white/10">
-            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </Link>
-          <h1 className="text-lg font-bold">Admin Panel</h1>
-        </div>
-      </header>
+      <AppHeader
+        title="Admin Panel"
+        subtitle="Integrations · Users · Shows · Inventory"
+        backHref="/dashboard"
+      />
 
-      <main className="px-5 py-6 space-y-4 max-w-2xl mx-auto pb-24">
+      <main className="px-5 py-6 space-y-4 max-w-4xl mx-auto pb-24">
 
         {/* Analytics */}
         <Link href="/analytics" className="block">

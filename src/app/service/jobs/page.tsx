@@ -5,6 +5,9 @@ import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import AppShell from "@/components/layout/AppShell";
+import { AppHeader } from "@/components/ui/AppHeader";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 const STATUS_TABS = ["scheduled", "in_progress", "completed", "cancelled"];
 const STATUS_COLORS: Record<string, "default" | "warning" | "success" | "destructive" | "secondary"> = {
@@ -46,18 +49,19 @@ export default async function ServiceJobsPage({ searchParams }: { searchParams: 
 
   return (
     <AppShell role={profile?.role} userName={(profile as any)?.full_name}>
-      <header className="bg-[#010F21] text-white px-4 py-4 sticky top-0 z-10 shadow-lg">
-        <div className="flex items-center justify-between max-w-3xl mx-auto">
-          <h1 className="text-lg font-bold">Service Jobs</h1>
+      <AppHeader
+        title="Service Jobs"
+        subtitle={statusFilter === "scheduled" ? "Scheduled · Pending dispatch" : undefined}
+        actions={
           <Link href="/service/jobs/new">
-            <button className="bg-[#00929C] text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-[#007a82] transition-colors">
+            <Button variant="accent" size="sm" className="font-bold">
               + New Job
-            </button>
+            </Button>
           </Link>
-        </div>
-      </header>
+        }
+      />
 
-      <main className="max-w-3xl mx-auto px-4 py-5 pb-24 space-y-4">
+      <main className="max-w-4xl mx-auto px-4 py-5 pb-24 space-y-4">
         {/* Status tabs */}
         <div className="flex gap-2 overflow-x-auto pb-1">
           {STATUS_TABS.map((s) => (
@@ -72,7 +76,17 @@ export default async function ServiceJobsPage({ searchParams }: { searchParams: 
         </div>
 
         {(jobs ?? []).length === 0 ? (
-          <Card><CardContent className="py-12 text-center text-slate-400 text-sm">No {statusFilter} jobs.</CardContent></Card>
+          <Card>
+            <EmptyState
+              title={`No ${statusFilter.replace("_", " ")} jobs`}
+              description={
+                statusFilter === "scheduled"
+                  ? "When a job is dispatched to a technician, it shows up here."
+                  : undefined
+              }
+              action={{ label: "+ New Job", href: "/service/jobs/new" }}
+            />
+          </Card>
         ) : (
           <div className="space-y-2">
             {(jobs ?? []).map((job) => {

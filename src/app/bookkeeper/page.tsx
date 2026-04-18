@@ -8,6 +8,7 @@ import ReconciliationView from "@/components/bookkeeper/ReconciliationView";
 import SalesByEventList from "@/components/bookkeeper/SalesByEventList";
 import CancellationRefundTracker from "@/components/bookkeeper/CancellationRefundTracker";
 import AppShell from "@/components/layout/AppShell";
+import { AppHeader } from "@/components/ui/AppHeader";
 
 export default async function BookkeeperPage() {
   const supabase = await createClient();
@@ -129,25 +130,12 @@ export default async function BookkeeperPage() {
 
   return (
     <AppShell role={profile?.role} userName={profile?.full_name} orgPerms={orgPerms}>
-      {/* Header */}
-      <header className="bg-[#010F21] text-white px-4 py-4 sticky top-0 z-10 shadow-lg">
-        <div className="flex items-center justify-between">
-          <div>
-            <img src="/logo.png" alt="Atlas Spas & Swim Spas" className="h-8 w-auto bg-white rounded px-2 py-0.5" />
-            <p className="text-white/60 text-xs mt-0.5">
-              {profile?.full_name} · Bookkeeper
-            </p>
-          </div>
-          <div className="text-right">
-            <p className="text-xs text-white/50">
-              {new Date().toLocaleDateString("en-US", { weekday: "short", month: "long", day: "numeric", year: "numeric" })}
-            </p>
-            <p className="text-xs text-white/30 mt-0.5">{contracts.length} active contracts</p>
-          </div>
-        </div>
-      </header>
+      <AppHeader
+        title="Bookkeeper"
+        subtitle={`${contracts.length} active contracts`}
+      />
 
-      <main className="px-4 py-5 space-y-4 max-w-3xl mx-auto pb-28">
+      <main className="px-4 py-5 space-y-4 max-w-4xl mx-auto pb-28">
 
         {/* ── Urgent: Tax refund needed (cert received, refund not yet issued) ── */}
         {hasMigration && refundNeededCerts.length > 0 && (
