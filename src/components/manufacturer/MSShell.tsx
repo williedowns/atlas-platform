@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { href: "/manufacturer/factory", label: "Factory OS", icon: "factory" },
   { href: "/manufacturer/freight", label: "Freight", icon: "truck" },
   { href: "/manufacturer/warranty", label: "Warranty & Service", icon: "wrench" },
+  { href: "/manufacturer/finance", label: "Finance & AR", icon: "dollar" },
   { href: "/manufacturer/dealers", label: "Dealers", icon: "users" },
   { href: "/manufacturer/showrooms", label: "Showrooms", icon: "store" },
   { href: "/manufacturer/leaderboard", label: "Leaderboard", icon: "trophy" },
@@ -101,6 +102,12 @@ function Icon({ name }: { name: string }) {
       return (
         <svg className={common} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M3 21V10l6 3V10l6 3V4l6 3v14H3zM7 18h2M11 18h2M15 18h2" />
+        </svg>
+      );
+    case "dollar":
+      return (
+        <svg className={common} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
       );
     case "wrench":

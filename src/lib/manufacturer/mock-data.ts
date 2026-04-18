@@ -2396,6 +2396,467 @@ export function qcFailuresByStation() {
   return out;
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// Finance & Accounting (Module 5 of comprehensive build-out)
+// Dealer invoicing, payments, AR aging, co-op fund tracking.
+// ═══════════════════════════════════════════════════════════════════
+
+export type InvoiceStatus = "open" | "partial" | "paid" | "overdue" | "written_off";
+
+export const INVOICE_STATUS_LABELS: Record<InvoiceStatus, string> = {
+  open: "Open",
+  partial: "Partial",
+  paid: "Paid",
+  overdue: "Overdue",
+  written_off: "Written Off",
+};
+
+export const INVOICE_STATUS_COLORS: Record<InvoiceStatus, string> = {
+  open: "#0891B2",
+  partial: "#D97706",
+  paid: "#059669",
+  overdue: "#DC2626",
+  written_off: "#64748B",
+};
+
+export type InvoicePaymentMethod = "ach" | "wire" | "credit_card" | "check" | "floor_plan";
+
+export interface InvoicePayment {
+  id: string;
+  invoiceId: string;
+  amount: number;
+  method: InvoicePaymentMethod;
+  receivedAt: Date;
+  ref: string;
+}
+
+export interface Invoice {
+  id: string;
+  invoiceNumber: string;
+  orderId: string;
+  orderNumber: string;
+  dealerId: string;
+  dealerName: string;
+  dealerTier: Dealer["tier"];
+  subtotal: number;
+  freight: number;
+  tax: number;
+  total: number;
+  terms: PaymentTerms;
+  issuedAt: Date;
+  dueAt: Date;
+  status: InvoiceStatus;
+  paidAmount: number;
+  balance: number;
+  daysOverdue: number;
+  payments: InvoicePayment[];
+}
+
+export interface CoopAccrual {
+  dealerId: string;
+  dealerName: string;
+  dealerTier: Dealer["tier"];
+  accrualRate: number; // % of net sales
+  ytdAccrued: number;
+  ytdClaimed: number;
+  available: number;
+  lastClaimedAt?: Date;
+}
+
+export interface CoopClaim {
+  id: string;
+  dealerId: string;
+  dealerName: string;
+  amount: number;
+  campaign: string;
+  submittedAt: Date;
+  status: "pending" | "approved" | "reimbursed" | "denied";
+  reviewedAt?: Date;
+}
+
+const CAMPAIGN_NAMES = [
+  "Spring Showcase TV Campaign",
+  "Memorial Day Radio Buy",
+  "Facebook Lead Gen — Summer",
+  "Google Ads — Brand Terms",
+  "Direct Mail — ZIP 75024",
+  "Home & Garden Show Sponsorship",
+  "Local Newspaper Insert",
+  "Costco Road Show Booth",
+  "Instagram Reel Series",
+  "Podcast Spot — This Old House",
+];
+
+const daysBetween = (a: Date, b: Date) =>
+  Math.round((b.getTime() - a.getTime()) / (24 * 60 * 60 * 1000));
+
+function generateInvoices(orders: DealerOrder[]): Invoice[] {
+  const now = DEMO_NOW_REF;
+  const out: Invoice[] = [];
+  let counter = 1;
+
+  const invoiceable = orders.filter((o) =>
+    ["ready_to_ship", "shipped", "delivered"].includes(o.status)
+  );
+
+  for (const order of invoiceable) {
+    // Invoice issued at ship (or approximated)
+    const issuedAt =
+      order.shippedAt ?? order.approvedAt ?? new Date(order.placedAt.getTime() + 14 * 24 * 60 * 60 * 1000);
+
+    const termDays =
+      order.paymentTerms === "prepay"
+        ? 0
+        : order.paymentTerms === "net_15"
+        ? 15
+        : order.paymentTerms === "net_30"
+        ? 30
+        : order.paymentTerms === "net_60"
+        ? 60
+        : 45; // floor_plan
+
+    const dueAt = new Date(issuedAt.getTime() + termDays * 24 * 60 * 60 * 1000);
+
+    const subtotal = order.subtotal;
+    const freight = order.freight;
+    const tax = 0; // inter-state wholesale typically no tax or handled separately
+    const total = subtotal + freight + tax;
+
+    // Simulate payment behavior based on age and dealer tier
+    const ageDays = Math.max(0, daysBetween(issuedAt, new Date(now)));
+    const overdueDays = Math.max(0, daysBetween(dueAt, new Date(now)));
+
+    const payments: InvoicePayment[] = [];
+    let paidAmount = 0;
+    let status: InvoiceStatus;
+
+    // Prepay always fully paid before issue
+    if (order.paymentTerms === "prepay") {
+      paidAmount = total;
+      payments.push({
+        id: `pay-${counter}-1`,
+        invoiceId: `inv-${counter}`,
+        amount: total,
+        method: "wire",
+        receivedAt: new Date(issuedAt.getTime() - rInt(1, 3) * 24 * 60 * 60 * 1000),
+        ref: "WIRE-" + rInt(100000, 999999),
+      });
+      status = "paid";
+    } else if (ageDays < termDays - 2) {
+      // Not yet due — ~20% pay early
+      if (rng() < 0.2) {
+        paidAmount = total;
+        payments.push({
+          id: `pay-${counter}-1`,
+          invoiceId: `inv-${counter}`,
+          amount: total,
+          method: rPickWeighted<InvoicePaymentMethod>([
+            { value: "ach", weight: 50 },
+            { value: "wire", weight: 20 },
+            { value: "check", weight: 20 },
+            { value: "credit_card", weight: 10 },
+          ]),
+          receivedAt: new Date(issuedAt.getTime() + rInt(2, termDays - 3) * 24 * 60 * 60 * 1000),
+          ref: "ACH-" + rInt(100000, 999999),
+        });
+        status = "paid";
+      } else {
+        status = "open";
+      }
+    } else if (overdueDays <= 0) {
+      // Within grace / due-ish range
+      const payProb = order.dealerTier === "Platinum" ? 0.85 : order.dealerTier === "Gold" ? 0.75 : order.dealerTier === "Silver" ? 0.6 : 0.5;
+      if (rng() < payProb) {
+        paidAmount = total;
+        payments.push({
+          id: `pay-${counter}-1`,
+          invoiceId: `inv-${counter}`,
+          amount: total,
+          method: rPickWeighted<InvoicePaymentMethod>([
+            { value: "ach", weight: 55 },
+            { value: "check", weight: 25 },
+            { value: "wire", weight: 10 },
+            { value: "credit_card", weight: 10 },
+          ]),
+          receivedAt: new Date(dueAt.getTime() + rInt(-5, 3) * 24 * 60 * 60 * 1000),
+          ref: "ACH-" + rInt(100000, 999999),
+        });
+        status = "paid";
+      } else if (rng() < 0.35) {
+        // partial
+        const partial = Math.round(total * (0.3 + rng() * 0.4));
+        paidAmount = partial;
+        payments.push({
+          id: `pay-${counter}-1`,
+          invoiceId: `inv-${counter}`,
+          amount: partial,
+          method: "ach",
+          receivedAt: new Date(dueAt.getTime() - rInt(0, 7) * 24 * 60 * 60 * 1000),
+          ref: "ACH-" + rInt(100000, 999999),
+        });
+        status = "partial";
+      } else {
+        status = "open";
+      }
+    } else {
+      // Overdue
+      const payProb =
+        order.dealerTier === "Platinum" ? 0.65 : order.dealerTier === "Gold" ? 0.55 : order.dealerTier === "Silver" ? 0.4 : 0.3;
+      // Older overdue more likely paid eventually
+      const ageAdj = Math.min(1, overdueDays / 45);
+      if (rng() < payProb + ageAdj * 0.3) {
+        // late pay
+        paidAmount = total;
+        payments.push({
+          id: `pay-${counter}-1`,
+          invoiceId: `inv-${counter}`,
+          amount: total,
+          method: "ach",
+          receivedAt: new Date(dueAt.getTime() + rInt(5, 45) * 24 * 60 * 60 * 1000),
+          ref: "ACH-" + rInt(100000, 999999),
+        });
+        status = "paid";
+      } else if (rng() < 0.3) {
+        const partial = Math.round(total * (0.4 + rng() * 0.3));
+        paidAmount = partial;
+        payments.push({
+          id: `pay-${counter}-1`,
+          invoiceId: `inv-${counter}`,
+          amount: partial,
+          method: "ach",
+          receivedAt: new Date(dueAt.getTime() + rInt(5, 30) * 24 * 60 * 60 * 1000),
+          ref: "ACH-" + rInt(100000, 999999),
+        });
+        status = overdueDays > 60 ? "overdue" : "partial";
+      } else if (overdueDays > 120 && rng() < 0.3) {
+        status = "written_off";
+      } else {
+        status = "overdue";
+      }
+    }
+
+    const balance = Math.max(0, total - paidAmount);
+    const finalOverdueDays = status === "overdue" || (status === "partial" && overdueDays > 0) ? overdueDays : 0;
+
+    const invoiceNumber = "INV-" +
+      issuedAt.getFullYear().toString().slice(-2) +
+      String(issuedAt.getMonth() + 1).padStart(2, "0") + "-" +
+      String(10000 + counter).padStart(5, "0");
+
+    out.push({
+      id: `inv-${counter}`,
+      invoiceNumber,
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      dealerId: order.dealerId,
+      dealerName: order.dealerName,
+      dealerTier: order.dealerTier,
+      subtotal, freight, tax, total,
+      terms: order.paymentTerms,
+      issuedAt, dueAt,
+      status,
+      paidAmount,
+      balance,
+      daysOverdue: finalOverdueDays,
+      payments,
+    });
+    counter++;
+  }
+  return out.sort((a, b) => b.issuedAt.getTime() - a.issuedAt.getTime());
+}
+
+export const INVOICES: Invoice[] = generateInvoices(DEALER_ORDERS);
+
+function generateCoopAccruals(): CoopAccrual[] {
+  const byDealer: Record<string, { dealer: Dealer; ytdSales: number }> = {};
+  for (const inv of INVOICES) {
+    if (inv.status === "written_off") continue;
+    const dealer = DEALERS.find((d) => d.id === inv.dealerId);
+    if (!dealer) continue;
+    if (!byDealer[inv.dealerId]) byDealer[inv.dealerId] = { dealer, ytdSales: 0 };
+    byDealer[inv.dealerId].ytdSales += inv.subtotal;
+  }
+  const out: CoopAccrual[] = [];
+  for (const { dealer, ytdSales } of Object.values(byDealer)) {
+    const rate =
+      dealer.tier === "Platinum" ? 0.035 : dealer.tier === "Gold" ? 0.025 : dealer.tier === "Silver" ? 0.015 : 0.01;
+    const ytdAccrued = Math.round(ytdSales * rate);
+    const claimPct = 0.2 + rng() * 0.6;
+    const ytdClaimed = Math.round(ytdAccrued * claimPct);
+    const available = ytdAccrued - ytdClaimed;
+    out.push({
+      dealerId: dealer.id,
+      dealerName: dealer.name,
+      dealerTier: dealer.tier,
+      accrualRate: rate,
+      ytdAccrued,
+      ytdClaimed,
+      available,
+      lastClaimedAt: ytdClaimed > 0
+        ? new Date(DEMO_NOW_REF - rInt(1, 90) * 24 * 60 * 60 * 1000)
+        : undefined,
+    });
+  }
+  return out.sort((a, b) => b.ytdAccrued - a.ytdAccrued);
+}
+
+export const COOP_ACCRUALS: CoopAccrual[] = generateCoopAccruals();
+
+function generateCoopClaims(): CoopClaim[] {
+  const out: CoopClaim[] = [];
+  let counter = 1;
+  for (const a of COOP_ACCRUALS) {
+    if (a.ytdClaimed === 0) continue;
+    // Generate 2-5 claims making up the ytdClaimed amount
+    const numClaims = rInt(1, 4);
+    let remaining = a.ytdClaimed;
+    for (let i = 0; i < numClaims && remaining > 0; i++) {
+      const isLast = i === numClaims - 1;
+      const amt = isLast
+        ? remaining
+        : Math.round(remaining * (0.25 + rng() * 0.4));
+      remaining -= amt;
+      const submittedAt = new Date(DEMO_NOW_REF - rInt(5, 120) * 24 * 60 * 60 * 1000);
+      const status = rPickWeighted<CoopClaim["status"]>([
+        { value: "reimbursed", weight: 65 },
+        { value: "approved", weight: 15 },
+        { value: "pending", weight: 15 },
+        { value: "denied", weight: 5 },
+      ]);
+      out.push({
+        id: `coop-${counter}`,
+        dealerId: a.dealerId,
+        dealerName: a.dealerName,
+        amount: amt,
+        campaign: rPick(CAMPAIGN_NAMES),
+        submittedAt,
+        status,
+        reviewedAt: status !== "pending"
+          ? new Date(submittedAt.getTime() + rInt(2, 21) * 24 * 60 * 60 * 1000)
+          : undefined,
+      });
+      counter++;
+    }
+  }
+  return out.sort((a, b) => b.submittedAt.getTime() - a.submittedAt.getTime());
+}
+
+export const COOP_CLAIMS: CoopClaim[] = generateCoopClaims();
+
+export function invoicesForDealer(dealerId: string, limit?: number): Invoice[] {
+  const out = INVOICES.filter((i) => i.dealerId === dealerId);
+  return typeof limit === "number" ? out.slice(0, limit) : out;
+}
+
+export function coopForDealer(dealerId: string): CoopAccrual | undefined {
+  return COOP_ACCRUALS.find((c) => c.dealerId === dealerId);
+}
+
+export function coopClaimsForDealer(dealerId: string): CoopClaim[] {
+  return COOP_CLAIMS.filter((c) => c.dealerId === dealerId);
+}
+
+export function financeStats() {
+  const now = DEMO_NOW_REF;
+  const totalOutstanding = INVOICES.filter((i) => i.status !== "paid" && i.status !== "written_off")
+    .reduce((s, i) => s + i.balance, 0);
+  const totalOverdue = INVOICES.filter((i) => i.status === "overdue")
+    .reduce((s, i) => s + i.balance, 0);
+  const overdueCount = INVOICES.filter((i) => i.status === "overdue").length;
+  const writtenOffCount = INVOICES.filter((i) => i.status === "written_off").length;
+  const writtenOffTotal = INVOICES.filter((i) => i.status === "written_off")
+    .reduce((s, i) => s + i.balance, 0);
+
+  // Aging buckets
+  const aging = { current: 0, "1-30": 0, "31-60": 0, "61-90": 0, "90+": 0 };
+  for (const inv of INVOICES) {
+    if (inv.status === "paid" || inv.status === "written_off") continue;
+    if (inv.daysOverdue === 0) aging.current += inv.balance;
+    else if (inv.daysOverdue <= 30) aging["1-30"] += inv.balance;
+    else if (inv.daysOverdue <= 60) aging["31-60"] += inv.balance;
+    else if (inv.daysOverdue <= 90) aging["61-90"] += inv.balance;
+    else aging["90+"] += inv.balance;
+  }
+
+  // DSO approximation = avg days to pay over last 90 days
+  const recentPaid = INVOICES.filter(
+    (i) => i.status === "paid" && i.payments[0] && i.payments[0].receivedAt.getTime() > now - 90 * 24 * 60 * 60 * 1000
+  );
+  const dso = recentPaid.length > 0
+    ? recentPaid.reduce((s, i) => s + daysBetween(i.issuedAt, i.payments[0].receivedAt), 0) / recentPaid.length
+    : 0;
+
+  // Collections this month
+  const monthAgo = now - 30 * 24 * 60 * 60 * 1000;
+  let collectionsThisMonth = 0;
+  let paymentCountMonth = 0;
+  for (const inv of INVOICES) {
+    for (const p of inv.payments) {
+      if (p.receivedAt.getTime() > monthAgo) {
+        collectionsThisMonth += p.amount;
+        paymentCountMonth++;
+      }
+    }
+  }
+
+  // Co-op
+  const totalAccrued = COOP_ACCRUALS.reduce((s, a) => s + a.ytdAccrued, 0);
+  const totalClaimed = COOP_ACCRUALS.reduce((s, a) => s + a.ytdClaimed, 0);
+  const availableCoop = COOP_ACCRUALS.reduce((s, a) => s + a.available, 0);
+  const pendingCoopClaims = COOP_CLAIMS.filter((c) => c.status === "pending").length;
+
+  return {
+    totalOutstanding,
+    totalOverdue,
+    overdueCount,
+    writtenOffCount,
+    writtenOffTotal,
+    aging,
+    dso: +dso.toFixed(1),
+    collectionsThisMonth,
+    paymentCountMonth,
+    totalAccrued,
+    totalClaimed,
+    availableCoop,
+    pendingCoopClaims,
+    totalInvoices: INVOICES.length,
+    paidCount: INVOICES.filter((i) => i.status === "paid").length,
+  };
+}
+
+export function topOverdueDealers(n = 10) {
+  const byDealer: Record<string, { dealer: Dealer; openInvoices: number; overdueInvoices: number; balance: number; oldestOverdueDays: number }> = {};
+  for (const inv of INVOICES) {
+    if (inv.status === "paid" || inv.status === "written_off") continue;
+    const dealer = DEALERS.find((d) => d.id === inv.dealerId);
+    if (!dealer) continue;
+    if (!byDealer[inv.dealerId])
+      byDealer[inv.dealerId] = { dealer, openInvoices: 0, overdueInvoices: 0, balance: 0, oldestOverdueDays: 0 };
+    byDealer[inv.dealerId].openInvoices++;
+    byDealer[inv.dealerId].balance += inv.balance;
+    if (inv.status === "overdue") {
+      byDealer[inv.dealerId].overdueInvoices++;
+      if (inv.daysOverdue > byDealer[inv.dealerId].oldestOverdueDays) {
+        byDealer[inv.dealerId].oldestOverdueDays = inv.daysOverdue;
+      }
+    }
+  }
+  return Object.values(byDealer)
+    .filter((x) => x.overdueInvoices > 0)
+    .sort((a, b) => b.balance - a.balance)
+    .slice(0, n);
+}
+
+export function recentPayments(limit = 20) {
+  const all: Array<InvoicePayment & { invoice: Invoice }> = [];
+  for (const inv of INVOICES) {
+    for (const p of inv.payments) {
+      all.push({ ...p, invoice: inv });
+    }
+  }
+  return all.sort((a, b) => b.receivedAt.getTime() - a.receivedAt.getTime()).slice(0, limit);
+}
+
 export function orderModelMix() {
   const mix: Record<ModelLine, { units: number; value: number }> = {
     "Michael Phelps Legend": { units: 0, value: 0 },
