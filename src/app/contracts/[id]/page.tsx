@@ -12,6 +12,8 @@ import { TaxRefundButton } from "@/components/contracts/TaxRefundButton";
 import { CertViewButton } from "@/components/contracts/CertViewButton";
 import { StatusTimeline } from "@/components/contracts/StatusTimeline";
 import { DeliveryConfirmDialog } from "@/components/contracts/DeliveryConfirmDialog";
+import { AppHeader } from "@/components/ui/AppHeader";
+import { SectionCard } from "@/components/ui/SectionCard";
 
 const STATUS_COLORS: Record<string, "default" | "success" | "warning" | "destructive" | "secondary"> = {
   draft: "secondary",
@@ -109,39 +111,89 @@ export default async function ContractDetailPage({
 
   return (
     <div className="min-h-screen bg-slate-50">
-      {/* Header */}
-      <header className="bg-[#010F21] text-white px-4 py-4 sticky top-0 z-10 shadow-lg">
-        <div className="flex items-center gap-3">
-          <Link href="/contracts" className="p-2 rounded-lg hover:bg-white/10">
-            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </Link>
-          <div className="flex-1">
-            <h1 className="text-lg font-bold">{contract.contract_number}</h1>
-            <p className="text-[#00929C] text-xs">{formatDate(contract.created_at)}</p>
-          </div>
-          {contract.is_contingent && (
-            <Badge variant="warning" className="text-xs">Contingent</Badge>
-          )}
-          <Badge variant={STATUS_COLORS[contract.status] ?? "secondary"} className="text-xs">
-            {contract.status.replace(/_/g, " ")}
-          </Badge>
+      <AppHeader
+        title={contract.contract_number}
+        subtitle={formatDate(contract.created_at)}
+        backHref="/contracts"
+        status={{
+          label: contract.status.replace(/_/g, " "),
+          color:
+            contract.status === "delivered" ? "#10b981" :
+            contract.status === "cancelled" ? "#ef4444" :
+            contract.status === "ready_for_delivery" ? "#f59e0b" :
+            contract.status === "deposit_collected" ? "#00929C" :
+            contract.status === "pending_signature" ? "#f59e0b" :
+            "#64748b",
+        }}
+        actions={
           <a
             href={`/api/contracts/${contract.id}/pdf`}
             target="_blank"
             rel="noopener noreferrer"
+            aria-label="Print / PDF"
             className="p-2 rounded-lg hover:bg-white/10 transition-colors"
             title="Print / PDF"
           >
-            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
             </svg>
           </a>
-        </div>
-      </header>
+        }
+      />
 
-      <main className="px-5 py-6 space-y-4 max-w-2xl mx-auto pb-24">
+      <main className="px-5 py-6 space-y-4 max-w-3xl mx-auto pb-24">
+
+        {/* Summary hero: 3-up numbers */}
+        <div className="rounded-2xl overflow-hidden shadow-md border border-slate-200">
+          <div
+            className="px-6 py-5 text-white"
+            style={{ background: "linear-gradient(135deg, #010F21 0%, #00929C 180%)" }}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[10px] uppercase tracking-widest text-white/60">
+                  {contract.is_contingent ? "Contingent contract" : "Contract"}
+                </p>
+                <p className="text-lg font-bold truncate">
+                  {contract.customer?.first_name} {contract.customer?.last_name}
+                </p>
+                <p className="text-xs text-white/60 truncate">
+                  {contract.show?.name ?? contract.location?.name ?? "—"}
+                </p>
+              </div>
+              {contract.is_contingent && (
+                <span className="px-2.5 py-1 rounded-full bg-amber-400/20 border border-amber-400/40 text-amber-200 text-[10px] font-bold uppercase tracking-widest flex-shrink-0">
+                  Contingent
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="grid grid-cols-3 divide-x divide-slate-100 bg-white">
+            <div className="px-4 py-4 text-center">
+              <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Total</p>
+              <p className="text-xl md:text-2xl font-black text-slate-900 mt-1 tabular-nums">
+                {formatCurrency(contract.total ?? 0)}
+              </p>
+            </div>
+            <div className="px-4 py-4 text-center">
+              <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Deposit</p>
+              <p className="text-xl md:text-2xl font-black text-emerald-600 mt-1 tabular-nums">
+                {formatCurrency(depositPaid)}
+              </p>
+            </div>
+            <div className="px-4 py-4 text-center">
+              <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Balance</p>
+              <p
+                className={`text-xl md:text-2xl font-black mt-1 tabular-nums ${
+                  computedBalanceDue > 0 ? "text-amber-600" : "text-slate-400"
+                }`}
+              >
+                {formatCurrency(computedBalanceDue)}
+              </p>
+            </div>
+          </div>
+        </div>
+
         {/* Status Timeline */}
         <Card>
           <CardContent className="p-4">
@@ -150,34 +202,43 @@ export default async function ContractDetailPage({
         </Card>
 
         {/* Customer */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle>Customer</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-1">
-            <p className="text-lg font-semibold">
+        <SectionCard title="Customer">
+          <div className="space-y-1">
+            <p className="text-lg font-semibold text-slate-900">
               {contract.customer?.first_name} {contract.customer?.last_name}
             </p>
-            <p className="text-slate-600">{contract.customer?.email}</p>
-            <p className="text-slate-600">{contract.customer?.phone}</p>
+            {contract.customer?.email && (
+              <p className="text-slate-600 text-sm">
+                <a href={`mailto:${contract.customer.email}`} className="hover:text-[#00929C] transition-colors">
+                  {contract.customer.email}
+                </a>
+              </p>
+            )}
+            {contract.customer?.phone && (
+              <p className="text-slate-600 text-sm">
+                <a href={`tel:${contract.customer.phone}`} className="hover:text-[#00929C] transition-colors">
+                  {contract.customer.phone}
+                </a>
+              </p>
+            )}
             {contract.customer?.address && (
-              <p className="text-slate-500 text-sm">
+              <p className="text-slate-500 text-sm pt-1">
                 {contract.customer.address}, {contract.customer.city}, {contract.customer.state} {contract.customer.zip}
               </p>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </SectionCard>
 
         {/* Context */}
         <Card>
           <CardContent className="p-4 flex justify-between text-sm">
             <div>
-              <p className="text-slate-500">Location / Show</p>
-              <p className="font-medium">{contract.show?.name ?? contract.location?.name}</p>
+              <p className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold">Location / Show</p>
+              <p className="font-medium text-slate-900 mt-0.5">{contract.show?.name ?? contract.location?.name ?? "—"}</p>
             </div>
             <div className="text-right">
-              <p className="text-slate-500">Sales Rep</p>
-              <p className="font-medium">{(contract.sales_rep as { full_name?: string } | null)?.full_name ?? "—"}</p>
+              <p className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold">Sales Rep</p>
+              <p className="font-medium text-slate-900 mt-0.5">{(contract.sales_rep as { full_name?: string } | null)?.full_name ?? "—"}</p>
             </div>
           </CardContent>
         </Card>

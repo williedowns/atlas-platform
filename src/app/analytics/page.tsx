@@ -392,8 +392,30 @@ export default async function AnalyticsPage({
           />
         </div>
 
+        {/* Section jump nav — scrolls to anchors */}
+        <nav className="sticky top-16 z-[5] -mx-5 px-5 py-3 bg-slate-50/90 backdrop-blur border-b border-slate-200">
+          <div className="flex gap-1 overflow-x-auto scrollbar-hide text-xs">
+            {[
+              { href: "#breakdown", label: "Revenue" },
+              { href: "#leaderboard", label: "Leaderboard" },
+              { href: "#shows", label: "Shows" },
+              { href: "#locations", label: "Locations" },
+              { href: "#products", label: "Top Products" },
+              { href: "#outstanding", label: "Outstanding" },
+            ].map((item) => (
+              <a
+                key={item.href}
+                href={item.href}
+                className="flex-shrink-0 px-3 py-1.5 rounded-full text-slate-600 hover:bg-white hover:text-slate-900 font-semibold transition-colors"
+              >
+                {item.label}
+              </a>
+            ))}
+          </div>
+        </nav>
+
         {/* ── Revenue Breakdown ── */}
-        <Card>
+        <Card id="breakdown" className="scroll-mt-32">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Revenue Breakdown</CardTitle>
           </CardHeader>
@@ -414,7 +436,7 @@ export default async function AnalyticsPage({
         </Card>
 
         {/* ── Sales Rep Leaderboard ── */}
-        <Card>
+        <Card id="leaderboard" className="scroll-mt-32">
           <CardHeader className="pb-3">
             <CardTitle className="text-lg">Sales Rep Leaderboard</CardTitle>
           </CardHeader>
@@ -502,7 +524,7 @@ export default async function AnalyticsPage({
         </Card>
 
         {/* ── Shows Breakdown ── */}
-        <Card>
+        <Card id="shows" className="scroll-mt-32">
           <CardHeader className="pb-3">
             <CardTitle className="text-lg">Shows</CardTitle>
           </CardHeader>
@@ -560,7 +582,7 @@ export default async function AnalyticsPage({
         </Card>
 
         {/* ── Locations Breakdown ── */}
-        <Card>
+        <Card id="locations" className="scroll-mt-32">
           <CardHeader className="pb-3">
             <CardTitle className="text-lg">Locations</CardTitle>
           </CardHeader>
@@ -611,7 +633,7 @@ export default async function AnalyticsPage({
         </Card>
 
         {/* ── Top Products ── */}
-        <Card>
+        <Card id="products" className="scroll-mt-32">
           <CardHeader className="pb-3">
             <CardTitle className="text-lg">Top Products</CardTitle>
           </CardHeader>
@@ -653,7 +675,7 @@ export default async function AnalyticsPage({
         </Card>
 
         {/* ── Outstanding / Actionable Items ── */}
-        <Card>
+        <Card id="outstanding" className="scroll-mt-32">
           <CardHeader className="pb-3">
             <CardTitle className="text-lg">Outstanding Items</CardTitle>
           </CardHeader>
