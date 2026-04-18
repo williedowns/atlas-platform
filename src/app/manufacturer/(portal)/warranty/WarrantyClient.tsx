@@ -196,9 +196,10 @@ export default function WarrantyClient({
                 />
                 <Tooltip
                   contentStyle={{ borderRadius: 8, border: "1px solid #E2E8F0", fontSize: 12 }}
-                  formatter={(v: number, name: string) => {
-                    if (name === "rate") return [`${v.toFixed(2)}%`, "Claim rate"];
-                    return [v, name];
+                  formatter={(v, name) => {
+                    const num = Number(v);
+                    if (name === "rate") return [`${num.toFixed(2)}%`, "Claim rate"];
+                    return [num, String(name)];
                   }}
                 />
                 <Bar dataKey="rate" radius={[6, 6, 0, 0]}>
@@ -275,9 +276,12 @@ export default function WarrantyClient({
                 />
                 <Tooltip
                   contentStyle={{ borderRadius: 8, border: "1px solid #E2E8F0", fontSize: 12 }}
-                  formatter={(v: number, name: string) =>
-                    name === "cost" ? [fmtCurrency(v), "Cost"] : [v, "Claims"]
-                  }
+                  formatter={(v, name) => {
+                    const num = Number(v);
+                    return name === "cost"
+                      ? [fmtCurrency(num), "Cost"]
+                      : [num, "Claims"];
+                  }}
                 />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
                 <Line yAxisId="left" type="monotone" dataKey="claims" stroke={MS_BRAND.colors.accent} strokeWidth={2.5} />

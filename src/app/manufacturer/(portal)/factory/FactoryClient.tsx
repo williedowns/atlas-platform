@@ -308,7 +308,7 @@ export default function FactoryClient({
                 <YAxis type="category" dataKey="station" width={90} tick={{ fontSize: 10, fill: "#64748B" }} />
                 <Tooltip
                   contentStyle={{ borderRadius: 8, border: "1px solid #E2E8F0", fontSize: 12 }}
-                  formatter={(v: number) => [`${v}%`, "First-pass yield"]}
+                  formatter={(v) => [`${Number(v)}%`, "First-pass yield"]}
                 />
                 <Bar dataKey="yield" radius={[0, 4, 4, 0]}>
                   {qcChartData.map((d, i) => (
