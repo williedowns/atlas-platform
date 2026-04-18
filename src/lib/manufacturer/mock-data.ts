@@ -2857,6 +2857,572 @@ export function recentPayments(limit = 20) {
   return all.sort((a, b) => b.receivedAt.getTime() - a.receivedAt.getTime()).slice(0, limit);
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// Marketing Hub (Module 7 of comprehensive build-out)
+// National campaigns, lead routing, review aggregation, asset library.
+// ═══════════════════════════════════════════════════════════════════
+
+export type CampaignChannel =
+  | "tv"
+  | "radio"
+  | "facebook"
+  | "google"
+  | "instagram"
+  | "direct_mail"
+  | "podcast"
+  | "trade_show"
+  | "email"
+  | "youtube";
+
+export const CAMPAIGN_CHANNEL_LABELS: Record<CampaignChannel, string> = {
+  tv: "TV",
+  radio: "Radio",
+  facebook: "Facebook",
+  google: "Google Ads",
+  instagram: "Instagram",
+  direct_mail: "Direct Mail",
+  podcast: "Podcast",
+  trade_show: "Trade Show",
+  email: "Email",
+  youtube: "YouTube",
+};
+
+export const CAMPAIGN_CHANNEL_COLORS: Record<CampaignChannel, string> = {
+  tv: "#DC2626",
+  radio: "#D97706",
+  facebook: "#1877F2",
+  google: "#0891B2",
+  instagram: "#E1306C",
+  direct_mail: "#7C3AED",
+  podcast: "#059669",
+  trade_show: "#EA580C",
+  email: "#64748B",
+  youtube: "#EF4444",
+};
+
+export type CampaignStatus = "planned" | "active" | "paused" | "completed";
+
+export interface Campaign {
+  id: string;
+  name: string;
+  channel: CampaignChannel;
+  status: CampaignStatus;
+  startDate: Date;
+  endDate: Date;
+  nationalSpend: number; // Master Spas corporate spend
+  coopSpend: number; // Dealer co-op matched
+  totalSpend: number;
+  impressions: number;
+  clicks: number;
+  leads: number;
+  qualifiedLeads: number;
+  convertedToSale: number;
+  attributableRevenue: number;
+  costPerLead: number;
+  costPerAcquisition: number;
+  roi: number; // revenue/spend
+  regionsTargeted: string[];
+}
+
+export interface RoutedLead {
+  id: string;
+  leadNumber: string;
+  campaignId?: string;
+  campaignName?: string;
+  channel: CampaignChannel | "organic" | "referral";
+  customerName: string;
+  customerZip: string;
+  customerState: string;
+  interest: ModelLine | "General";
+  dealerId: string;
+  dealerName: string;
+  dealerCity: string;
+  dealerState: string;
+  routedAt: Date;
+  routedMinutesAgo: number;
+  firstContactAt?: Date;
+  timeToContactMinutes?: number;
+  status: "routed" | "contacted" | "nurturing" | "converted" | "closed_lost";
+  convertedContractId?: string;
+}
+
+export const ROUTED_LEAD_STATUS_LABELS: Record<RoutedLead["status"], string> = {
+  routed: "Routed",
+  contacted: "Contacted",
+  nurturing: "Nurturing",
+  converted: "Converted",
+  closed_lost: "Closed Lost",
+};
+
+export const ROUTED_LEAD_STATUS_COLORS: Record<RoutedLead["status"], string> = {
+  routed: "#0891B2",
+  contacted: "#7C3AED",
+  nurturing: "#D97706",
+  converted: "#059669",
+  closed_lost: "#94A3B8",
+};
+
+export interface Review {
+  id: string;
+  dealerId: string;
+  dealerName: string;
+  source: "google" | "facebook" | "yelp" | "bbb" | "post_service_survey";
+  rating: number; // 1-5
+  title?: string;
+  excerpt: string;
+  reviewer: string;
+  postedAt: Date;
+  responded: boolean;
+}
+
+const CAMPAIGN_NAMES_BY_CHANNEL: Record<CampaignChannel, string[]> = {
+  tv: [
+    "Spring Showcase — Regional Broadcast",
+    "Michael Phelps Brand Spot — National",
+    "Summer Pool Season — Local Affiliate Buy",
+    "Holiday Hot Tub — Cable Network",
+  ],
+  radio: [
+    "Memorial Day Radio Flight",
+    "Drive-Time Local Spots — TX Metros",
+    "Sports Radio — Q4 Holiday",
+  ],
+  facebook: [
+    "Facebook Lead Gen — Spring",
+    "Facebook Retarget — Site Visitors",
+    "Facebook Carousel — H2X Swim Spa",
+  ],
+  google: [
+    "Google Search — Brand Terms",
+    "Google Search — Category Terms",
+    "Google Display — Affinity Targeting",
+    "Google Performance Max — Q2",
+  ],
+  instagram: [
+    "Instagram Reels — Backyard Inspiration",
+    "Instagram Stories — Dealer Takeovers",
+  ],
+  direct_mail: [
+    "Direct Mail — High-Income ZIPs TX",
+    "Direct Mail — Previous Owners",
+  ],
+  podcast: [
+    "This Old House Podcast Sponsorship",
+    "Wellness Podcast Spot — Cold Plunge",
+  ],
+  trade_show: [
+    "International Builders' Show 2026",
+    "Pool & Spa Expo — Dallas",
+    "Home & Garden Show Network Sponsor",
+  ],
+  email: [
+    "Email — Prospect Nurture Sequence",
+    "Email — Reactivation Campaign",
+  ],
+  youtube: [
+    "YouTube Pre-Roll — Home Improvement",
+    "YouTube Brand Channel Build",
+  ],
+};
+
+const REVIEW_EXCERPTS_POSITIVE = [
+  "Amazing experience from start to finish. Sales team was super knowledgeable.",
+  "Best purchase we ever made. Tub is incredible and installation was seamless.",
+  "Professional team, great follow-up. Love our Michael Phelps Legend.",
+  "Went above and beyond. The service tech fixed an issue within a day.",
+  "Top-tier quality. Highly recommend this dealer to anyone in the market.",
+];
+
+const REVIEW_EXCERPTS_NEUTRAL = [
+  "Overall happy with the tub. Delivery took a bit longer than expected.",
+  "Good product, decent service. Would buy again.",
+  "Quality is there. Wish the cover hinges were a bit sturdier.",
+];
+
+const REVIEW_EXCERPTS_NEGATIVE = [
+  "Delivery was late and damaged. Took weeks to get resolution.",
+  "Controller malfunctioned within 3 months. Warranty process was slow.",
+  "Expected better given the price. Installation crew left a mess.",
+];
+
+function generateCampaigns(): Campaign[] {
+  const now = DEMO_NOW_REF;
+  const out: Campaign[] = [];
+  let counter = 1;
+  const channels: CampaignChannel[] = Object.keys(CAMPAIGN_NAMES_BY_CHANNEL) as CampaignChannel[];
+
+  for (const channel of channels) {
+    const names = CAMPAIGN_NAMES_BY_CHANNEL[channel];
+    for (const name of names) {
+      // Campaign status based on counter distribution
+      const status = rPickWeighted<CampaignStatus>([
+        { value: "completed", weight: 40 },
+        { value: "active", weight: 45 },
+        { value: "planned", weight: 10 },
+        { value: "paused", weight: 5 },
+      ]);
+
+      let startDate: Date;
+      let endDate: Date;
+      if (status === "completed") {
+        startDate = new Date(now - rInt(60, 180) * 24 * 60 * 60 * 1000);
+        endDate = new Date(startDate.getTime() + rInt(14, 60) * 24 * 60 * 60 * 1000);
+      } else if (status === "active") {
+        startDate = new Date(now - rInt(7, 45) * 24 * 60 * 60 * 1000);
+        endDate = new Date(now + rInt(7, 45) * 24 * 60 * 60 * 1000);
+      } else if (status === "planned") {
+        startDate = new Date(now + rInt(14, 60) * 24 * 60 * 60 * 1000);
+        endDate = new Date(startDate.getTime() + rInt(14, 45) * 24 * 60 * 60 * 1000);
+      } else {
+        // paused
+        startDate = new Date(now - rInt(14, 45) * 24 * 60 * 60 * 1000);
+        endDate = new Date(now + rInt(7, 30) * 24 * 60 * 60 * 1000);
+      }
+
+      // Spend by channel (rough reality)
+      const baseSpend =
+        channel === "tv" ? rInt(80000, 300000)
+        : channel === "trade_show" ? rInt(40000, 120000)
+        : channel === "direct_mail" ? rInt(15000, 60000)
+        : channel === "podcast" ? rInt(12000, 40000)
+        : channel === "radio" ? rInt(20000, 60000)
+        : channel === "youtube" ? rInt(18000, 50000)
+        : channel === "google" ? rInt(30000, 90000)
+        : channel === "facebook" ? rInt(20000, 70000)
+        : channel === "instagram" ? rInt(10000, 35000)
+        : rInt(5000, 20000); // email
+
+      const coopShare = 0.2 + rng() * 0.4;
+      const coopSpend = Math.round(baseSpend * coopShare);
+      const totalSpend = baseSpend + coopSpend;
+      const nationalSpend = baseSpend;
+
+      // If not started yet, no impressions/leads
+      if (status === "planned") {
+        out.push({
+          id: `camp-${counter}`,
+          name,
+          channel,
+          status,
+          startDate,
+          endDate,
+          nationalSpend,
+          coopSpend,
+          totalSpend,
+          impressions: 0, clicks: 0, leads: 0, qualifiedLeads: 0,
+          convertedToSale: 0, attributableRevenue: 0,
+          costPerLead: 0, costPerAcquisition: 0, roi: 0,
+          regionsTargeted: rPickWeighted([
+            { value: ["Southeast", "South Central"], weight: 20 },
+            { value: ["West", "Mountain"], weight: 20 },
+            { value: ["Northeast", "Mid-Atlantic"], weight: 20 },
+            { value: ["Midwest"], weight: 20 },
+            { value: ["Northeast", "Mid-Atlantic", "Southeast", "Midwest", "South Central", "Mountain", "West"], weight: 20 },
+          ]),
+        });
+        counter++;
+        continue;
+      }
+
+      // Impressions/clicks/leads scale with spend + channel efficiency
+      const impPerDollar =
+        channel === "tv" ? 15
+        : channel === "radio" ? 30
+        : channel === "direct_mail" ? 2
+        : channel === "facebook" ? 50
+        : channel === "google" ? 20
+        : channel === "instagram" ? 60
+        : channel === "youtube" ? 40
+        : channel === "podcast" ? 25
+        : channel === "trade_show" ? 0.5
+        : 100; // email
+      const impressions = Math.round(totalSpend * impPerDollar * (0.85 + rng() * 0.3));
+
+      const ctr =
+        channel === "google" ? 0.03 + rng() * 0.04
+        : channel === "facebook" || channel === "instagram" ? 0.01 + rng() * 0.02
+        : channel === "email" ? 0.05 + rng() * 0.1
+        : 0.005 + rng() * 0.01;
+      const clicks = Math.round(impressions * ctr);
+
+      const leadRate =
+        channel === "direct_mail" ? 0.02 + rng() * 0.03
+        : channel === "trade_show" ? 0.15 + rng() * 0.2
+        : channel === "google" ? 0.04 + rng() * 0.05
+        : 0.02 + rng() * 0.04;
+      const leads = Math.round(clicks * leadRate);
+
+      const qualifiedLeads = Math.round(leads * (0.55 + rng() * 0.25));
+      const convertedToSale = Math.round(qualifiedLeads * (0.08 + rng() * 0.1));
+      const avgTicket = 14500 + rInt(-2000, 2000);
+      const attributableRevenue = convertedToSale * avgTicket;
+
+      const costPerLead = leads > 0 ? Math.round(totalSpend / leads) : 0;
+      const costPerAcquisition = convertedToSale > 0 ? Math.round(totalSpend / convertedToSale) : 0;
+      const roi = totalSpend > 0 ? +(attributableRevenue / totalSpend).toFixed(2) : 0;
+
+      out.push({
+        id: `camp-${counter}`,
+        name, channel, status, startDate, endDate,
+        nationalSpend, coopSpend, totalSpend,
+        impressions, clicks, leads, qualifiedLeads,
+        convertedToSale, attributableRevenue,
+        costPerLead, costPerAcquisition, roi,
+        regionsTargeted: rPickWeighted([
+          { value: ["Southeast", "South Central"], weight: 20 },
+          { value: ["West", "Mountain"], weight: 20 },
+          { value: ["Northeast", "Mid-Atlantic"], weight: 20 },
+          { value: ["Midwest"], weight: 20 },
+          { value: ["Northeast", "Mid-Atlantic", "Southeast", "Midwest", "South Central", "Mountain", "West"], weight: 20 },
+        ]),
+      });
+      counter++;
+    }
+  }
+  return out;
+}
+
+export const CAMPAIGNS: Campaign[] = generateCampaigns();
+
+export function campaignById(id: string): Campaign | undefined {
+  return CAMPAIGNS.find((c) => c.id === id);
+}
+
+function generateRoutedLeads(): RoutedLead[] {
+  const now = DEMO_NOW_REF;
+  const out: RoutedLead[] = [];
+  const activeAndCompleted = CAMPAIGNS.filter((c) => c.status === "active" || c.status === "completed");
+  let counter = 1;
+
+  // Generate lead per campaign (summed across campaigns ≈ total national leads)
+  for (const campaign of activeAndCompleted) {
+    const sample = Math.min(campaign.leads, 35); // cap for mock volume
+    for (let i = 0; i < sample; i++) {
+      const dealer = DEALERS[Math.floor(rng() * DEALERS.length)];
+      const routedMinutesAgo = rInt(60, 90 * 24 * 60);
+      const routedAt = new Date(now - routedMinutesAgo * 60 * 1000);
+
+      const firstContactMinutes = rPickWeighted<number>([
+        { value: rInt(10, 60), weight: 40 },
+        { value: rInt(60, 240), weight: 30 },
+        { value: rInt(240, 1440), weight: 20 },
+        { value: rInt(1440, 4320), weight: 10 },
+      ]);
+      const firstContactAt = new Date(routedAt.getTime() + firstContactMinutes * 60 * 1000);
+
+      const status = rPickWeighted<RoutedLead["status"]>([
+        { value: "routed", weight: 10 },
+        { value: "contacted", weight: 25 },
+        { value: "nurturing", weight: 25 },
+        { value: "converted", weight: 15 },
+        { value: "closed_lost", weight: 25 },
+      ]);
+
+      out.push({
+        id: `rlead-${counter}`,
+        leadNumber: `NL-${counter.toString().padStart(6, "0")}`,
+        campaignId: campaign.id,
+        campaignName: campaign.name,
+        channel: campaign.channel,
+        customerName: `${["Michael", "Sarah", "David", "Jennifer", "Robert", "Lisa", "James", "Patricia"][counter % 8]} ${["Smith", "Johnson", "Brown", "Davis", "Miller", "Wilson", "Moore", "Taylor"][counter % 8]}`,
+        customerZip: `${rInt(10000, 99999)}`,
+        customerState: dealer.state,
+        interest: rPickWeighted<RoutedLead["interest"]>([
+          { value: "Michael Phelps Legend", weight: 25 },
+          { value: "Twilight", weight: 30 },
+          { value: "Clarity", weight: 20 },
+          { value: "H2X Fitness", weight: 10 },
+          { value: "MP Signature Swim Spa", weight: 8 },
+          { value: "General", weight: 7 },
+        ]),
+        dealerId: dealer.id,
+        dealerName: dealer.name,
+        dealerCity: dealer.city,
+        dealerState: dealer.state,
+        routedAt,
+        routedMinutesAgo,
+        firstContactAt: status !== "routed" ? firstContactAt : undefined,
+        timeToContactMinutes: status !== "routed" ? firstContactMinutes : undefined,
+        status,
+      });
+      counter++;
+    }
+  }
+  return out.sort((a, b) => a.routedMinutesAgo - b.routedMinutesAgo);
+}
+
+export const ROUTED_LEADS: RoutedLead[] = generateRoutedLeads();
+
+function generateReviews(): Review[] {
+  const out: Review[] = [];
+  let counter = 1;
+  // Generate 3-8 reviews per top-tier dealer, fewer for bronze
+  for (const dealer of DEALERS) {
+    const count =
+      dealer.tier === "Platinum" ? rInt(6, 10)
+      : dealer.tier === "Gold" ? rInt(4, 7)
+      : dealer.tier === "Silver" ? rInt(2, 5)
+      : rInt(1, 3);
+
+    for (let i = 0; i < count; i++) {
+      // Reviews roughly mirror CSAT distribution
+      const rating = rPickWeighted<number>([
+        { value: 5, weight: 55 },
+        { value: 4, weight: 25 },
+        { value: 3, weight: 10 },
+        { value: 2, weight: 7 },
+        { value: 1, weight: 3 },
+      ]);
+      const excerpt =
+        rating >= 4 ? rPick(REVIEW_EXCERPTS_POSITIVE)
+        : rating === 3 ? rPick(REVIEW_EXCERPTS_NEUTRAL)
+        : rPick(REVIEW_EXCERPTS_NEGATIVE);
+
+      out.push({
+        id: `rev-${counter}`,
+        dealerId: dealer.id,
+        dealerName: dealer.name,
+        source: rPickWeighted<Review["source"]>([
+          { value: "google", weight: 45 },
+          { value: "facebook", weight: 20 },
+          { value: "yelp", weight: 15 },
+          { value: "post_service_survey", weight: 15 },
+          { value: "bbb", weight: 5 },
+        ]),
+        rating,
+        excerpt,
+        reviewer: `${["Chris", "Pat", "Jamie", "Morgan", "Taylor", "Casey", "Jordan", "Alex"][counter % 8]} ${["M.", "K.", "B.", "T.", "S.", "L.", "R.", "D."][counter % 8]}`,
+        postedAt: new Date(DEMO_NOW_REF - rInt(1, 180) * 24 * 60 * 60 * 1000),
+        responded: rating < 4 ? rng() < 0.7 : rng() < 0.3,
+      });
+      counter++;
+    }
+  }
+  return out.sort((a, b) => b.postedAt.getTime() - a.postedAt.getTime());
+}
+
+export const REVIEWS: Review[] = generateReviews();
+
+export function marketingStats() {
+  const now = DEMO_NOW_REF;
+  const active = CAMPAIGNS.filter((c) => c.status === "active");
+  const completed = CAMPAIGNS.filter((c) => c.status === "completed");
+
+  const totalSpendYtd = [...active, ...completed].reduce((s, c) => s + c.totalSpend, 0);
+  const totalLeadsYtd = [...active, ...completed].reduce((s, c) => s + c.leads, 0);
+  const totalRevenueAttributed = [...active, ...completed].reduce((s, c) => s + c.attributableRevenue, 0);
+  const networkRoi = totalSpendYtd > 0 ? totalRevenueAttributed / totalSpendYtd : 0;
+
+  const monthAgo = now - 30 * 24 * 60 * 60 * 1000;
+  const leadsLast30d = ROUTED_LEADS.filter((l) => l.routedAt.getTime() > monthAgo);
+
+  const contacted = ROUTED_LEADS.filter((l) => l.timeToContactMinutes !== undefined);
+  const avgTimeToContact =
+    contacted.length > 0
+      ? contacted.reduce((s, l) => s + (l.timeToContactMinutes ?? 0), 0) / contacted.length
+      : 0;
+  const contactedWithin60m = contacted.filter((l) => (l.timeToContactMinutes ?? 0) <= 60).length;
+  const contactedRate = contacted.length > 0 ? (contactedWithin60m / contacted.length) * 100 : 0;
+
+  const convertedLeads = ROUTED_LEADS.filter((l) => l.status === "converted").length;
+  const routedConversionRate = ROUTED_LEADS.length > 0 ? (convertedLeads / ROUTED_LEADS.length) * 100 : 0;
+
+  const avgRating = REVIEWS.length > 0
+    ? REVIEWS.reduce((s, r) => s + r.rating, 0) / REVIEWS.length
+    : 0;
+  const recentReviews = REVIEWS.filter((r) => r.postedAt.getTime() > monthAgo);
+  const negativeRecent = recentReviews.filter((r) => r.rating <= 2).length;
+
+  return {
+    campaignsActive: active.length,
+    campaignsCompleted: completed.length,
+    campaignsPlanned: CAMPAIGNS.filter((c) => c.status === "planned").length,
+    totalSpendYtd,
+    totalLeadsYtd,
+    leadsLast30d: leadsLast30d.length,
+    totalRevenueAttributed,
+    networkRoi: +networkRoi.toFixed(2),
+    avgTimeToContactMin: +avgTimeToContact.toFixed(0),
+    contactedRate: +contactedRate.toFixed(1),
+    routedConversionRate: +routedConversionRate.toFixed(1),
+    avgRating: +avgRating.toFixed(2),
+    totalReviews: REVIEWS.length,
+    reviewsLast30d: recentReviews.length,
+    negativeRecentCount: negativeRecent,
+    routedLeadsTotal: ROUTED_LEADS.length,
+    routedLeadsConverted: convertedLeads,
+  };
+}
+
+export function channelPerformance() {
+  const byChannel: Record<CampaignChannel, {
+    campaigns: number;
+    spend: number;
+    leads: number;
+    converted: number;
+    revenue: number;
+    cpl: number;
+    cpa: number;
+    roi: number;
+  }> = {
+    tv: { campaigns: 0, spend: 0, leads: 0, converted: 0, revenue: 0, cpl: 0, cpa: 0, roi: 0 },
+    radio: { campaigns: 0, spend: 0, leads: 0, converted: 0, revenue: 0, cpl: 0, cpa: 0, roi: 0 },
+    facebook: { campaigns: 0, spend: 0, leads: 0, converted: 0, revenue: 0, cpl: 0, cpa: 0, roi: 0 },
+    google: { campaigns: 0, spend: 0, leads: 0, converted: 0, revenue: 0, cpl: 0, cpa: 0, roi: 0 },
+    instagram: { campaigns: 0, spend: 0, leads: 0, converted: 0, revenue: 0, cpl: 0, cpa: 0, roi: 0 },
+    direct_mail: { campaigns: 0, spend: 0, leads: 0, converted: 0, revenue: 0, cpl: 0, cpa: 0, roi: 0 },
+    podcast: { campaigns: 0, spend: 0, leads: 0, converted: 0, revenue: 0, cpl: 0, cpa: 0, roi: 0 },
+    trade_show: { campaigns: 0, spend: 0, leads: 0, converted: 0, revenue: 0, cpl: 0, cpa: 0, roi: 0 },
+    email: { campaigns: 0, spend: 0, leads: 0, converted: 0, revenue: 0, cpl: 0, cpa: 0, roi: 0 },
+    youtube: { campaigns: 0, spend: 0, leads: 0, converted: 0, revenue: 0, cpl: 0, cpa: 0, roi: 0 },
+  };
+  for (const c of CAMPAIGNS) {
+    byChannel[c.channel].campaigns++;
+    byChannel[c.channel].spend += c.totalSpend;
+    byChannel[c.channel].leads += c.leads;
+    byChannel[c.channel].converted += c.convertedToSale;
+    byChannel[c.channel].revenue += c.attributableRevenue;
+  }
+  for (const k of Object.keys(byChannel) as CampaignChannel[]) {
+    const v = byChannel[k];
+    v.cpl = v.leads > 0 ? Math.round(v.spend / v.leads) : 0;
+    v.cpa = v.converted > 0 ? Math.round(v.spend / v.converted) : 0;
+    v.roi = v.spend > 0 ? +(v.revenue / v.spend).toFixed(2) : 0;
+  }
+  return Object.entries(byChannel)
+    .map(([channel, v]) => ({ channel: channel as CampaignChannel, ...v }))
+    .filter((v) => v.campaigns > 0)
+    .sort((a, b) => b.spend - a.spend);
+}
+
+export function recentRoutedLeads(limit = 15) {
+  return ROUTED_LEADS.slice(0, limit);
+}
+
+export function dealerLeadPerformance(n = 10) {
+  const byDealer: Record<string, { dealer: Dealer; routed: number; contacted: number; converted: number; avgTimeToContact: number }> = {};
+  for (const l of ROUTED_LEADS) {
+    const d = DEALERS.find((x) => x.id === l.dealerId);
+    if (!d) continue;
+    if (!byDealer[l.dealerId])
+      byDealer[l.dealerId] = { dealer: d, routed: 0, contacted: 0, converted: 0, avgTimeToContact: 0 };
+    byDealer[l.dealerId].routed++;
+    if (l.timeToContactMinutes !== undefined) {
+      byDealer[l.dealerId].contacted++;
+      byDealer[l.dealerId].avgTimeToContact += l.timeToContactMinutes;
+    }
+    if (l.status === "converted") byDealer[l.dealerId].converted++;
+  }
+  return Object.values(byDealer)
+    .map((x) => ({
+      ...x,
+      avgTimeToContact: x.contacted > 0 ? Math.round(x.avgTimeToContact / x.contacted) : 0,
+      conversionRate: x.routed > 0 ? +((x.converted / x.routed) * 100).toFixed(1) : 0,
+    }))
+    .sort((a, b) => b.converted - a.converted || b.routed - a.routed)
+    .slice(0, n);
+}
+
 export function orderModelMix() {
   const mix: Record<ModelLine, { units: number; value: number }> = {
     "Michael Phelps Legend": { units: 0, value: 0 },
