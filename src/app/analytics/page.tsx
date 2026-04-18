@@ -8,6 +8,10 @@ import { formatCurrency } from "@/lib/utils";
 import AppShell from "@/components/layout/AppShell";
 import { AppHeader } from "@/components/ui/AppHeader";
 import { KpiCard } from "@/components/ui/KpiCard";
+import { AnalyticsTrendChart } from "@/components/analytics/AnalyticsTrendChart";
+import { RevenueBreakdownDonut } from "@/components/analytics/RevenueBreakdownDonut";
+import { RepLeaderboardBars } from "@/components/analytics/RepLeaderboardBars";
+import { ShowsBarChart } from "@/components/analytics/ShowsBarChart";
 
 // ── Period helpers ────────────────────────────────────────────────────────────
 
@@ -322,6 +326,80 @@ export default async function AnalyticsPage({
     return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
   }
 
+  // ── Chart data ─────────────────────────────────────────────────────────────
+  // Trend data: bucket rows by day for the selected period
+  const trendBucketSize = period === "year" || period === "all" ? "month" : "day";
+  const trendMap = new Map<string, { revenue: number; deposits: number; contracts: number }>();
+
+  const trendStart = (() => {
+    if (range.gte) return new Date(range.gte);
+    // For "all" period, use earliest row date or 6 months ago as fallback
+    const earliest = rows.reduce<Date | null>((min, r) => {
+      const d = new Date(r.created_at);
+      return !min || d < min ? d : min;
+    }, null);
+    return earliest ?? new Date(Date.now() - 180 * 86400000);
+  })();
+  const trendEnd = range.lte ? new Date(range.lte) : new Date();
+
+  // Seed empty buckets
+  const cursor = new Date(trendStart);
+  if (trendBucketSize === "day") {
+    cursor.setHours(0, 0, 0, 0);
+    while (cursor <= trendEnd) {
+      const key = cursor.toISOString().split("T")[0];
+      trendMap.set(key, { revenue: 0, deposits: 0, contracts: 0 });
+      cursor.setDate(cursor.getDate() + 1);
+    }
+  } else {
+    cursor.setDate(1);
+    cursor.setHours(0, 0, 0, 0);
+    while (cursor <= trendEnd) {
+      const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`;
+      trendMap.set(key, { revenue: 0, deposits: 0, contracts: 0 });
+      cursor.setMonth(cursor.getMonth() + 1);
+    }
+  }
+
+  for (const r of rows) {
+    const d = new Date(r.created_at);
+    const key = trendBucketSize === "day"
+      ? d.toISOString().split("T")[0]
+      : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    if (!trendMap.has(key)) continue;
+    const b = trendMap.get(key)!;
+    b.revenue += r.total ?? 0;
+    b.deposits += r.deposit_paid ?? 0;
+    b.contracts += 1;
+  }
+
+  const trendData = Array.from(trendMap.entries()).map(([key, vals]) => {
+    const label = trendBucketSize === "day"
+      ? new Date(key + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })
+      : new Date(key + "-01T00:00:00").toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+    return { date: key, label, ...vals };
+  });
+
+  // Breakdown donut data
+  const breakdownData = [
+    { name: "Confirmed", value: confirmedRevenue, color: "#00929C", count: contractCount },
+    { name: "Contingent", value: contingentRevenue, color: "#f59e0b", count: contingentCount },
+  ].filter((d) => d.value > 0);
+
+  // Rep leaderboard chart data
+  const repChartData = reps.slice(0, 8).map((r) => ({
+    name: r.name,
+    revenue: r.revenue,
+    count: r.count,
+  }));
+
+  // Shows chart data
+  const showsChartData = shows.slice(0, 6).map((s) => ({
+    name: s.name,
+    revenue: s.revenue,
+    count: s.count,
+  }));
+
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <AppShell role={profile?.role} userName={(profile as any)?.full_name} orgPerms={orgPerms}>
@@ -392,10 +470,26 @@ export default async function AnalyticsPage({
           />
         </div>
 
+        {/* Revenue Trend Chart */}
+        <Card id="trend" className="scroll-mt-32">
+          <CardHeader className="pb-2">
+            <div className="flex items-baseline justify-between gap-3">
+              <CardTitle className="text-base">Revenue Trend</CardTitle>
+              <p className="text-xs text-slate-500">
+                {trendBucketSize === "day" ? "Daily" : "Monthly"} · {PERIOD_LABELS[period]}
+              </p>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <AnalyticsTrendChart data={trendData} period={period} />
+          </CardContent>
+        </Card>
+
         {/* Section jump nav — scrolls to anchors */}
         <nav className="sticky top-16 z-[5] -mx-5 px-5 py-3 bg-slate-50/90 backdrop-blur border-b border-slate-200">
           <div className="flex gap-1 overflow-x-auto scrollbar-hide text-xs">
             {[
+              { href: "#trend", label: "Trend" },
               { href: "#breakdown", label: "Revenue" },
               { href: "#leaderboard", label: "Leaderboard" },
               { href: "#shows", label: "Shows" },
@@ -419,7 +513,9 @@ export default async function AnalyticsPage({
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Revenue Breakdown</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2 text-sm">
+          <CardContent className="space-y-4">
+            <RevenueBreakdownDonut data={breakdownData} total={totalRevenue} />
+            <div className="pt-4 border-t border-slate-100 space-y-2 text-sm">
             <div className="flex justify-between items-center py-1 border-b border-slate-100">
               <span className="text-slate-600">Confirmed Contracts ({contractCount})</span>
               <span className="font-semibold text-[#00929C]">{formatCurrency(confirmedRevenue)}</span>
@@ -432,20 +528,30 @@ export default async function AnalyticsPage({
               <span className="text-slate-900">Total Gross Revenue</span>
               <span className="text-slate-900">{formatCurrency(totalRevenue)}</span>
             </div>
+            </div>
           </CardContent>
         </Card>
 
         {/* ── Sales Rep Leaderboard ── */}
         <Card id="leaderboard" className="scroll-mt-32">
           <CardHeader className="pb-3">
-            <CardTitle className="text-lg">Sales Rep Leaderboard</CardTitle>
+            <div className="flex items-baseline justify-between gap-3">
+              <CardTitle className="text-lg">Sales Rep Leaderboard</CardTitle>
+              {reps.length > 0 && (
+                <p className="text-xs text-slate-500">Top {Math.min(8, reps.length)} by revenue</p>
+              )}
+            </div>
           </CardHeader>
           {reps.length === 0 ? (
             <CardContent>
               <p className="text-sm text-slate-400 text-center py-4">No data for this period.</p>
             </CardContent>
           ) : (
-            <CardContent className="p-0">
+            <>
+              <CardContent className="pt-0 pb-4">
+                <RepLeaderboardBars data={repChartData} />
+              </CardContent>
+              <CardContent className="p-0 border-t border-slate-100">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
@@ -520,20 +626,30 @@ export default async function AnalyticsPage({
                 </table>
               </div>
             </CardContent>
+            </>
           )}
         </Card>
 
         {/* ── Shows Breakdown ── */}
         <Card id="shows" className="scroll-mt-32">
           <CardHeader className="pb-3">
-            <CardTitle className="text-lg">Shows</CardTitle>
+            <div className="flex items-baseline justify-between gap-3">
+              <CardTitle className="text-lg">Shows</CardTitle>
+              {shows.length > 0 && (
+                <p className="text-xs text-slate-500">Top {Math.min(6, shows.length)} by revenue</p>
+              )}
+            </div>
           </CardHeader>
           {shows.length === 0 ? (
             <CardContent>
               <p className="text-sm text-slate-400 text-center py-4">No shows for this period.</p>
             </CardContent>
           ) : (
-            <CardContent className="p-0">
+            <>
+              <CardContent className="pt-0 pb-4">
+                <ShowsBarChart data={showsChartData} />
+              </CardContent>
+              <CardContent className="p-0 border-t border-slate-100">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
@@ -578,6 +694,7 @@ export default async function AnalyticsPage({
                 </table>
               </div>
             </CardContent>
+            </>
           )}
         </Card>
 
