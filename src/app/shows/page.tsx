@@ -95,20 +95,21 @@ export default async function ShowsPage() {
                               {formatDate(show.start_date)}
                               {show.start_date !== show.end_date && ` – ${formatDate(show.end_date)}`}
                             </p>
-                            {canEditShows && (
-                              <Link
-                                href={`/admin/shows/${show.id}`}
-                                onClick={(e) => e.stopPropagation()}
-                                className="text-xs text-[#00929C] underline mt-1 block"
-                              >
-                                Edit / QBO
-                              </Link>
-                            )}
+                            {/* Spacer so the absolute Edit link overlays here without overlapping content below */}
+                            {canEditShows && <span className="text-xs invisible block">Edit / QBO</span>}
                           </div>
                         </div>
                       </CardContent>
                     </Card>
                   </Link>
+                  {canEditShows && (
+                    <Link
+                      href={`/admin/shows/${show.id}`}
+                      className="absolute bottom-4 right-4 text-xs text-[#00929C] underline hover:text-[#007a82] transition-colors"
+                    >
+                      Edit / QBO
+                    </Link>
+                  )}
                 </div>
               ))}
             </div>
