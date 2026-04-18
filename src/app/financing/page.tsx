@@ -8,6 +8,7 @@ import { AppHeader } from "@/components/ui/AppHeader";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { LenderMixChart } from "@/components/financing/LenderMixChart";
 import { Badge } from "@/components/ui/badge";
 
 const STATUS_COLORS: Record<string, "default" | "success" | "warning" | "destructive" | "secondary"> = {
@@ -97,6 +98,24 @@ export default async function FinancingPage() {
               />
             ))}
         </div>
+
+        {/* Lender mix donut + bars */}
+        {(() => {
+          const LENDER_PALETTE = ["#1d4ed8", "#0891B2", "#00929C", "#7C3AED", "#DB2777", "#059669", "#D97706", "#0EA5E9"];
+          const lenderData = Object.entries(byLender)
+            .sort((a, b) => b[1].total - a[1].total)
+            .map(([name, stats], i) => ({
+              name,
+              value: stats.total,
+              count: stats.count,
+              color: LENDER_PALETTE[i % LENDER_PALETTE.length],
+            }));
+          return (
+            <SectionCard title="Lender Mix" subtitle="Share of financed volume by partner">
+              <LenderMixChart data={lenderData} total={totalFinanced} />
+            </SectionCard>
+          );
+        })()}
 
         {/* Financed contracts list */}
         <SectionCard

@@ -9,6 +9,8 @@ import SalesByEventList from "@/components/bookkeeper/SalesByEventList";
 import CancellationRefundTracker from "@/components/bookkeeper/CancellationRefundTracker";
 import AppShell from "@/components/layout/AppShell";
 import { AppHeader } from "@/components/ui/AppHeader";
+import { SectionCard } from "@/components/ui/SectionCard";
+import { OutstandingByAgeChart } from "@/components/bookkeeper/OutstandingByAgeChart";
 
 export default async function BookkeeperPage() {
   const supabase = await createClient();
@@ -97,6 +99,23 @@ export default async function BookkeeperPage() {
     ["deposit_collected", "in_production", "ready_for_delivery", "signed", "pending_signature"].includes(c.status)
   ).length;
 
+  // ── Outstanding by age (AR aging) ──
+  const ageNow = new Date();
+  const ageBuckets: { label: string; balance: number; count: number; color: string; max: number }[] = [
+    { label: "0–30 days", balance: 0, count: 0, color: "#10b981", max: 30 },
+    { label: "31–60",     balance: 0, count: 0, color: "#f59e0b", max: 60 },
+    { label: "61–90",     balance: 0, count: 0, color: "#f97316", max: 90 },
+    { label: "90+",       balance: 0, count: 0, color: "#dc2626", max: Infinity },
+  ];
+  for (const c of contracts) {
+    if (!c.balance_due || c.balance_due <= 0) continue;
+    const days = Math.floor((ageNow.getTime() - new Date(c.created_at).getTime()) / 86400000);
+    const bucket = ageBuckets.find((b) => days <= b.max)!;
+    bucket.balance += c.balance_due;
+    bucket.count += 1;
+  }
+  const agingData = ageBuckets.map(({ label, balance, count, color }) => ({ label, balance, count, color }));
+
   // ── Tax cert alert counts ──
   const now = new Date();
   const taxTracked = contracts.filter((c) => {
@@ -136,6 +155,11 @@ export default async function BookkeeperPage() {
       />
 
       <main className="px-4 py-5 space-y-4 max-w-4xl mx-auto pb-28">
+
+        {/* ── AR Aging chart ── */}
+        <SectionCard title="Outstanding Balances by Age" subtitle="Accounts receivable aging buckets">
+          <OutstandingByAgeChart data={agingData} />
+        </SectionCard>
 
         {/* ── Urgent: Tax refund needed (cert received, refund not yet issued) ── */}
         {hasMigration && refundNeededCerts.length > 0 && (

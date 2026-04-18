@@ -6,6 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AppHeader } from "@/components/ui/AppHeader";
+import { ShowDailyTrendChart } from "@/components/shows/ShowDailyTrendChart";
+import { SectionCard } from "@/components/ui/SectionCard";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 const STATUS_COLORS: Record<string, "default" | "success" | "warning" | "destructive" | "secondary"> = {
@@ -43,6 +45,38 @@ export default async function ShowDetailPage({
 
   const totalRevenue = contracts?.reduce((s, c) => s + (c.total ?? 0), 0) ?? 0;
   const totalDeposits = contracts?.reduce((s, c) => s + (c.deposit_paid ?? 0), 0) ?? 0;
+
+  // Daily trend — bucket contracts by day between show start and end (capped at today)
+  const trendMap = new Map<string, { revenue: number; contracts: number }>();
+  const showStartDate = new Date(show.start_date + "T00:00:00");
+  const showEndDate = new Date(show.end_date + "T00:00:00");
+  const todayISO = new Date().toISOString().split("T")[0];
+  const todayDate = new Date(todayISO + "T00:00:00");
+  const cursor = new Date(showStartDate);
+  while (cursor <= showEndDate) {
+    const key = cursor.toISOString().split("T")[0];
+    trendMap.set(key, { revenue: 0, contracts: 0 });
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  for (const c of contracts ?? []) {
+    const key = c.created_at?.split("T")[0];
+    if (!key || !trendMap.has(key)) continue;
+    const b = trendMap.get(key)!;
+    b.revenue += c.total ?? 0;
+    b.contracts += 1;
+  }
+  const trendData = Array.from(trendMap.entries()).map(([date, vals]) => {
+    const d = new Date(date + "T00:00:00");
+    return {
+      date,
+      label: d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }),
+      isToday: date === todayISO,
+      revenue: vals.revenue,
+      contracts: vals.contracts,
+    };
+  });
+  // Only render trend if show started by today or earlier
+  const showTrendChart = showStartDate <= todayDate;
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -85,6 +119,16 @@ export default async function ShowDetailPage({
             </CardContent>
           </Card>
         </div>
+
+        {/* Daily trend chart */}
+        {showTrendChart && (
+          <SectionCard
+            title="Daily Revenue"
+            subtitle={`${trendData.length} day${trendData.length === 1 ? "" : "s"} · today highlighted in teal`}
+          >
+            <ShowDailyTrendChart data={trendData} />
+          </SectionCard>
+        )}
 
         {/* CTAs */}
         <div className="grid grid-cols-2 gap-3">
