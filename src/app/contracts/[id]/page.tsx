@@ -425,23 +425,33 @@ export default async function ContractDetailPage({
             </CardHeader>
             <CardContent className="pt-0">
               {(() => {
-                const dd = contract.delivery_diagram as { scenario_id?: number; label?: string; fields?: Record<string, string> };
-                const fieldEntries = dd.fields ? Object.entries(dd.fields).filter(([, v]) => v) : [];
+                // Normalize to array: legacy single-object contracts stored as {...}, new ones as [{...}]
+                type DiagramItem = { scenario_id?: number; label?: string; fields?: Record<string, string> };
+                const raw = contract.delivery_diagram as DiagramItem | DiagramItem[];
+                const items: DiagramItem[] = Array.isArray(raw) ? raw : [raw];
+                if (items.length === 0) return <p className="text-sm text-slate-400">No scenarios selected</p>;
                 return (
-                  <div className="space-y-1.5">
-                    <p className="font-semibold text-slate-900">{dd.label ?? "—"}</p>
-                    {fieldEntries.length > 0 ? (
-                      <ul className="text-sm text-slate-600 space-y-0.5">
-                        {fieldEntries.map(([k, v]) => (
-                          <li key={k}>
-                            <span className="capitalize text-slate-500">{k.replace(/_/g, " ")}:</span>{" "}
-                            <span className="font-medium">{v}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="text-sm text-slate-400">No measurements recorded</p>
-                    )}
+                  <div className="space-y-3">
+                    {items.map((dd, idx) => {
+                      const fieldEntries = dd.fields ? Object.entries(dd.fields).filter(([, v]) => v) : [];
+                      return (
+                        <div key={`${dd.scenario_id ?? idx}`} className="space-y-1.5">
+                          <p className="font-semibold text-slate-900">{dd.label ?? "—"}</p>
+                          {fieldEntries.length > 0 ? (
+                            <ul className="text-sm text-slate-600 space-y-0.5">
+                              {fieldEntries.map(([k, v]) => (
+                                <li key={k}>
+                                  <span className="capitalize text-slate-500">{k.replace(/_/g, " ")}:</span>{" "}
+                                  <span className="font-medium">{v}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="text-sm text-slate-400">No measurements recorded</p>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 );
               })()}

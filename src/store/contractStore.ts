@@ -51,12 +51,14 @@ export interface ContractDraft {
   // Notes
   notes?: string;
 
-  // Delivery diagram (optional — set in Step 6 before signing)
-  delivery_diagram?: {
+  // Delivery diagrams (optional — set in Step 6 before signing)
+  // Stored as an array to support multiple scenarios (e.g., Up Steps + Through Door).
+  // Legacy single-object shape is tolerated on read by consumers.
+  delivery_diagram?: Array<{
     scenario_id: number;
     label: string;
     fields: Record<string, string>;
-  };
+  }>;
 
   // Set after contract is created at sign step
   created_contract_id?: string;

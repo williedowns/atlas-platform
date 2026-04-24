@@ -309,27 +309,42 @@ const SCENARIOS: Scenario[] = [
 export default function Step6Delivery({ onNext }: Step6DeliveryProps) {
   const { setDeliveryDiagram } = useContractStore();
 
-  const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
+  // Multi-select: array of scenario IDs + per-scenario field values keyed by scenario ID
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [fieldValuesByScenario, setFieldValuesByScenario] = useState<Record<number, Record<string, string>>>({});
 
-  const selectedScenario = SCENARIOS.find((s) => s.id === selectedId) ?? null;
+  const selectedScenarios = SCENARIOS.filter((s) => selectedIds.includes(s.id));
 
-  function handleSelectScenario(id: number) {
-    setSelectedId(id);
-    setFieldValues({}); // clear fields when switching scenario
+  function handleToggleScenario(id: number) {
+    setSelectedIds((prev) => {
+      if (prev.includes(id)) {
+        // Deselect — also clear its field values
+        setFieldValuesByScenario((fv) => {
+          const { [id]: _, ...rest } = fv;
+          return rest;
+        });
+        return prev.filter((x) => x !== id);
+      }
+      return [...prev, id];
+    });
   }
 
-  function handleFieldChange(key: string, value: string) {
-    setFieldValues((prev) => ({ ...prev, [key]: value }));
+  function handleFieldChange(scenarioId: number, key: string, value: string) {
+    setFieldValuesByScenario((prev) => ({
+      ...prev,
+      [scenarioId]: { ...(prev[scenarioId] ?? {}), [key]: value },
+    }));
   }
 
   function handleContinue() {
-    if (!selectedScenario) return;
-    setDeliveryDiagram({
-      scenario_id: selectedScenario.id,
-      label: selectedScenario.label,
-      fields: fieldValues,
-    });
+    if (selectedScenarios.length === 0) return;
+    setDeliveryDiagram(
+      selectedScenarios.map((scenario) => ({
+        scenario_id: scenario.id,
+        label: scenario.label,
+        fields: fieldValuesByScenario[scenario.id] ?? {},
+      }))
+    );
     onNext();
   }
 
@@ -343,19 +358,19 @@ export default function Step6Delivery({ onNext }: Step6DeliveryProps) {
         <p className="text-[10px] uppercase tracking-widest text-[#00929C] font-bold">Step 6 of 8</p>
         <h2 className="text-2xl font-black text-slate-900 mt-1">Delivery Setup</h2>
         <p className="text-sm text-slate-500 mt-1">
-          Pick the scenario that matches where the spa is going.
+          Pick all scenarios that apply to this delivery. You can select more than one.
         </p>
       </div>
 
       {/* Scenario grid */}
       <div className="grid grid-cols-2 gap-3">
         {SCENARIOS.map((scenario) => {
-          const isSelected = selectedId === scenario.id;
+          const isSelected = selectedIds.includes(scenario.id);
           return (
             <button
               key={scenario.id}
               type="button"
-              onClick={() => handleSelectScenario(scenario.id)}
+              onClick={() => handleToggleScenario(scenario.id)}
               className={`flex flex-col items-center rounded-2xl border-2 p-3 text-left transition-all ${
                 isSelected
                   ? "border-[#00929C] bg-[#00929C]/5 shadow-md"
@@ -388,13 +403,22 @@ export default function Step6Delivery({ onNext }: Step6DeliveryProps) {
         })}
       </div>
 
-      {/* Fill-in fields for selected scenario */}
-      {selectedScenario?.fields && selectedScenario.fields.length > 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-3">
+      {/* Selection summary — shown when 1+ scenarios chosen */}
+      {selectedScenarios.length > 0 && (
+        <div className="text-xs text-slate-500">
+          {selectedScenarios.length === 1
+            ? "1 scenario selected"
+            : `${selectedScenarios.length} scenarios selected: ${selectedScenarios.map((s) => s.label).join(", ")}`}
+        </div>
+      )}
+
+      {/* Fill-in fields — one card per selected scenario that has fields */}
+      {selectedScenarios.filter((s) => s.fields && s.fields.length > 0).map((scenario) => (
+        <div key={scenario.id} className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-3">
           <p className="text-sm font-semibold text-amber-800">
-            Additional details for <span className="text-[#00929C]">{selectedScenario.label}</span>
+            Additional details for <span className="text-[#00929C]">{scenario.label}</span>
           </p>
-          {selectedScenario.fields.map((field) => (
+          {scenario.fields!.map((field) => (
             <div key={field.key}>
               <label className="block text-sm font-medium text-slate-700 mb-1">
                 {field.label}
@@ -404,21 +428,21 @@ export default function Step6Delivery({ onNext }: Step6DeliveryProps) {
               )}
               <input
                 type="text"
-                value={fieldValues[field.key] ?? ""}
-                onChange={(e) => handleFieldChange(field.key, e.target.value)}
+                value={fieldValuesByScenario[scenario.id]?.[field.key] ?? ""}
+                onChange={(e) => handleFieldChange(scenario.id, field.key, e.target.value)}
                 placeholder={field.placeholder}
                 className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#00929C]/40"
               />
             </div>
           ))}
         </div>
-      )}
+      ))}
 
       {/* Action buttons */}
       <div className="space-y-2 pt-2">
         <Button
           onClick={handleContinue}
-          disabled={selectedId === null}
+          disabled={selectedIds.length === 0}
           size="lg"
           className="w-full"
         >

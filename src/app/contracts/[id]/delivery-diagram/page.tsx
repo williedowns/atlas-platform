@@ -188,22 +188,23 @@ export default async function DeliveryDiagramPage({
 
   if (!contract) notFound();
 
-  const dd = contract.delivery_diagram as {
+  // Normalize to array: legacy contracts stored a single object; new ones store an array.
+  type DiagramItem = {
     scenario_id?: number;
     label?: string;
     fields?: Record<string, string>;
-  } | null;
+  };
+  const rawDd = contract.delivery_diagram as DiagramItem | DiagramItem[] | null;
+  const diagrams: DiagramItem[] = rawDd
+    ? Array.isArray(rawDd)
+      ? rawDd
+      : [rawDd]
+    : [];
 
   const customer = Array.isArray(contract.customer) ? contract.customer[0] : contract.customer;
   const customerName = customer
     ? `${customer.first_name ?? ""} ${customer.last_name ?? ""}`.trim()
     : "—";
-
-  const fieldEntries = dd?.fields
-    ? Object.entries(dd.fields).filter(([, v]) => v)
-    : [];
-
-  const ScenarioSvg = dd?.scenario_id ? SCENARIO_SVGS[dd.scenario_id] : null;
 
   return (
     <div className="min-h-screen bg-white print:bg-white">
@@ -223,38 +224,51 @@ export default async function DeliveryDiagramPage({
       </div>
 
       <div className="px-8 py-8 max-w-2xl mx-auto print:px-6 print:py-6">
-        {dd && ScenarioSvg ? (
+        {diagrams.length > 0 ? (
           <>
-            {/* Scenario label */}
-            <div className="mb-6 text-center">
-              <span className="inline-block bg-[#00929C]/10 text-[#00929C] font-bold text-lg px-6 py-2 rounded-full">
-                {dd.label}
-              </span>
-            </div>
+            {diagrams.map((dd, idx) => {
+              const fieldEntries = dd.fields
+                ? Object.entries(dd.fields).filter(([, v]) => v)
+                : [];
+              const ScenarioSvg = dd.scenario_id ? SCENARIO_SVGS[dd.scenario_id] : null;
+              const isLast = idx === diagrams.length - 1;
+              return (
+                <div key={`${dd.scenario_id ?? idx}`} className={isLast ? "" : "mb-10 pb-10 border-b border-slate-200 print:break-after-page"}>
+                  {/* Scenario label */}
+                  <div className="mb-6 text-center">
+                    <span className="inline-block bg-[#00929C]/10 text-[#00929C] font-bold text-lg px-6 py-2 rounded-full">
+                      {diagrams.length > 1 ? `${idx + 1}. ` : ""}{dd.label}
+                    </span>
+                  </div>
 
-            {/* SVG illustration */}
-            <div className="border border-slate-200 rounded-2xl p-6 bg-slate-50 mb-6">
-              {ScenarioSvg}
-            </div>
-
-            {/* Fill-in field values */}
-            {fieldEntries.length > 0 && (
-              <div className="border border-slate-200 rounded-2xl p-6 mb-6">
-                <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">
-                  Measurements &amp; Details
-                </h2>
-                <dl className="space-y-2">
-                  {fieldEntries.map(([key, value]) => (
-                    <div key={key} className="flex justify-between items-baseline">
-                      <dt className="text-sm text-slate-600 capitalize">{key.replace(/_/g, " ")}</dt>
-                      <dd className="text-base font-semibold text-slate-900 ml-4">{value}</dd>
+                  {/* SVG illustration */}
+                  {ScenarioSvg && (
+                    <div className="border border-slate-200 rounded-2xl p-6 bg-slate-50 mb-6">
+                      {ScenarioSvg}
                     </div>
-                  ))}
-                </dl>
-              </div>
-            )}
+                  )}
 
-            {/* Buyer signature line */}
+                  {/* Fill-in field values */}
+                  {fieldEntries.length > 0 && (
+                    <div className="border border-slate-200 rounded-2xl p-6 mb-6">
+                      <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">
+                        Measurements &amp; Details
+                      </h2>
+                      <dl className="space-y-2">
+                        {fieldEntries.map(([key, value]) => (
+                          <div key={key} className="flex justify-between items-baseline">
+                            <dt className="text-sm text-slate-600 capitalize">{key.replace(/_/g, " ")}</dt>
+                            <dd className="text-base font-semibold text-slate-900 ml-4">{value}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* Buyer signature line — single signature covers all selected scenarios */}
             <div className="border-t border-slate-300 pt-6 mt-8 grid grid-cols-2 gap-8">
               <div>
                 <div className="border-b border-slate-400 h-10 mb-1" />
