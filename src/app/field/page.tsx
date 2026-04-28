@@ -107,7 +107,7 @@ export default async function FieldPage({
                     const customerName = customer ? `${customer.first_name} ${customer.last_name}` : "Unknown Customer";
                     return (
                       <li key={order.id}>
-                        <Link href={contractId ? `/contracts/${contractId}/delivery-diagram` : "#"}
+                        <Link href={`/field/delivery/${order.id}`}
                           className="block bg-white rounded-2xl border border-slate-200 p-4 hover:border-[#00929C]/50 hover:shadow-sm transition-all">
                           <div className="flex items-start justify-between gap-3">
                             <div className="flex-1 min-w-0">
@@ -144,7 +144,7 @@ export default async function FieldPage({
                     const customerName = customer ? `${customer.first_name} ${customer.last_name}` : "Unknown Customer";
                     return (
                       <li key={order.id}>
-                        <Link href={contractId ? `/contracts/${contractId}/delivery-diagram` : "#"}
+                        <Link href={`/field/delivery/${order.id}`}
                           className="flex items-center justify-between bg-white rounded-xl border border-slate-200 px-4 py-3 hover:border-slate-300 transition-colors">
                           <div>
                             <p className="text-sm font-medium text-slate-700">{customerName}</p>
