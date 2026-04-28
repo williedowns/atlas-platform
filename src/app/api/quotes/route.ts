@@ -25,6 +25,10 @@ export async function POST(req: Request) {
     total,
     deposit_amount,
     notes,
+    external_notes,
+    needs_permit,
+    needs_hoa,
+    permit_jurisdiction,
   } = body;
 
   // Ensure customer exists in DB
@@ -81,6 +85,12 @@ export async function POST(req: Request) {
       deposit_paid: 0,
       balance_due: balanceDue,
       notes,
+      external_notes: external_notes ?? null,
+      needs_permit: !!needs_permit,
+      needs_hoa: !!needs_hoa,
+      permit_jurisdiction: permit_jurisdiction ?? null,
+      permit_status: needs_permit ? "pending" : null,
+      hoa_status: needs_hoa ? "pending" : null,
     })
     .select()
     .single();

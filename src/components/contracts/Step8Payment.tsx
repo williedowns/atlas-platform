@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useContractStore } from "@/store/contractStore";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,8 @@ type OverallState = "pending" | "processing" | "success" | "error";
 const METHOD_LABEL: Record<string, string> = {
   credit_card: "Credit Card",
   debit_card: "Debit Card",
-  ach: "ACH / Check",
+  ach: "ACH",
+  check: "Check",
   cash: "Cash",
   financing: "Financing (GreenSky / WF)",
 };
@@ -60,6 +61,15 @@ export default function Step8Payment() {
       ? Math.round(currentSplit.amount * draft.surcharge_rate * 100) / 100
       : 0;
   const totalToCharge = (currentSplit?.amount ?? 0) + surchargeAmount;
+
+  // Pre-fill ACH form from the split if collected at Step5Review.
+  useEffect(() => {
+    if (!isAch || !currentSplit) return;
+    if (currentSplit.ach_routing_number && !routingNumber) setRoutingNumber(currentSplit.ach_routing_number);
+    if (currentSplit.ach_account_number && !accountNumber) setAccountNumber(currentSplit.ach_account_number);
+    if (currentSplit.ach_account_holder_name && !accountName) setAccountName(currentSplit.ach_account_holder_name);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSplitIdx, isAch]);
 
   const handleExpiryChange = (val: string) => {
     const digits = val.replace(/\D/g, "").slice(0, 4);
@@ -111,6 +121,7 @@ export default function Step8Payment() {
         account_holder_name: accountName,
       };
     } else {
+      // cash, check, financing, etc. — record only, no charge processing
       endpoint = "/api/payments/record-manual";
       body = {
         contract_id: cId,

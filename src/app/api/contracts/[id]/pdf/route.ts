@@ -224,6 +224,32 @@ export async function GET(
     y += 10;
   }
 
+  // ─── Special Instructions / External Notes ───────────────────────────────
+  // External notes only — internal `notes` are staff-only and never printed.
+  const externalNotes = (contract.external_notes ?? "").toString().trim();
+  if (externalNotes.length > 0) {
+    if (y > 240) { doc.addPage(); y = 20; }
+    doc.setDrawColor(220, 220, 220);
+    doc.setLineWidth(0.3);
+    doc.line(14, y, W - 14, y);
+    y += 6;
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(100, 100, 100);
+    doc.text("SPECIAL INSTRUCTIONS / NOTES", 14, y);
+    y += 5;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(0, 0, 0);
+    const noteLines = doc.splitTextToSize(externalNotes, W - 28);
+    for (const line of noteLines) {
+      if (y > 260) { doc.addPage(); y = 20; }
+      doc.text(line, 14, y);
+      y += 4.5;
+    }
+    y += 4;
+  }
+
   // ─── Signature ────────────────────────────────────────────────────────────
   doc.setDrawColor(220, 220, 220);
   doc.setLineWidth(0.3);

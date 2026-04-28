@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { formatCurrency } from "@/lib/utils";
 import type { FinancingProvider, FinancingPlan, ContractFinancing } from "@/types";
+import { LYON_PROJECT_TYPE_LABELS, buildLyonStages, type LyonProjectType } from "@/lib/lyon-stages";
 
 interface Step4FinancingProps {
   onNext: () => void;
@@ -18,11 +19,38 @@ const BLANK_FORM = {
   planId: "",
   approvalNumber: "",
   amount: "",
+  // Foundation-specific
+  foundationTier: "" as "" | "1" | "2" | "3" | "4" | "5",
+  foundationApprovedPct: "",
+  foundationBuydownRate: "",
+  foundationAchRouting: "",
+  foundationAchAccount: "",
+  foundationAchBank: "",
+  foundationAchWaived: false,
+  // Secondary buyer (Foundation typically needs it when 2 signers)
+  secondaryFirstName: "",
+  secondaryLastName: "",
+  secondaryEmail: "",
+  // Wells Fargo
+  wfChargeMode: "charge_now" as "charge_now" | "authorize_future",
+  wfFutureChargeDate: "",
+  // Lyon Financial
+  lyonProjectType: "" as "" | LyonProjectType,
+  lyonFundingFlavor: "lyon_direct" as "lyon_direct" | "lightstream_via_customer",
 };
+
+function isWellsFargoProvider(name: string): boolean {
+  return name.toLowerCase().includes("wells");
+}
 
 /** Foundation Finance runs AFTER the show — financed amount carries to balance due */
 function isFoundationProvider(name: string): boolean {
   return name.toLowerCase().includes("foundation");
+}
+
+/** Lyon Financial — 4-stage funding (deposit + 3 progress draws), funds at sale */
+function isLyonProvider(name: string): boolean {
+  return name.toLowerCase().includes("lyon");
 }
 
 /** GreenSky / Wells Fargo — run at the show, deducted from balance at POS */
@@ -81,6 +109,8 @@ export default function Step4Financing({ onNext }: Step4FinancingProps) {
     if (isNaN(amount) || amount <= 0) return;
 
     const isFoundation = isFoundationProvider(selectedProvider.name);
+    const isWf = isWellsFargoProvider(selectedProvider.name);
+    const isLyon = isLyonProvider(selectedProvider.name);
 
     const entry: ContractFinancing = {
       type: selectedProvider.name === "In-House Financing" ? "in_house" : "third_party",
@@ -90,14 +120,58 @@ export default function Step4Financing({ onNext }: Step4FinancingProps) {
       approval_number: form.approvalNumber || undefined,
       financed_amount: amount,
       deduct_from_balance: !isFoundation,
+      ...(isFoundation && form.foundationTier ? { foundation_tier: parseInt(form.foundationTier, 10) as 1 | 2 | 3 | 4 | 5 } : {}),
+      ...(isFoundation && form.foundationApprovedPct ? { foundation_approved_pct: parseFloat(form.foundationApprovedPct) } : {}),
+      ...(isFoundation && form.foundationBuydownRate ? { foundation_buydown_rate: parseFloat(form.foundationBuydownRate) } : {}),
+      ...(isFoundation && form.foundationAchWaived
+        ? { foundation_ach_waived: true }
+        : isFoundation && (form.foundationAchRouting || form.foundationAchAccount || form.foundationAchBank)
+          ? {
+              foundation_ach_routing: form.foundationAchRouting || undefined,
+              foundation_ach_account: form.foundationAchAccount || undefined,
+              foundation_ach_bank: form.foundationAchBank || undefined,
+            }
+          : {}),
+      ...(isWf ? { wf_charge_mode: form.wfChargeMode } : {}),
+      ...(isWf && form.wfChargeMode === "authorize_future" && form.wfFutureChargeDate
+        ? { wf_future_charge_date: form.wfFutureChargeDate }
+        : {}),
+      ...(form.secondaryEmail
+        ? {
+            secondary_buyer_email: form.secondaryEmail,
+            secondary_buyer_first_name: form.secondaryFirstName || undefined,
+            secondary_buyer_last_name: form.secondaryLastName || undefined,
+          }
+        : {}),
+      ...(isLyon && form.lyonProjectType
+        ? {
+            lyon_project_type: form.lyonProjectType,
+            lyon_funding_flavor: form.lyonFundingFlavor,
+            lyon_stages: buildLyonStages(form.lyonProjectType, amount),
+          }
+        : {}),
     };
     addFinancing(entry);
     setForm(BLANK_FORM);
     setShowForm(false);
   }
 
+  const isFoundationSelected = selectedProvider ? isFoundationProvider(selectedProvider.name) : false;
+  const isWfSelected = selectedProvider ? isWellsFargoProvider(selectedProvider.name) : false;
+  const isLyonSelected = selectedProvider ? isLyonProvider(selectedProvider.name) : false;
+  // Foundation requires 2-signer email when secondary first/last are entered (catch the half-filled case)
+  const foundationSecondaryIncomplete =
+    isFoundationSelected &&
+    !!(form.secondaryFirstName || form.secondaryLastName) &&
+    !form.secondaryEmail;
+  // Lyon requires a project type so we can build the stage template
+  const lyonProjectMissing = isLyonSelected && !form.lyonProjectType;
   const canAdd =
-    !!form.providerId && !!form.planId && parseFloat(form.amount) > 0;
+    !!form.providerId &&
+    !!form.planId &&
+    parseFloat(form.amount) > 0 &&
+    !foundationSecondaryIncomplete &&
+    !lyonProjectMissing;
 
   if (loading) {
     return (
@@ -147,6 +221,51 @@ export default function Step4Financing({ onNext }: Step4FinancingProps) {
                       </p>
                       {entry.approval_number && (
                         <p className="text-xs text-slate-400 mt-0.5">Approval: {entry.approval_number}</p>
+                      )}
+                      {entry.foundation_tier && (
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Tier {entry.foundation_tier}
+                          {entry.foundation_approved_pct ? ` · approved ${entry.foundation_approved_pct}%` : ""}
+                          {entry.foundation_buydown_rate ? ` · buy-down ${entry.foundation_buydown_rate}%` : ""}
+                        </p>
+                      )}
+                      {entry.foundation_ach_waived && (
+                        <p className="text-xs font-semibold text-red-700 mt-0.5">ACH waived</p>
+                      )}
+                      {entry.foundation_ach_routing && entry.foundation_ach_account && (
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          ACH on file · acct ····{entry.foundation_ach_account.slice(-4)}
+                        </p>
+                      )}
+                      {entry.wf_charge_mode === "authorize_future" && (
+                        <p className="text-xs font-semibold text-amber-700 mt-0.5">
+                          Authorize-future · charge {entry.wf_future_charge_date ?? "TBD"}
+                        </p>
+                      )}
+                      {entry.secondary_buyer_email && (
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Co-buyer: {[entry.secondary_buyer_first_name, entry.secondary_buyer_last_name].filter(Boolean).join(" ")} ({entry.secondary_buyer_email})
+                        </p>
+                      )}
+                      {entry.lyon_project_type && (
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          {LYON_PROJECT_TYPE_LABELS[entry.lyon_project_type]}
+                          {entry.lyon_funding_flavor === "lightstream_via_customer" ? " · LightStream/customer" : " · Lyon-direct"}
+                        </p>
+                      )}
+                      {entry.lyon_stages && entry.lyon_stages.length > 0 && (
+                        <ul className="mt-2 space-y-0.5 text-xs">
+                          {entry.lyon_stages.map((s) => (
+                            <li key={s.stage_num} className="flex justify-between">
+                              <span className="text-slate-600">
+                                {s.stage_num}. {s.label}
+                              </span>
+                              <span className="text-slate-700 font-medium">
+                                {formatCurrency(s.expected_amount)}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
                       )}
                       <p className="text-base font-bold text-[#00929C] mt-1">
                         {formatCurrency(entry.financed_amount)}
@@ -321,6 +440,264 @@ export default function Step4Financing({ onNext }: Step4FinancingProps) {
                   onChange={(e) => setForm({ ...form, approvalNumber: e.target.value })}
                 />
               </>
+            )}
+
+            {/* ── Foundation Finance specifics ─────────────────────────────── */}
+            {isFoundationSelected && form.planId && (
+              <div className="space-y-3 rounded-xl border-2 border-amber-300 bg-amber-50 p-3">
+                <p className="text-xs font-bold uppercase tracking-wide text-amber-800">
+                  Foundation Finance — Manual Entry
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs font-medium text-slate-600 block mb-1">Tier</label>
+                    <select
+                      value={form.foundationTier}
+                      onChange={(e) => setForm({ ...form, foundationTier: e.target.value as typeof form.foundationTier })}
+                      className="h-12 w-full rounded-lg border border-slate-300 bg-white px-3 text-base focus:outline-none focus:ring-2 focus:ring-amber-400 touch-manipulation"
+                    >
+                      <option value="">Select…</option>
+                      <option value="1">Tier 1 (11.9%)</option>
+                      <option value="2">Tier 2 (13.5%)</option>
+                      <option value="3">Tier 3 (15.99%)</option>
+                      <option value="4">Tier 4 (17.99%)</option>
+                      <option value="5">Tier 5 (8-yr max, $30K cap)</option>
+                    </select>
+                  </div>
+                  <Input
+                    label="Approved %"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    placeholder="92, 95, 100"
+                    value={form.foundationApprovedPct}
+                    onChange={(e) => setForm({ ...form, foundationApprovedPct: e.target.value })}
+                  />
+                </div>
+                <Input
+                  label="Buy-down Rate % (optional)"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="e.g. 15.99 if bought down from 17.99"
+                  value={form.foundationBuydownRate}
+                  onChange={(e) => setForm({ ...form, foundationBuydownRate: e.target.value })}
+                />
+
+                {/* ACH waive toggle */}
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, foundationAchWaived: !form.foundationAchWaived })}
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg border-2 text-left transition-all touch-manipulation ${
+                    form.foundationAchWaived ? "border-red-300 bg-red-50" : "border-slate-200 bg-white"
+                  }`}
+                >
+                  <div className={`w-10 h-6 rounded-full flex items-center px-1 transition-all flex-shrink-0 ${
+                    form.foundationAchWaived ? "bg-red-500 justify-end" : "bg-slate-200 justify-start"
+                  }`}>
+                    <div className="w-4 h-4 rounded-full bg-white shadow-sm" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-slate-900">Waive ACH</p>
+                    <p className="text-xs text-slate-500">
+                      {form.foundationAchWaived
+                        ? "Salesperson absorbs up to $250 from commission"
+                        : "Collect ACH routing & account below"}
+                    </p>
+                  </div>
+                </button>
+
+                {!form.foundationAchWaived && (
+                  <div className="space-y-2">
+                    <Input
+                      label="ACH Routing Number"
+                      type="text"
+                      inputMode="numeric"
+                      value={form.foundationAchRouting}
+                      onChange={(e) => setForm({ ...form, foundationAchRouting: e.target.value.replace(/\D/g, "").slice(0, 9) })}
+                      placeholder="9 digits"
+                    />
+                    <Input
+                      label="ACH Account Number"
+                      type="text"
+                      inputMode="numeric"
+                      value={form.foundationAchAccount}
+                      onChange={(e) => setForm({ ...form, foundationAchAccount: e.target.value.replace(/\D/g, "") })}
+                      placeholder="Account number"
+                    />
+                    <Input
+                      label="Bank Name"
+                      type="text"
+                      value={form.foundationAchBank}
+                      onChange={(e) => setForm({ ...form, foundationAchBank: e.target.value })}
+                      placeholder="Bank name"
+                    />
+                  </div>
+                )}
+
+                {/* Secondary buyer block */}
+                <div className="pt-2 border-t border-amber-200">
+                  <p className="text-xs font-semibold text-slate-700 mb-1">
+                    Co-buyer (optional, but Foundation needs a unique email if 2 signers)
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input
+                      label="First Name"
+                      type="text"
+                      value={form.secondaryFirstName}
+                      onChange={(e) => setForm({ ...form, secondaryFirstName: e.target.value })}
+                      placeholder="Co-buyer first name"
+                    />
+                    <Input
+                      label="Last Name"
+                      type="text"
+                      value={form.secondaryLastName}
+                      onChange={(e) => setForm({ ...form, secondaryLastName: e.target.value })}
+                      placeholder="Co-buyer last name"
+                    />
+                  </div>
+                  <div className="mt-2">
+                    <Input
+                      label="Co-buyer Email"
+                      type="email"
+                      value={form.secondaryEmail}
+                      onChange={(e) => setForm({ ...form, secondaryEmail: e.target.value })}
+                      placeholder="Required if co-buyer name entered"
+                    />
+                  </div>
+                  {foundationSecondaryIncomplete && (
+                    <p className="text-xs font-semibold text-red-700 mt-1">
+                      Co-buyer email required when co-buyer name is entered.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ── Wells Fargo charge mode ──────────────────────────────────── */}
+            {isWfSelected && form.planId && (
+              <div className="space-y-3 rounded-xl border-2 border-[#00929C]/30 bg-[#00929C]/5 p-3">
+                <p className="text-xs font-bold uppercase tracking-wide text-[#00929C]">
+                  Wells Fargo Charge Mode
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, wfChargeMode: "charge_now" })}
+                    className={`px-3 py-2 rounded-lg border-2 text-sm font-semibold transition-all touch-manipulation ${
+                      form.wfChargeMode === "charge_now"
+                        ? "border-[#00929C] bg-[#00929C]/10 text-[#00929C]"
+                        : "border-slate-200 bg-white text-slate-600"
+                    }`}
+                  >
+                    Charge Now
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, wfChargeMode: "authorize_future" })}
+                    className={`px-3 py-2 rounded-lg border-2 text-sm font-semibold transition-all touch-manipulation ${
+                      form.wfChargeMode === "authorize_future"
+                        ? "border-amber-400 bg-amber-50 text-amber-700"
+                        : "border-slate-200 bg-white text-slate-600"
+                    }`}
+                  >
+                    Authorize Future
+                  </button>
+                </div>
+                {form.wfChargeMode === "authorize_future" && (
+                  <>
+                    <Input
+                      label="Future Charge Date"
+                      type="date"
+                      value={form.wfFutureChargeDate}
+                      onChange={(e) => setForm({ ...form, wfFutureChargeDate: e.target.value })}
+                    />
+                    <p className="text-xs text-amber-700">
+                      Reminder: WF doesn't fund until "Run Final" is executed. The contract will appear in the funding-watcher queue.
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* ── Lyon Financial 4-stage setup ─────────────────────────────── */}
+            {isLyonSelected && form.planId && (
+              <div className="space-y-3 rounded-xl border-2 border-[#00929C]/30 bg-[#00929C]/5 p-3">
+                <p className="text-xs font-bold uppercase tracking-wide text-[#00929C]">
+                  Lyon Financial — Project Setup
+                </p>
+                <div>
+                  <label className="text-xs font-medium text-slate-600 block mb-1">Project Type</label>
+                  <select
+                    value={form.lyonProjectType}
+                    onChange={(e) => setForm({ ...form, lyonProjectType: e.target.value as typeof form.lyonProjectType })}
+                    className="h-12 w-full rounded-lg border border-slate-300 bg-white px-3 text-base focus:outline-none focus:ring-2 focus:ring-[#00929C] touch-manipulation"
+                  >
+                    <option value="">Select project type…</option>
+                    {Object.entries(LYON_PROJECT_TYPE_LABELS).map(([k, v]) => (
+                      <option key={k} value={k}>{v}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-medium text-slate-600 block mb-1">Funding Flavor</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setForm({ ...form, lyonFundingFlavor: "lyon_direct" })}
+                      className={`px-3 py-2 rounded-lg border-2 text-xs font-semibold transition-all touch-manipulation ${
+                        form.lyonFundingFlavor === "lyon_direct"
+                          ? "border-[#00929C] bg-[#00929C]/10 text-[#00929C]"
+                          : "border-slate-200 bg-white text-slate-600"
+                      }`}
+                    >
+                      Lyon-direct (~95%)
+                      <span className="block text-[10px] font-normal mt-0.5">ACH/wire to Atlas per stage</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setForm({ ...form, lyonFundingFlavor: "lightstream_via_customer" })}
+                      className={`px-3 py-2 rounded-lg border-2 text-xs font-semibold transition-all touch-manipulation ${
+                        form.lyonFundingFlavor === "lightstream_via_customer"
+                          ? "border-amber-400 bg-amber-50 text-amber-700"
+                          : "border-slate-200 bg-white text-slate-600"
+                      }`}
+                    >
+                      LightStream / customer
+                      <span className="block text-[10px] font-normal mt-0.5">Customer pays Atlas</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Stage preview */}
+                {form.lyonProjectType && parseFloat(form.amount) > 0 && (
+                  <div className="rounded-lg bg-white border border-[#00929C]/20 p-2">
+                    <p className="text-xs font-semibold text-slate-600 mb-1">
+                      Draw schedule (preview):
+                    </p>
+                    <ul className="space-y-1">
+                      {buildLyonStages(form.lyonProjectType, parseFloat(form.amount)).map((s) => (
+                        <li key={s.stage_num} className="flex justify-between text-xs">
+                          <span className="text-slate-700">
+                            {s.stage_num}. {s.label} ({s.percent}%)
+                          </span>
+                          <span className="font-semibold text-[#00929C]">
+                            {formatCurrency(s.expected_amount)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {lyonProjectMissing && (
+                  <p className="text-xs font-semibold text-red-700">
+                    Project type required so we can generate the Lyon draw schedule.
+                  </p>
+                )}
+              </div>
             )}
 
             <div className="flex gap-3 pt-1">

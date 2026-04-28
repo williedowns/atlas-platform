@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import CustomerFileVault from "@/components/contracts/CustomerFileVault";
 import {
   formatCurrency,
   formatDate,
@@ -18,7 +19,8 @@ import {
 const PAYMENT_METHODS = [
   { value: "credit_card", label: "Credit Card" },
   { value: "debit_card", label: "Debit Card" },
-  { value: "ach", label: "ACH / Check" },
+  { value: "ach", label: "ACH" },
+  { value: "check", label: "Check" },
   { value: "cash", label: "Cash" },
 ] as const;
 
@@ -28,7 +30,7 @@ interface Step5ReviewProps {
 
 export default function Step5Review({ onNext }: Step5ReviewProps) {
   const router = useRouter();
-  const { draft, addDepositSplit, removeDepositSplit, updateLineItemSerial, setNotes } = useContractStore();
+  const { draft, addDepositSplit, removeDepositSplit, updateLineItemSerial, setNotes, setExternalNotes, setNeedsPermit, setNeedsHoa, setPermitJurisdiction } = useContractStore();
 
   const contractNumber = useMemo(() => generateContractNumber(), []);
   const today = useMemo(() => formatDate(new Date()), []);
@@ -61,8 +63,14 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
   // Split builder state
   const [splitAmount, setSplitAmount] = useState("");
   const [splitMethod, setSplitMethod] = useState<string>("credit_card");
+  // Check-only fields
   const [checkNumber, setCheckNumber] = useState("");
-  const [bankName, setBankName] = useState("");
+  const [checkBankName, setCheckBankName] = useState("");
+  // ACH-only fields (collected here for Robert/Lori; Plaid integration will replace manual entry later)
+  const [achRouting, setAchRouting] = useState("");
+  const [achAccount, setAchAccount] = useState("");
+  const [achHolder, setAchHolder] = useState("");
+  const [achBankName, setAchBankName] = useState("");
 
   const splits = Array.isArray(draft.deposit_splits) ? draft.deposit_splits : [];
   const totalSplits = splits.reduce((sum, s) => sum + s.amount, 0);
@@ -81,20 +89,35 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
 
   const splitAmountNum = parseFloat(splitAmount) || 0;
   const canAddSplit = splitAmountNum > 0;
-  const canProceed = splits.length > 0;
+  // Customer must commit something to proceed: a deposit split OR financing.
+  // 100% financing (e.g., GreenSky run at POS) IS the customer's commitment — no separate deposit required.
+  const hasCommitment = splits.length > 0 || financingArr.length > 0;
+  // DL gate: any financing requires a driver's license on file before sign (Willie 2026-04-28 #8).
+  const [hasDriversLicense, setHasDriversLicense] = useState(false);
+  const dlRequired = financingArr.length > 0;
+  const dlSatisfied = !dlRequired || hasDriversLicense;
+  const canProceed = hasCommitment && dlSatisfied;
 
   function handleAddSplit() {
     if (!canAddSplit) return;
     const split: DepositSplit = {
       amount: splitAmountNum,
       method: splitMethod,
-      ...(splitMethod === "ach" && checkNumber ? { check_number: checkNumber } : {}),
-      ...(splitMethod === "ach" && bankName ? { bank_name: bankName } : {}),
+      ...(splitMethod === "check" && checkNumber ? { check_number: checkNumber } : {}),
+      ...(splitMethod === "check" && checkBankName ? { bank_name: checkBankName } : {}),
+      ...(splitMethod === "ach" && achRouting ? { ach_routing_number: achRouting } : {}),
+      ...(splitMethod === "ach" && achAccount ? { ach_account_number: achAccount } : {}),
+      ...(splitMethod === "ach" && achHolder ? { ach_account_holder_name: achHolder } : {}),
+      ...(splitMethod === "ach" && achBankName ? { ach_bank_name: achBankName } : {}),
     };
     addDepositSplit(split);
     setSplitAmount("");
     setCheckNumber("");
-    setBankName("");
+    setCheckBankName("");
+    setAchRouting("");
+    setAchAccount("");
+    setAchHolder("");
+    setAchBankName("");
   }
 
   const methodLabel = (method: string) =>
@@ -410,7 +433,10 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
                     <p className="font-semibold text-slate-900">{formatCurrency(split.amount)}</p>
                     <p className="text-xs text-slate-500">
                       {methodLabel(split.method)}
-                      {split.check_number ? ` · Check #${split.check_number}` : ""}
+                      {split.method === "check" && split.check_number ? ` · Check #${split.check_number}` : ""}
+                      {split.method === "check" && split.bank_name ? ` · ${split.bank_name}` : ""}
+                      {split.method === "ach" && split.ach_bank_name ? ` · ${split.ach_bank_name}` : ""}
+                      {split.method === "ach" && split.ach_account_number ? ` · acct ····${split.ach_account_number.slice(-4)}` : ""}
                     </p>
                   </div>
                   <button
@@ -466,7 +492,7 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
               ))}
             </div>
 
-            {splitMethod === "ach" && (
+            {splitMethod === "check" && (
               <div className="space-y-2">
                 <Input
                   label="Check # (optional)"
@@ -478,8 +504,46 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
                 <Input
                   label="Bank Name (optional)"
                   type="text"
-                  value={bankName}
-                  onChange={(e) => setBankName(e.target.value)}
+                  value={checkBankName}
+                  onChange={(e) => setCheckBankName(e.target.value)}
+                  placeholder="Bank name"
+                />
+              </div>
+            )}
+
+            {splitMethod === "ach" && (
+              <div className="space-y-2 rounded-xl border border-[#00929C]/30 bg-[#00929C]/5 p-3">
+                <p className="text-xs text-slate-600">
+                  Enter ACH details now to skip the back-office chase. Plaid integration will replace this once live.
+                </p>
+                <Input
+                  label="Routing Number"
+                  type="text"
+                  inputMode="numeric"
+                  value={achRouting}
+                  onChange={(e) => setAchRouting(e.target.value.replace(/\D/g, "").slice(0, 9))}
+                  placeholder="9 digits"
+                />
+                <Input
+                  label="Account Number"
+                  type="text"
+                  inputMode="numeric"
+                  value={achAccount}
+                  onChange={(e) => setAchAccount(e.target.value.replace(/\D/g, ""))}
+                  placeholder="Account number"
+                />
+                <Input
+                  label="Account Holder Name"
+                  type="text"
+                  value={achHolder}
+                  onChange={(e) => setAchHolder(e.target.value)}
+                  placeholder="As printed on the check"
+                />
+                <Input
+                  label="Bank Name"
+                  type="text"
+                  value={achBankName}
+                  onChange={(e) => setAchBankName(e.target.value)}
                   placeholder="Bank name"
                 />
               </div>
@@ -503,16 +567,111 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
         <CardHeader className="pb-3">
           <CardTitle className="text-lg">Notes</CardTitle>
         </CardHeader>
-        <CardContent>
-          <textarea
-            value={draft.notes ?? ""}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Optional notes about this contract..."
-            rows={3}
-            className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-base placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#00929C] focus:border-transparent touch-manipulation resize-none"
-          />
+        <CardContent className="space-y-4">
+          <div>
+            <label className="text-sm font-semibold text-slate-700 block mb-1">
+              External Notes <span className="text-xs font-normal text-slate-500">(printed on the customer's contract & email)</span>
+            </label>
+            <textarea
+              value={draft.external_notes ?? ""}
+              onChange={(e) => setExternalNotes(e.target.value)}
+              placeholder="Special instructions, agreed extras, gate code, delivery preferences..."
+              rows={3}
+              className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-base placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#00929C] focus:border-transparent touch-manipulation resize-none"
+            />
+          </div>
+          <div>
+            <label className="text-sm font-semibold text-slate-700 block mb-1">
+              Internal Notes <span className="text-xs font-normal text-slate-500">(staff-only — never shown to the customer)</span>
+            </label>
+            <textarea
+              value={draft.notes ?? ""}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Reminders for delivery, manager notes, accounting flags..."
+              rows={3}
+              className="w-full rounded-lg border border-amber-200 bg-amber-50/40 px-4 py-3 text-base placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-transparent touch-manipulation resize-none"
+            />
+          </div>
         </CardContent>
       </Card>
+
+      {/* ── Contingencies (Permit / HOA) — hard-stop gates for delivery ── */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Contingencies</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 pt-0">
+          <button
+            type="button"
+            onClick={() => setNeedsPermit(!draft.needs_permit)}
+            className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl border-2 text-left transition-all touch-manipulation ${
+              draft.needs_permit ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-white"
+            }`}
+          >
+            <div className={`w-10 h-6 rounded-full flex items-center px-1 transition-all flex-shrink-0 ${
+              draft.needs_permit ? "bg-amber-500 justify-end" : "bg-slate-200 justify-start"
+            }`}>
+              <div className="w-4 h-4 rounded-full bg-white shadow-sm" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-slate-900">Needs Permit</p>
+              <p className="text-xs text-slate-500">
+                {draft.needs_permit ? "Cannot deliver until permit approved" : "Toggle on if city requires a permit"}
+              </p>
+            </div>
+          </button>
+          {draft.needs_permit && (
+            <Input
+              label="Permit Jurisdiction (optional)"
+              type="text"
+              value={draft.permit_jurisdiction ?? ""}
+              onChange={(e) => setPermitJurisdiction(e.target.value)}
+              placeholder="City of Tyler, Smith County, etc."
+            />
+          )}
+
+          <button
+            type="button"
+            onClick={() => setNeedsHoa(!draft.needs_hoa)}
+            className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl border-2 text-left transition-all touch-manipulation ${
+              draft.needs_hoa ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-white"
+            }`}
+          >
+            <div className={`w-10 h-6 rounded-full flex items-center px-1 transition-all flex-shrink-0 ${
+              draft.needs_hoa ? "bg-amber-500 justify-end" : "bg-slate-200 justify-start"
+            }`}>
+              <div className="w-4 h-4 rounded-full bg-white shadow-sm" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-slate-900">Needs HOA Approval</p>
+              <p className="text-xs text-slate-500">
+                {draft.needs_hoa ? "Cannot deliver until HOA approves — packet will email to customer" : "Toggle on if customer's HOA requires approval"}
+              </p>
+            </div>
+          </button>
+        </CardContent>
+      </Card>
+
+      {/* ── Customer files (only when DL is required, i.e. there's financing) ─ */}
+      {dlRequired && draft.customer?.id && (
+        <CustomerFileVault
+          customerId={draft.customer.id}
+          compact
+          onFilesChange={(files) => {
+            setHasDriversLicense(files.some((f) => f.category === "drivers_license"));
+          }}
+        />
+      )}
+      {dlRequired && !dlSatisfied && (
+        <div className="rounded-lg bg-amber-50 border-2 border-amber-300 px-4 py-3">
+          <p className="text-sm font-semibold text-amber-800">
+            Driver's license required before sign — financing is on this contract.
+          </p>
+          <p className="text-xs text-amber-700 mt-1">
+            Upload via Customer Files above. Take a photo or attach an existing image.
+          </p>
+        </div>
+      )}
 
       {/* ── Actions ────────────────────────────────────────── */}
       {quoteError && (
@@ -560,7 +719,9 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
 
       {!canProceed && (
         <p className="text-center text-sm text-slate-400">
-          Add at least one deposit to sign &amp; pay, or save as a quote to print
+          {!hasCommitment
+            ? "Add a deposit or financing to sign \u0026 pay, or save as a quote to print"
+            : "Driver's license required before sign \u2014 upload above"}
         </p>
       )}
     </div>

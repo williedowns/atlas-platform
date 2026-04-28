@@ -48,8 +48,14 @@ export interface ContractDraft {
   total: number;
   deposit_amount: number; // sum of all deposit_splits amounts
 
-  // Notes
+  // Notes — internal: staff-only audit trail. external: printed on customer PDF/email.
   notes?: string;
+  external_notes?: string;
+
+  // Contingencies — hard-stop gates for delivery
+  needs_permit?: boolean;
+  needs_hoa?: boolean;
+  permit_jurisdiction?: string;
 
   // Delivery diagrams (optional — set in Step 6 before signing)
   // Stored as an array to support multiple scenarios (e.g., Up Steps + Through Door).
@@ -67,8 +73,14 @@ export interface ContractDraft {
 export interface DepositSplit {
   amount: number;
   method: string;
+  // Check-only fields
   check_number?: string;
   bank_name?: string;
+  // ACH-only fields (Plaid/Melio integration may replace manual entry later)
+  ach_routing_number?: string;
+  ach_account_number?: string;
+  ach_account_holder_name?: string;
+  ach_bank_name?: string;
 }
 
 interface InventoryUnitDetails {
@@ -99,6 +111,10 @@ interface ContractStore {
   addDepositSplit: (split: DepositSplit) => void;
   removeDepositSplit: (index: number) => void;
   setNotes: (notes: string) => void;
+  setExternalNotes: (external_notes: string) => void;
+  setNeedsPermit: (needs_permit: boolean) => void;
+  setNeedsHoa: (needs_hoa: boolean) => void;
+  setPermitJurisdiction: (permit_jurisdiction: string) => void;
   setDeliveryDiagram: (diagram: ContractDraft["delivery_diagram"]) => void;
   setCreatedContractId: (id: string) => void;
   computeTotals: () => void;
@@ -131,8 +147,11 @@ function computeTotalsFromDraft(draft: ContractDraft): Partial<ContractDraft> {
   const financingArr = Array.isArray(draft.financing) ? draft.financing : [];
   const financed = financingArr.reduce((sum, f) => sum + (f.financed_amount ?? 0), 0);
   const taxable = Math.max(0, subtotal - discount_total - financed);
+  // Surcharge applies to the post-discount base (what the customer is actually charged),
+  // not the original subtotal. Otherwise discounts don't reduce the surcharge.
+  const surchargeBase = Math.max(0, subtotal - discount_total);
   const surcharge_amount = draft.surcharge_enabled
-    ? Math.round(subtotal * draft.surcharge_rate * 100) / 100
+    ? Math.round(surchargeBase * draft.surcharge_rate * 100) / 100
     : 0;
   // Tax exempt zeroes out tax for this sale
   const effectiveTax = draft.tax_exempt ? 0 : (draft.tax_amount ?? 0);
@@ -320,6 +339,18 @@ export const useContractStore = create<ContractStore>()(
 
       setNotes: (notes) =>
         set((state) => ({ draft: { ...state.draft, notes } })),
+
+      setExternalNotes: (external_notes) =>
+        set((state) => ({ draft: { ...state.draft, external_notes } })),
+
+      setNeedsPermit: (needs_permit) =>
+        set((state) => ({ draft: { ...state.draft, needs_permit } })),
+
+      setNeedsHoa: (needs_hoa) =>
+        set((state) => ({ draft: { ...state.draft, needs_hoa } })),
+
+      setPermitJurisdiction: (permit_jurisdiction) =>
+        set((state) => ({ draft: { ...state.draft, permit_jurisdiction } })),
 
       setDeliveryDiagram: (delivery_diagram) =>
         set((state) => ({ draft: { ...state.draft, delivery_diagram } })),

@@ -191,6 +191,50 @@ export interface ContractFinancing {
   financed_amount: number;
   /** true = deducted from balance at POS (GreenSky, Wells Fargo); false = carries to balance (Foundation) */
   deduct_from_balance?: boolean;
+
+  // ── Foundation Finance specifics (manual fields per Robert Kennedy 2026-04-28) ──
+  /** Tier 1–5; affects rate and fee structure */
+  foundation_tier?: 1 | 2 | 3 | 4 | 5;
+  /** Approved percentage (e.g. 92, 95, 100). Affects fee — 2.5% up to $250 max on the discount portion */
+  foundation_approved_pct?: number;
+  /** Salesperson-elected buy-down rate (optional). Reduces customer rate for a fee. */
+  foundation_buydown_rate?: number;
+  /** ACH info collected at sale to skip Robert chasing the customer post-show */
+  foundation_ach_routing?: string;
+  foundation_ach_account?: string;
+  foundation_ach_bank?: string;
+  /** True if salesperson opted to waive ACH (cost up to $250 from commission) */
+  foundation_ach_waived?: boolean;
+  /** Wells Fargo: charge mode at point of sale */
+  wf_charge_mode?: "charge_now" | "authorize_future";
+  /** Wells Fargo: scheduled date for the future charge (when wf_charge_mode = authorize_future) */
+  wf_future_charge_date?: string;
+  /** Co-buyer email when 2 signers required (Foundation routinely needs this) */
+  secondary_buyer_email?: string;
+  secondary_buyer_first_name?: string;
+  secondary_buyer_last_name?: string;
+
+  // ── Lyon Financial specifics (4-stage funding per 2026-04-28 letter) ──
+  /** Project type drives the stage template Lyon uses */
+  lyon_project_type?: "fiberglass_pool" | "vinyl_liner_pool" | "materials_only" | "metal_building" | "metal_building_prefab";
+  /** Funding flavor — Lyon-direct ACH/wire vs LightStream funds the customer */
+  lyon_funding_flavor?: "lyon_direct" | "lightstream_via_customer";
+  /** Stage-by-stage progress; 2-4 stages depending on project type */
+  lyon_stages?: LyonStage[];
+}
+
+export interface LyonStage {
+  stage_num: number;
+  label: string;
+  percent: number;
+  expected_amount: number;
+  photo_url?: string;
+  /** Status of the customer's e-initial on the photo via Lyon portal */
+  customer_initial_status?: "not_sent" | "pending" | "accepted" | "declined";
+  status: "not_started" | "photo_uploaded" | "submitted_to_lyon" | "funded" | "skipped";
+  funded_amount?: number;
+  funded_at?: string;
+  notes?: string;
 }
 
 export interface FinancingProvider {

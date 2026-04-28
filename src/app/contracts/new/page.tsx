@@ -77,6 +77,10 @@ function NewContractContent() {
           total: data.total ?? 0,
           deposit_amount: 0,
           notes: data.notes ?? undefined,
+          external_notes: data.external_notes ?? undefined,
+          needs_permit: data.needs_permit ?? false,
+          needs_hoa: data.needs_hoa ?? false,
+          permit_jurisdiction: data.permit_jurisdiction ?? undefined,
         },
       });
       setStep(5); // start at Review so they can add deposit and sign

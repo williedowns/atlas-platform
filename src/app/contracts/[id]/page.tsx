@@ -12,6 +12,10 @@ import { TaxRefundButton } from "@/components/contracts/TaxRefundButton";
 import { CertViewButton } from "@/components/contracts/CertViewButton";
 import { StatusTimeline } from "@/components/contracts/StatusTimeline";
 import { DeliveryConfirmDialog } from "@/components/contracts/DeliveryConfirmDialog";
+import CustomerFileVault from "@/components/contracts/CustomerFileVault";
+import ContingencyTracker from "@/components/contracts/ContingencyTracker";
+import ScheduleDeliveryButton from "@/components/contracts/ScheduleDeliveryButton";
+import FinancingDetailsCard from "@/components/contracts/FinancingDetailsCard";
 import { AppHeader } from "@/components/ui/AppHeader";
 import { SectionCard } from "@/components/ui/SectionCard";
 
@@ -81,6 +85,15 @@ export default async function ContractDetailPage({
     .select("id, product_name, serial_number, purchase_date, warranty_expires, notes")
     .eq("contract_id", id)
     .order("product_name");
+
+  // Pull existing delivery work order (if scheduled)
+  const { data: deliveryRow } = await supabase
+    .from("delivery_work_orders")
+    .select("id, scheduled_date, scheduled_window, delivery_address, special_instructions, status, readiness_overridden, readiness_override_reason")
+    .eq("contract_id", id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let auditLogs: any[] = [];
@@ -276,16 +289,7 @@ export default async function ContractDetailPage({
                     <td className="px-4 py-2 text-right text-sm">−{formatCurrency(d.amount)}</td>
                   </tr>
                 ))}
-                {financingArr.filter((f: { financed_amount?: number }) => (f.financed_amount ?? 0) > 0).map((f: { financed_amount: number; financer_name?: string }, i: number) => (
-                  <tr key={`f-${i}`} className="text-blue-700">
-                    <td className="px-4 py-2 text-sm">
-                      Financing ({f.financer_name ?? "In-House"})
-                    </td>
-                    <td className="px-4 py-2 text-right text-sm">
-                      −{formatCurrency(f.financed_amount)}
-                    </td>
-                  </tr>
-                ))}
+                {/* Financing rows intentionally NOT rendered here — they appear once in the Financial Summary below. */}
               </tbody>
             </table>
           </CardContent>
@@ -403,6 +407,57 @@ export default async function ContractDetailPage({
           </Card>
         )}
 
+        {/* Comprehensive financing details — replaces the legacy Lyon-only tracker */}
+        {financingArr.length > 0 && (
+          <FinancingDetailsCard contractId={contract.id} financing={financingArr} />
+        )}
+
+        {/* Permit / HOA contingency tracker — only shows when one is required */}
+        <ContingencyTracker
+          contractId={contract.id}
+          needsPermit={!!contract.needs_permit}
+          permitStatus={contract.permit_status ?? null}
+          permitNumber={contract.permit_number ?? null}
+          permitJurisdiction={contract.permit_jurisdiction ?? null}
+          needsHoa={!!contract.needs_hoa}
+          hoaStatus={contract.hoa_status ?? null}
+        />
+
+        {/* Customer file vault — DL, proof of homeownership, ACH, permits, etc. */}
+        {contract.customer_id && (
+          <CustomerFileVault
+            customerId={contract.customer_id}
+            contractId={contract.id}
+          />
+        )}
+
+        {/* Notes — internal (staff-only) and external (printed on PDF) shown side by side */}
+        {(contract.notes || contract.external_notes) && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle>Notes</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0 space-y-3">
+              {contract.external_notes && (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
+                    External · printed on customer contract
+                  </p>
+                  <p className="text-sm text-slate-800 whitespace-pre-wrap">{contract.external_notes}</p>
+                </div>
+              )}
+              {contract.notes && (
+                <div className="rounded-lg bg-amber-50/50 border border-amber-200 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-amber-700 mb-1">
+                    Internal · staff-only, never on PDF
+                  </p>
+                  <p className="text-sm text-slate-800 whitespace-pre-wrap">{contract.notes}</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
         {/* Spa Delivery Diagram — only shown when delivery_diagram is set */}
         {contract.delivery_diagram && (
           <Card>
@@ -455,6 +510,54 @@ export default async function ContractDetailPage({
                   </div>
                 );
               })()}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Delivery scheduling — show existing schedule or button to create one */}
+        {!["cancelled", "delivered"].includes(contract.status) && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Delivery</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0">
+              {deliveryRow ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">
+                        {formatDate(deliveryRow.scheduled_date)}
+                        {deliveryRow.scheduled_window ? ` · ${deliveryRow.scheduled_window}` : ""}
+                      </p>
+                      <p className="text-xs text-slate-500 capitalize">
+                        Status: {deliveryRow.status?.replace(/_/g, " ")}
+                      </p>
+                    </div>
+                  </div>
+                  {deliveryRow.delivery_address && (
+                    <p className="text-sm text-slate-700">{deliveryRow.delivery_address}</p>
+                  )}
+                  {deliveryRow.special_instructions && (
+                    <p className="text-xs text-slate-500 italic">{deliveryRow.special_instructions}</p>
+                  )}
+                  {deliveryRow.readiness_overridden && (
+                    <p className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                      Readiness gate overridden{deliveryRow.readiness_override_reason ? ` — ${deliveryRow.readiness_override_reason}` : ""}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <ScheduleDeliveryButton
+                  contractId={contract.id}
+                  defaultAddress={
+                    (() => {
+                      const c = Array.isArray(contract.customer) ? contract.customer[0] : contract.customer;
+                      const parts = [c?.address, c?.city, c?.state, c?.zip].filter(Boolean);
+                      return parts.join(", ");
+                    })()
+                  }
+                />
+              )}
             </CardContent>
           </Card>
         )}

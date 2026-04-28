@@ -42,7 +42,11 @@ export function KpiCard({
         )}
       </div>
       <p
-        className={`${size === "lg" ? "text-4xl" : "text-3xl"} font-black mt-2 tracking-tight`}
+        className={`${(() => {
+          const len = String(value).length;
+          if (size === "lg") return len > 13 ? "text-2xl" : len > 11 ? "text-3xl" : "text-4xl";
+          return len > 13 ? "text-xl" : len > 11 ? "text-2xl" : "text-3xl";
+        })()} font-black mt-2 tracking-tight whitespace-nowrap overflow-hidden text-ellipsis`}
         style={{ color: accentColor }}
       >
         {value}

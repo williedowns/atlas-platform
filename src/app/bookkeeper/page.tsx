@@ -34,7 +34,9 @@ export default async function BookkeeperPage() {
       id, contract_number, status, is_contingent,
       total, subtotal, discount_total, tax_amount,
       deposit_paid, balance_due, payment_method,
-      line_items, notes, created_at,
+      line_items, notes, created_at, customer_id,
+      financing,
+      needs_permit, permit_status, needs_hoa, hoa_status,
       tax_exempt_cert_received, tax_exempt_cert_received_at, tax_exempt_cert_url,
       tax_refund_amount, tax_refund_issued_at,
       customer:customers(id, first_name, last_name, phone, email),
@@ -147,6 +149,52 @@ export default async function BookkeeperPage() {
 
   const hasCertAlert = overdueCerts.length > 0 || dueSoonCerts.length > 0 || refundNeededCerts.length > 0;
 
+  // ── Pre-Delivery Readiness (Lori's view) ────────────────────────────────
+  // Show every signed-but-not-delivered contract with their readiness flags.
+  const undeliveredContracts = contracts.filter((c) =>
+    c.status !== "delivered" && c.status !== "cancelled"
+  );
+  const undeliveredCustomerIds = Array.from(
+    new Set(undeliveredContracts.map((c) => c.customer_id).filter(Boolean))
+  );
+  const { data: dlForUndelivered } = undeliveredCustomerIds.length
+    ? await supabase
+        .from("customer_files")
+        .select("customer_id")
+        .eq("category", "drivers_license")
+        .in("customer_id", undeliveredCustomerIds)
+    : { data: [] };
+  const customersWithDl = new Set((dlForUndelivered ?? []).map((f: any) => f.customer_id));
+
+  type ReadinessRow = {
+    contract: any;
+    balanceCleared: boolean;
+    dlOk: boolean;
+    permitOk: boolean;
+    hoaOk: boolean;
+    blockers: string[];
+  };
+
+  const readinessRows: ReadinessRow[] = undeliveredContracts.map((c) => {
+    const financing = Array.isArray(c.financing) ? c.financing : (c.financing ? [c.financing] : []);
+    const hasFinancing = financing.length > 0;
+    const balanceCleared = (c.balance_due ?? 0) <= 0.01;
+    const dlOk = !hasFinancing || customersWithDl.has(c.customer_id);
+    const permitOk = !c.needs_permit || c.permit_status === "approved";
+    const hoaOk = !c.needs_hoa || c.hoa_status === "approved";
+
+    const blockers: string[] = [];
+    if (!balanceCleared) blockers.push(`Balance ${formatCurrency(c.balance_due ?? 0)}`);
+    if (!dlOk) blockers.push("DL missing");
+    if (!permitOk) blockers.push(c.permit_status === "denied" ? "Permit DENIED" : "Permit pending");
+    if (!hoaOk) blockers.push(c.hoa_status === "denied" ? "HOA DENIED" : "HOA pending");
+
+    return { contract: c, balanceCleared, dlOk, permitOk, hoaOk, blockers };
+  });
+
+  const blocked = readinessRows.filter((r) => r.blockers.length > 0);
+  const ready = readinessRows.filter((r) => r.blockers.length === 0);
+
   return (
     <AppShell role={profile?.role} userName={profile?.full_name} orgPerms={orgPerms}>
       <AppHeader
@@ -159,6 +207,83 @@ export default async function BookkeeperPage() {
         {/* ── AR Aging chart ── */}
         <SectionCard title="Outstanding Balances by Age" subtitle="Accounts receivable aging buckets">
           <OutstandingByAgeChart data={agingData} />
+        </SectionCard>
+
+        {/* ── Pre-Delivery Readiness (Lori's view) ── */}
+        <SectionCard
+          title="Pre-Delivery Readiness"
+          subtitle={`${blocked.length} blocked · ${ready.length} ready · ${readinessRows.length} active`}
+        >
+          {readinessRows.length === 0 ? (
+            <p className="text-sm text-slate-400 px-1">No undelivered contracts.</p>
+          ) : (
+            <div className="space-y-3">
+              {blocked.length > 0 && (
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wide text-amber-700 mb-2">
+                    Delivery blocked ({blocked.length})
+                  </p>
+                  <div className="divide-y divide-slate-100 rounded-lg border border-amber-200 bg-amber-50/40">
+                    {blocked.map(({ contract: c, blockers }) => {
+                      const customer = Array.isArray(c.customer) ? c.customer[0] : c.customer;
+                      const location = Array.isArray(c.location) ? c.location[0] : c.location;
+                      return (
+                        <Link key={c.id} href={`/contracts/${c.id}`} className="block">
+                          <div className="px-3 py-2 hover:bg-amber-50 active:bg-amber-100 transition-colors">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-semibold text-slate-900 text-sm">{c.contract_number}</span>
+                                  <span className="text-xs text-slate-500 capitalize">{c.status?.replace(/_/g, " ")}</span>
+                                </div>
+                                <p className="text-xs text-slate-700 mt-0.5">
+                                  {customer?.first_name} {customer?.last_name} · {location?.name ?? "—"}
+                                </p>
+                                <div className="flex flex-wrap gap-1 mt-1.5">
+                                  {blockers.map((b) => (
+                                    <span key={b} className="text-xs font-semibold rounded px-1.5 py-0.5 bg-amber-100 text-amber-800 border border-amber-300">
+                                      {b}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                              <p className="text-sm font-bold text-amber-700 whitespace-nowrap">{formatCurrency(c.balance_due ?? 0)}</p>
+                            </div>
+                          </div>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {ready.length > 0 && (
+                <details>
+                  <summary className="text-xs font-bold uppercase tracking-wide text-emerald-700 cursor-pointer">
+                    Ready to deliver ({ready.length}) — show
+                  </summary>
+                  <div className="mt-2 divide-y divide-slate-100 rounded-lg border border-emerald-200 bg-emerald-50/40">
+                    {ready.map(({ contract: c }) => {
+                      const customer = Array.isArray(c.customer) ? c.customer[0] : c.customer;
+                      const location = Array.isArray(c.location) ? c.location[0] : c.location;
+                      return (
+                        <Link key={c.id} href={`/contracts/${c.id}`} className="block">
+                          <div className="px-3 py-2 hover:bg-emerald-50 active:bg-emerald-100 transition-colors flex items-center justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <span className="font-semibold text-slate-900 text-sm">{c.contract_number}</span>
+                              <span className="text-xs text-slate-500 ml-2">
+                                {customer?.first_name} {customer?.last_name} · {location?.name ?? "—"}
+                              </span>
+                            </div>
+                            <span className="text-xs font-semibold text-emerald-700">All clear</span>
+                          </div>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </details>
+              )}
+            </div>
+          )}
         </SectionCard>
 
         {/* ── Urgent: Tax refund needed (cert received, refund not yet issued) ── */}

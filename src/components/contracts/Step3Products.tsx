@@ -85,6 +85,25 @@ const PRODUCT_LINES: { label: string; section: string; logoUrl: string; categori
     logoUrl: "/logos/sweaty-goat.webp",
     categories: ["MP Sweaty Goat Saunas"],
   },
+  // ── POOLS (added 2026-04-28) ──────────────────────────────────────────────
+  {
+    label: "Latham Fiberglass",
+    section: "Pools",
+    logoUrl: "/logos/latham.svg",
+    categories: ["Latham Fiberglass Pools"],
+  },
+  {
+    label: "Barrier Reef Fiberglass",
+    section: "Pools",
+    logoUrl: "/logos/barrier-reef.svg",
+    categories: ["Barrier Reef Fiberglass Pools"],
+  },
+  {
+    label: "Above-Ground Pools",
+    section: "Pools",
+    logoUrl: "/logos/above-ground.svg",
+    categories: ["Above-Ground Pools"],
+  },
 ];
 
 const OPTIONS_CATEGORIES = [
@@ -243,19 +262,32 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
     setShowDiscountForm(false);
   }
 
-  // Discount Calculator: given a target final price, compute & apply the discount
+  // Discount Calculator: given a target out-the-door price (what the customer pays
+  // including tax & CC surcharge), compute & apply the discount that lands the total there.
+  // Math: target = (subtotal - discount) * (1 + surcharge_rate) + tax
+  //    => discount = subtotal - (target - tax) / (1 + surcharge_rate)
+  function computeCalculatedDiscount(target: number): number | null {
+    if (isNaN(target) || target <= 0) return null;
+    const tax = draft.tax_exempt ? 0 : (draft.tax_amount ?? 0);
+    const surchargeMultiplier = draft.surcharge_enabled ? 1 + draft.surcharge_rate : 1;
+    const desiredPostDiscountSubtotal = (target - tax) / surchargeMultiplier;
+    const discountAmt = Math.round((draft.subtotal - desiredPostDiscountSubtotal) * 100) / 100;
+    if (discountAmt <= 0 || discountAmt >= draft.subtotal) return null;
+    return discountAmt;
+  }
+
   function handleApplyCalculatedDiscount() {
     const target = parseFloat(targetPrice);
-    if (isNaN(target) || target <= 0 || target >= draft.subtotal) return;
-    const discountAmt = Math.round((draft.subtotal - target) * 100) / 100; // round to cents
+    const discountAmt = computeCalculatedDiscount(target);
+    if (discountAmt === null) return;
     const discount: ContractDiscount = {
       type: "show_special",
-      label: `Calculated to $${target.toFixed(2)}`,
+      label: `Calculated to $${target.toFixed(2)} out-the-door`,
       amount: discountAmt,
       requires_approval: false,
     };
     addDiscount(discount);
-    setCalcConfirmation(`Applied $${discountAmt.toFixed(2)} discount`);
+    setCalcConfirmation(`Applied $${discountAmt.toFixed(2)} discount → customer total $${target.toFixed(2)}`);
     setTargetPrice("");
     setTimeout(() => setCalcConfirmation(null), 2500);
   }
@@ -441,7 +473,7 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
           </button>
         </div>
       ) : (
-        (["Hot Tubs", "Swim Spas", "Cold Tubs", "Saunas"] as const).map((section) => {
+        (["Hot Tubs", "Swim Spas", "Cold Tubs", "Saunas", "Pools"] as const).map((section) => {
           const sectionLines = PRODUCT_LINES.filter((l) => l.section === section);
           const visibleLines = sectionLines.filter((l) =>
             products.some((p) => l.categories.includes(p.category ?? ""))
@@ -631,62 +663,70 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
         )}
       </div>
 
-      {/* Discount Calculator — enter the final price the customer was promised; auto-compute the discount */}
-      {draft.line_items.length > 0 && (
-        <div className="border-t border-slate-200 pt-4">
-          <h3 className="text-lg font-semibold text-slate-700 mb-1">Discount Calculator</h3>
-          <p className="text-sm text-slate-500 mb-3">
-            Enter the final price you told the customer. We'll calculate the discount automatically.
-          </p>
-          <Card className="mb-4">
-            <CardContent className="p-4 space-y-3">
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-slate-600">Current subtotal (before discount)</span>
-                <span className="font-semibold text-slate-900">{formatCurrency(draft.subtotal)}</span>
-              </div>
-              <Input
-                label="Final price you promised the customer ($)"
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="0.00"
-                value={targetPrice}
-                onChange={(e) => setTargetPrice(e.target.value)}
-              />
-              {targetPrice && parseFloat(targetPrice) > 0 && parseFloat(targetPrice) < draft.subtotal && (
-                <div className="p-3 rounded-lg bg-[#00929C]/10 border border-[#00929C]/30 flex justify-between items-center">
-                  <span className="text-sm font-medium text-slate-700">Required discount:</span>
-                  <span className="text-base font-bold text-[#00929C]">
-                    {formatCurrency(draft.subtotal - parseFloat(targetPrice))}
-                    <span className="text-xs text-slate-500 ml-2 font-normal">
-                      ({((1 - parseFloat(targetPrice) / draft.subtotal) * 100).toFixed(1)}% off)
-                    </span>
-                  </span>
+      {/* Discount Calculator — enter the out-the-door price the customer was promised; auto-compute the discount */}
+      {draft.line_items.length > 0 && (() => {
+        const targetNum = parseFloat(targetPrice);
+        const previewDiscount = computeCalculatedDiscount(targetNum);
+        const hasInvalidTarget = targetPrice !== "" && !isNaN(targetNum) && targetNum > 0 && previewDiscount === null;
+        const surchargeNote = draft.surcharge_enabled
+          ? ` (incl. ${(draft.surcharge_rate * 100).toFixed(1)}% CC surcharge)`
+          : "";
+        return (
+          <div className="border-t border-slate-200 pt-4">
+            <h3 className="text-lg font-semibold text-slate-700 mb-1">Discount Calculator</h3>
+            <p className="text-sm text-slate-500 mb-3">
+              Enter the out-the-door price you promised the customer. We'll work out the discount{surchargeNote}.
+            </p>
+            <Card className="mb-4">
+              <CardContent className="p-4 space-y-3">
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-slate-600">Current subtotal (before discount)</span>
+                  <span className="font-semibold text-slate-900">{formatCurrency(draft.subtotal)}</span>
                 </div>
-              )}
-              {targetPrice && parseFloat(targetPrice) >= draft.subtotal && parseFloat(targetPrice) > 0 && (
-                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
-                  Target price must be less than the subtotal to create a discount.
-                </p>
-              )}
-              {calcConfirmation && (
-                <p className="text-sm font-semibold text-green-700 bg-green-50 border border-green-200 rounded-lg p-2">
-                  ✓ {calcConfirmation}
-                </p>
-              )}
-              <Button
-                variant="default"
-                size="lg"
-                className="w-full"
-                disabled={!targetPrice || parseFloat(targetPrice) <= 0 || parseFloat(targetPrice) >= draft.subtotal}
-                onClick={handleApplyCalculatedDiscount}
-              >
-                Apply as Discount
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+                <Input
+                  label="Out-the-door price you promised ($)"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={targetPrice}
+                  onChange={(e) => setTargetPrice(e.target.value)}
+                />
+                {previewDiscount !== null && (
+                  <div className="p-3 rounded-lg bg-[#00929C]/10 border border-[#00929C]/30 flex justify-between items-center">
+                    <span className="text-sm font-medium text-slate-700">Required discount:</span>
+                    <span className="text-base font-bold text-[#00929C]">
+                      {formatCurrency(previewDiscount)}
+                      <span className="text-xs text-slate-500 ml-2 font-normal">
+                        ({((previewDiscount / draft.subtotal) * 100).toFixed(1)}% off subtotal)
+                      </span>
+                    </span>
+                  </div>
+                )}
+                {hasInvalidTarget && (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
+                    That out-the-door price doesn't produce a valid discount on this cart.
+                  </p>
+                )}
+                {calcConfirmation && (
+                  <p className="text-sm font-semibold text-green-700 bg-green-50 border border-green-200 rounded-lg p-2">
+                    ✓ {calcConfirmation}
+                  </p>
+                )}
+                <Button
+                  variant="default"
+                  size="lg"
+                  className="w-full"
+                  disabled={previewDiscount === null}
+                  onClick={handleApplyCalculatedDiscount}
+                >
+                  Apply as Discount
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        );
+      })()}
 
       {/* Discounts */}
       <div className="border-t border-slate-200 pt-4">
