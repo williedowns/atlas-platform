@@ -189,27 +189,55 @@ export async function POST(req: Request) {
       intuit_payment_id: chargeResult.id,
     };
 
-    // ── GreenSky / WF auto-mark funded ───────────────────────────────────────
-    // When method === "financing" the salesperson is running the GreenSky-issued
-    // (or WF-issued) virtual credit card on our terminal — Atlas is funded the
-    // moment the card captures. Find the matching financing entry by amount and
-    // mark it fully_funded so Robert doesn't have to click anything.
+    // ── GreenSky / WF accumulate-on-charge ───────────────────────────────────
+    // Salesperson can run partial charges on the GreenSky-issued virtual card.
+    // E.g. $20K total approved, $5K run at the show, $15K balance to run prior
+    // to delivery. Each capture accumulates to funded_amount; status flips:
+    //   funded == 0       → keep prior status (likely undefined / pending)
+    //   0 < funded < total → "partially_funded"
+    //   funded >= total    → "fully_funded"
+    //
+    // Match: the not-yet-fully-funded `deduct_from_balance:true` entry with the
+    // largest remaining balance. If you have multiple such entries on one
+    // contract (rare), Robert can correct via the manual UI on FinancingDetailsCard.
     if (method === "financing" && Array.isArray(contract.financing)) {
       const arr = [...(contract.financing as Array<Record<string, unknown>>)];
-      const matchIdx = arr.findIndex((entry) => {
-        if (entry.deduct_from_balance === false) return false; // skip Foundation
-        const already = (entry.funding_status as string | undefined) ?? null;
-        if (already === "fully_funded") return false; // skip already-funded
-        const expected = Number(entry.financed_amount ?? 0);
-        return Math.abs(expected - Number(amount)) < 0.01;
-      });
-      if (matchIdx >= 0) {
-        arr[matchIdx] = {
-          ...arr[matchIdx],
-          funded_amount: Number(arr[matchIdx].financed_amount ?? amount),
+      let bestIdx = -1;
+      let bestRemaining = -Infinity;
+      for (let i = 0; i < arr.length; i++) {
+        const entry = arr[i];
+        if (entry.deduct_from_balance === false) continue; // skip Foundation
+        if ((entry.funding_status as string | undefined) === "fully_funded") continue;
+        const total = Number(entry.financed_amount ?? 0);
+        const fundedSoFar = Number(entry.funded_amount ?? 0);
+        const remaining = total - fundedSoFar;
+        if (remaining > bestRemaining) {
+          bestRemaining = remaining;
+          bestIdx = i;
+        }
+      }
+      if (bestIdx >= 0) {
+        const entry = arr[bestIdx];
+        const total = Number(entry.financed_amount ?? 0);
+        const priorFunded = Number(entry.funded_amount ?? 0);
+        const newFunded = priorFunded + Number(amount);
+        const isFull = newFunded >= total - 0.01;
+        const priorHistory = Array.isArray(entry.charge_history) ? entry.charge_history as Array<Record<string, unknown>> : [];
+        arr[bestIdx] = {
+          ...entry,
+          funded_amount: newFunded,
           funded_at: new Date().toISOString(),
-          funding_status: "fully_funded",
+          funding_status: isFull ? "fully_funded" : "partially_funded",
           intuit_charge_id: chargeResult.id,
+          charge_history: [
+            ...priorHistory,
+            {
+              amount: Number(amount),
+              charge_id: chargeResult.id,
+              charged_at: new Date().toISOString(),
+              charged_by: user.id,
+            },
+          ],
           updated_at: new Date().toISOString(),
           updated_by: user.id,
         };

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -100,46 +101,104 @@ export default function FinancingDetailsCard({ contractId, financing }: Props) {
           return (
             <div key={idx} className="rounded-xl border border-slate-200 bg-white">
               {/* Header row */}
-              <div className="px-4 py-3 flex items-center justify-between gap-3 border-b border-slate-100">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="font-semibold text-slate-900">{f.financer_name ?? "—"}</p>
-                    {isFoundation ? (
-                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-300">
-                        Carries to balance
-                      </span>
-                    ) : (
-                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-[#00929C]/10 text-[#00929C] border border-[#00929C]/30">
-                        Deducted at POS
-                      </span>
-                    )}
-                    {fundingStatus && FUNDING_STATUS_BADGE[fundingStatus] && (
-                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${FUNDING_STATUS_BADGE[fundingStatus].cls}`}>
-                        {FUNDING_STATUS_BADGE[fundingStatus].label}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    {f.plan_number ? `Plan ${f.plan_number}` : ""}
-                    {f.plan_description ? ` — ${f.plan_description}` : ""}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="text-base font-bold text-blue-700">{formatCurrency(f.financed_amount)}</p>
-                  {fundedAmt > 0 && (
-                    <p className="text-xs text-emerald-700">
-                      Funded {formatCurrency(fundedAmt)} ({fundedPct.toFixed(0)}%)
+              <div className="px-4 py-3 border-b border-slate-100">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="font-semibold text-slate-900">{f.financer_name ?? "—"}</p>
+                      {isFoundation ? (
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-300">
+                          Carries to balance
+                        </span>
+                      ) : (
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-[#00929C]/10 text-[#00929C] border border-[#00929C]/30">
+                          Deducted at POS
+                        </span>
+                      )}
+                      {fundingStatus && FUNDING_STATUS_BADGE[fundingStatus] && (
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${FUNDING_STATUS_BADGE[fundingStatus].cls}`}>
+                          {FUNDING_STATUS_BADGE[fundingStatus].label}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {f.plan_number ? `Plan ${f.plan_number}` : ""}
+                      {f.plan_description ? ` — ${f.plan_description}` : ""}
                     </p>
-                  )}
+                  </div>
                 </div>
+
+                {/* Tri-pane: Total Financed | Run So Far | Remaining To Run */}
+                {!isFoundation && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-3">
+                    <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2">
+                      <p className="text-[10px] uppercase tracking-wide text-slate-500">Total Financed</p>
+                      <p className="text-sm font-bold text-slate-900 tabular-nums">{formatCurrency(f.financed_amount)}</p>
+                    </div>
+                    <div className={`rounded-lg border px-3 py-2 ${fundedAmt > 0 ? "bg-emerald-50 border-emerald-200" : "bg-slate-50 border-slate-200"}`}>
+                      <p className="text-[10px] uppercase tracking-wide text-slate-500">Run So Far</p>
+                      <p className={`text-sm font-bold tabular-nums ${fundedAmt > 0 ? "text-emerald-700" : "text-slate-400"}`}>
+                        {formatCurrency(fundedAmt)}
+                      </p>
+                      {fundedAmt > 0 && f.financed_amount > 0 && (
+                        <p className="text-[10px] text-emerald-600">{fundedPct.toFixed(0)}%</p>
+                      )}
+                    </div>
+                    {(() => {
+                      const remaining = Math.max(0, f.financed_amount - fundedAmt);
+                      return (
+                        <div className={`rounded-lg border px-3 py-2 ${remaining > 0 ? "bg-amber-50 border-amber-300" : "bg-emerald-50 border-emerald-200"}`}>
+                          <p className="text-[10px] uppercase tracking-wide text-slate-500">Remaining To Run</p>
+                          <p className={`text-sm font-bold tabular-nums ${remaining > 0 ? "text-amber-800" : "text-emerald-700"}`}>
+                            {formatCurrency(remaining)}
+                          </p>
+                          {remaining > 0 && (
+                            <Link
+                              href={`/contracts/${contractId}/collect-payment`}
+                              className="text-[10px] font-semibold text-amber-800 hover:underline whitespace-nowrap"
+                            >
+                              Run charge →
+                            </Link>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                {/* Foundation: just the financed amount (funding tracked at delivery via Foundation portal) */}
+                {isFoundation && (
+                  <div className="mt-3 flex items-center justify-between rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
+                    <p className="text-xs text-amber-800">
+                      Foundation funds Atlas <strong>after delivery</strong> via their stage process. Track in the Foundation portal until then.
+                    </p>
+                    <p className="text-base font-bold text-amber-800 whitespace-nowrap ml-3">{formatCurrency(f.financed_amount)}</p>
+                  </div>
+                )}
               </div>
+
+              {/* Charge history — each individual swipe against this financing entry */}
+              {Array.isArray((f as any).charge_history) && ((f as any).charge_history as Array<{ amount: number; charge_id: string; charged_at: string }>).length > 0 && (
+                <div className="px-4 py-3 border-b border-slate-100">
+                  <p className="text-[10px] uppercase tracking-wide text-slate-500 font-bold mb-2">Charge History</p>
+                  <div className="space-y-1">
+                    {((f as any).charge_history as Array<{ amount: number; charge_id: string; charged_at: string }>).map((ch, ci) => (
+                      <div key={ci} className="flex items-center justify-between text-xs">
+                        <span className="text-slate-700">{formatDate(ch.charged_at)}</span>
+                        <span className="text-slate-400 font-mono">{ch.charge_id?.slice(0, 12)}…</span>
+                        <span className="font-semibold text-emerald-700">{formatCurrency(ch.amount)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Static details */}
               <div className="px-4 py-3 space-y-1 text-xs">
                 {f.approval_number && <Detail k="Approval #" v={f.approval_number} />}
                 {externalAppIdStored && <Detail k="External App ID" v={externalAppIdStored} />}
                 {externalChargeIdStored && <Detail k="Charge Request #" v={externalChargeIdStored} />}
-                {fundedAt && <Detail k="Funded at" v={formatDate(fundedAt)} />}
+                {fundedAt && <Detail k="Last charged" v={formatDate(fundedAt)} />}
 
                 {/* Foundation specifics */}
                 {f.foundation_tier && (

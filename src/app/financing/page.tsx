@@ -99,7 +99,7 @@ export default async function FinancingPage() {
     foundation_missing_ach: "Foundation — ACH not provided & not waived",
     foundation_secondary_buyer_no_email: "Foundation — co-buyer email missing",
     lyon_stage_pending: "Lyon — stage awaiting funding",
-    funded_short: "Funded amount less than financed",
+    funded_short: "Balance to run before delivery (card not yet fully charged)",
     balance_unfunded: "Outstanding balance with no funding source",
   };
 
@@ -131,10 +131,13 @@ export default async function FinancingPage() {
       const anyPending = f.lyon_stages.some((s: any) => s.status !== "funded" && s.status !== "skipped");
       if (anyPending) reasons.push("lyon_stage_pending");
     }
-    // Funded-short check: financing entry exists but funded_amount < financed_amount and not failed
+    // Balance-to-run check: GreenSky / WF deduct-at-POS entries with funded < financed
+    // Per Willie 04-29: customer rarely runs 100% at the show — leftover balance must be
+    // run on the GreenSky-issued card prior to delivery. Flag both 0-funded and partial.
     const fundedAmt = (f as any).funded_amount ?? 0;
     const status = (f as any).funding_status ?? null;
-    if (!isLyon && status !== "failed" && fundedAmt > 0 && fundedAmt < (f.financed_amount ?? 0) - 0.01) {
+    const isInstantDeduct = !isLyon && !isFoundation;
+    if (isInstantDeduct && status !== "failed" && fundedAmt < (f.financed_amount ?? 0) - 0.01) {
       reasons.push("funded_short");
     }
     if (reasons.length > 0) attention.push({ contract: c, financing: f, reasons });
