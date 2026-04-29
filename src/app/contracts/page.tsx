@@ -6,6 +6,7 @@ import { ContractsList } from "@/components/contracts/ContractsList";
 import AppShell from "@/components/layout/AppShell";
 import { AppHeader } from "@/components/ui/AppHeader";
 import { Button } from "@/components/ui/button";
+import { getViewAsContext } from "@/lib/view-as";
 
 export default async function ContractsPage({
   searchParams,
@@ -25,13 +26,28 @@ export default async function ContractsPage({
     .eq("id", user.id)
     .single();
 
-  if (profile?.role === "field_crew") redirect("/field");
+  // Pull the view-as context — for admins this may swap effectiveRole/userId.
+  // For non-admins this is a no-op (helper enforces admin gate internally).
+  const viewAs = await getViewAsContext();
+
+  // Redirect logic respects the effective role so admins can preview the
+  // field-crew app by impersonating it.
+  const effectiveRole = viewAs.effectiveRole ?? profile?.role;
+  if (effectiveRole === "field_crew") redirect("/field");
 
   const { hasPermission } = await import("@/lib/permissions");
   const orgPerms = (profile?.organization as any)?.role_permissions;
-  if (!hasPermission(orgPerms, profile?.role, "contracts")) redirect("/dashboard");
+  if (!hasPermission(orgPerms, effectiveRole, "contracts")) redirect("/dashboard");
 
-  const isAdmin = ["admin", "manager", "bookkeeper"].includes(profile?.role ?? "");
+  // Admin/manager/bookkeeper see all rows by default — but if they're
+  // impersonating a specific user, filter by that user's id.
+  const isAdminEffective =
+    !viewAs.isImpersonatingUser &&
+    ["admin", "manager", "bookkeeper"].includes(effectiveRole ?? "");
+
+  const filterUserId = viewAs.isImpersonatingUser
+    ? viewAs.effectiveUserId
+    : user.id;
 
   let query = supabase
     .from("contracts")
@@ -46,14 +62,22 @@ export default async function ContractsPage({
     .order("created_at", { ascending: false })
     .limit(200);
 
-  if (!isAdmin) {
-    query = query.eq("sales_rep_id", user.id);
+  if (!isAdminEffective && filterUserId) {
+    query = query.eq("sales_rep_id", filterUserId);
   }
 
   const { data: contracts } = await query;
 
   return (
-    <AppShell role={profile?.role} userName={profile?.full_name} orgPerms={orgPerms}>
+    <AppShell
+      role={effectiveRole}
+      userName={profile?.full_name}
+      orgPerms={orgPerms}
+      realRole={profile?.role}
+      viewAsUser={viewAs.viewAsUser}
+      isImpersonatingRole={viewAs.isImpersonatingRole}
+      isImpersonatingUser={viewAs.isImpersonatingUser}
+    >
       <AppHeader
         title="Contracts"
         subtitle={contracts?.length ? `${contracts.length} ${contracts.length === 1 ? "contract" : "contracts"}` : undefined}

@@ -5,11 +5,23 @@ import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { DEFAULT_PERMISSIONS } from "@/lib/permissions";
 import type { Feature, RolePermissions } from "@/lib/permissions";
+import ViewAsBanner from "@/components/layout/ViewAsBanner";
+import ViewAsControls from "@/components/layout/ViewAsControls";
 
 interface AppShellProps {
+  /**
+   * Effective role for nav rendering. When the real admin is impersonating,
+   * this is the impersonated role; otherwise it equals the real role.
+   */
   role?: string | null;
   userName?: string | null;
   orgPerms?: RolePermissions | null;
+  /** Real role from the database — used to gate the View-As controls. */
+  realRole?: string | null;
+  /** When impersonating a specific user, their display name + id. */
+  viewAsUser?: { id: string; full_name: string | null; role: string | null } | null;
+  isImpersonatingRole?: boolean;
+  isImpersonatingUser?: boolean;
   children: React.ReactNode;
 }
 
@@ -101,11 +113,17 @@ function SidebarNav({
   userName,
   orgPerms,
   onSignOut,
+  realRole,
+  effectiveRole,
+  viewAsUserId,
 }: {
   role?: string | null;
   userName?: string | null;
   orgPerms?: RolePermissions | null;
   onSignOut: () => void;
+  realRole?: string | null;
+  effectiveRole?: string | null;
+  viewAsUserId?: string | null;
 }) {
   const pathname = usePathname();
 
@@ -173,6 +191,13 @@ function SidebarNav({
         })}
       </nav>
 
+      {/* View-As controls — admin only */}
+      <ViewAsControls
+        realRole={realRole ?? null}
+        effectiveRole={effectiveRole ?? role ?? null}
+        viewAsUserId={viewAsUserId ?? null}
+      />
+
       {/* User card + sign out */}
       <div className="px-4 py-4 border-t border-white/10 space-y-3">
         <Link
@@ -208,7 +233,16 @@ function SidebarNav({
   );
 }
 
-export default function AppShell({ role, userName, orgPerms, children }: AppShellProps) {
+export default function AppShell({
+  role,
+  userName,
+  orgPerms,
+  realRole,
+  viewAsUser,
+  isImpersonatingRole,
+  isImpersonatingUser,
+  children,
+}: AppShellProps) {
   const router = useRouter();
 
   async function handleSignOut() {
@@ -222,16 +256,35 @@ export default function AppShell({ role, userName, orgPerms, children }: AppShel
     router.push("/login");
   }
 
+  // Effective role drives nav. Real role gates the impersonation controls.
+  // When realRole isn't passed (older callers), fall back to role for safety.
+  const effectiveRole = role ?? null;
+  const realRoleResolved = realRole ?? role ?? null;
+
   return (
     <div className="flex min-h-screen bg-slate-50">
       <aside
         className="fixed left-0 top-0 bottom-0 w-64 flex-shrink-0 flex flex-col z-30"
         style={{ backgroundColor: "#010F21", boxShadow: "4px 0 20px rgba(0,0,0,0.25)" }}
       >
-        <SidebarNav role={role} userName={userName} orgPerms={orgPerms} onSignOut={handleSignOut} />
+        <SidebarNav
+          role={effectiveRole}
+          userName={userName}
+          orgPerms={orgPerms}
+          onSignOut={handleSignOut}
+          realRole={realRoleResolved}
+          effectiveRole={effectiveRole}
+          viewAsUserId={viewAsUser?.id ?? null}
+        />
       </aside>
 
-      <div className="flex-1 min-w-0 ml-64">
+      <div className="flex-1 min-w-0 ml-64 flex flex-col">
+        <ViewAsBanner
+          effectiveRole={effectiveRole}
+          viewAsUserName={viewAsUser?.full_name ?? null}
+          isImpersonatingRole={!!isImpersonatingRole}
+          isImpersonatingUser={!!isImpersonatingUser}
+        />
         {children}
       </div>
     </div>
