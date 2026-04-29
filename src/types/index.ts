@@ -211,6 +211,11 @@ export interface ContractFinancing {
   inhouse_ach_account?: string;
   inhouse_ach_bank?: string;
   inhouse_ach_holder_name?: string;
+  /** In-House lifecycle stage — Robert / managers update this as the loan moves through DocuSign / repayment */
+  inhouse_app_status?: "application_sent" | "docusign_sent" | "cleared_for_delivery" | "in_repayment" | "paid_off" | "failed";
+  inhouse_app_sent_at?: string;
+  inhouse_docusign_signed_at?: string;
+  inhouse_app_notes?: string;
   /** Wells Fargo: charge mode at point of sale */
   wf_charge_mode?: "charge_now" | "authorize_future";
   /** Wells Fargo: scheduled date for the future charge (when wf_charge_mode = authorize_future) */

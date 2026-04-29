@@ -9,6 +9,7 @@ import { KpiCard } from "@/components/ui/KpiCard";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { LenderMixChart } from "@/components/financing/LenderMixChart";
+import InhouseTrackerSection, { type InhouseRow } from "@/components/financing/InhouseTrackerSection";
 import { Badge } from "@/components/ui/badge";
 
 const STATUS_COLORS: Record<string, "default" | "success" | "warning" | "destructive" | "secondary"> = {
@@ -142,6 +143,39 @@ export default async function FinancingPage() {
   }
   const attentionTotal = attention.length;
 
+  // ── Salta In-House Financing tracker rows ────────────────────────────────
+  const inhouseRows: InhouseRow[] = [];
+  for (const c of contracts) {
+    const farr = Array.isArray(c.financing) ? c.financing : [];
+    farr.forEach((f: any, fundingIdx: number) => {
+      if (f?.type !== "in_house") return;
+      const customer = Array.isArray(c.customer) ? c.customer[0] : c.customer;
+      const show = Array.isArray(c.show) ? c.show[0] : c.show;
+      const location = Array.isArray(c.location) ? c.location[0] : c.location;
+      const rep = Array.isArray(c.sales_rep) ? c.sales_rep[0] : c.sales_rep;
+      const dlOk = c.customer_id ? customersWithDL.has(c.customer_id) : false;
+      inhouseRows.push({
+        contractId: c.id,
+        contractNumber: c.contract_number,
+        customerName: `${customer?.first_name ?? ""} ${customer?.last_name ?? ""}`.trim() || "—",
+        customerEmail: customer?.email ?? null,
+        showName: show?.name ?? location?.name ?? "—",
+        rep: rep?.full_name ?? "—",
+        signedAt: c.created_at ?? null,
+        financedAmount: Number(f.financed_amount ?? 0),
+        contractTotal: Number(c.total ?? 0),
+        balanceDue: Number(c.balance_due ?? 0),
+        fundingIdx,
+        status: (f.inhouse_app_status ?? "application_sent") as InhouseRow["status"],
+        appSentAt: f.inhouse_app_sent_at ?? c.created_at ?? null,
+        achOnFile: !!(f.inhouse_ach_routing && f.inhouse_ach_account),
+        achWaived: !!f.inhouse_ach_waived,
+        dlUploaded: dlOk,
+        notes: f.inhouse_app_notes ?? null,
+      });
+    });
+  }
+
   return (
     <AppShell role={profile?.role} userName={profile?.full_name}>
       <AppHeader
@@ -164,6 +198,14 @@ export default async function FinancingPage() {
             Post-Show Reconciliation →
           </Link>
         </div>
+
+        {/* ── Salta In-House Financing tracker ─────────────────────────────── */}
+        <SectionCard
+          title="Salta In-House Financing"
+          subtitle={inhouseRows.length === 0 ? "No applications yet" : `${inhouseRows.length} application${inhouseRows.length === 1 ? "" : "s"}`}
+        >
+          <InhouseTrackerSection rows={inhouseRows} />
+        </SectionCard>
 
         {/* ── Robert's Queue: contracts that need someone to act ──────────── */}
         {attentionTotal > 0 && (

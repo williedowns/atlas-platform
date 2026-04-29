@@ -20,6 +20,19 @@ const ALLOWED_KEYS = new Set([
   "external_status",
   "approval_number",
   "lifecycle_notes",
+  "inhouse_app_status",
+  "inhouse_app_sent_at",
+  "inhouse_docusign_signed_at",
+  "inhouse_app_notes",
+]);
+
+const ALLOWED_INHOUSE_STATUSES = new Set([
+  "application_sent",
+  "docusign_sent",
+  "cleared_for_delivery",
+  "in_repayment",
+  "paid_off",
+  "failed",
 ]);
 
 // PATCH /api/contracts/[id]/financing/[idx]
@@ -50,6 +63,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
     if (updates.funding_status && !ALLOWED_STATUSES.has(String(updates.funding_status))) {
       return NextResponse.json({ error: "invalid funding_status" }, { status: 400 });
+    }
+    if (updates.inhouse_app_status && !ALLOWED_INHOUSE_STATUSES.has(String(updates.inhouse_app_status))) {
+      return NextResponse.json({ error: "invalid inhouse_app_status" }, { status: 400 });
     }
     if (Object.keys(updates).length === 0) {
       return NextResponse.json({ error: "no allowed fields to update" }, { status: 400 });

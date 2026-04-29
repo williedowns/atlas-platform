@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { formatCurrency } from "@/lib/utils";
 import type { FinancingProvider, FinancingPlan, ContractFinancing } from "@/types";
 import { LYON_PROJECT_TYPE_LABELS, buildLyonStages, type LyonProjectType } from "@/lib/lyon-stages";
+import CustomerFileVault from "@/components/contracts/CustomerFileVault";
 
 interface Step4FinancingProps {
   onNext: () => void;
@@ -138,7 +139,9 @@ export default function Step4Financing({ onNext }: Step4FinancingProps) {
     const isInHouse = isInHouseProvider(selectedProvider.name);
 
     const entry: ContractFinancing = {
-      type: selectedProvider.name === "In-House Financing" ? "in_house" : "third_party",
+      // Robust detection of in-house regardless of provider display name
+      // (e.g., "In-House Financing" vs "Salta In-House Financing")
+      type: isInHouseProvider(selectedProvider.name) ? "in_house" : "third_party",
       financer_name: selectedProvider.name,
       plan_number: selectedPlan.plan_number,
       plan_description: selectedPlan.description,
@@ -872,10 +875,26 @@ export default function Step4Financing({ onNext }: Step4FinancingProps) {
                   onChange={(e) => setForm({ ...form, inhouseAchBank: e.target.value })}
                   placeholder="Bank name"
                 />
-                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
-                  <strong>Don't forget:</strong> upload a copy of the customer's driver's license
-                  to Customer Files at Step 5. The application packet to Robert pulls it from there.
-                </p>
+                {/* DL upload — required for the in-house application packet */}
+                {draft.customer?.id ? (
+                  <div className="rounded-lg bg-white border border-[#00929C]/20 p-2">
+                    <p className="text-xs font-bold uppercase tracking-wide text-[#00929C] mb-1">
+                      Driver's License
+                    </p>
+                    <p className="text-[11px] text-slate-500 mb-2">
+                      Required for the application packet emailed to Robert. Pick "Driver's License"
+                      as the category and upload a photo of the front.
+                    </p>
+                    <CustomerFileVault
+                      customerId={draft.customer.id}
+                      compact
+                    />
+                  </div>
+                ) : (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                    Save the customer at Step 2 first — once saved, you can upload a driver's license here.
+                  </p>
+                )}
               </div>
             )}
 
