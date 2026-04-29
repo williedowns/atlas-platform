@@ -13,7 +13,8 @@ const PAYMENT_METHODS = [
   { value: "credit_card", label: "Credit Card" },
   { value: "debit_card", label: "Debit Card" },
   { value: "ach", label: "ACH / eCheck" },
-  { value: "cash", label: "Cash / Check" },
+  { value: "check", label: "Check" },
+  { value: "cash", label: "Cash" },
 ] as const;
 
 type PaymentState = "idle" | "processing" | "success" | "error";
@@ -78,7 +79,7 @@ export function CollectPaymentForm({
 
   const isCard = method === "credit_card" || method === "debit_card" || isFinancing;
   const isAch = method === "ach";
-  const isCash = method === "cash";
+  const isCheck = method === "check";
 
   // ── Card expiry formatter ─────────────────────────────────
   const handleExpiryChange = (val: string) => {
@@ -151,13 +152,13 @@ export function CollectPaymentForm({
         account_holder_name: accountName,
       };
     } else {
-      // Cash / Check
+      // Cash or Check — record manually, no charge processing.
+      // Only attach check_number/bank_name when method=check (cash doesn't need them).
       body = {
         contract_id: contractId,
         amount,
         method,
-        check_number: checkNumber || undefined,
-        bank_name: bankName || undefined,
+        ...(isCheck ? { check_number: checkNumber || undefined, bank_name: bankName || undefined } : {}),
       };
     }
 
@@ -422,8 +423,8 @@ export function CollectPaymentForm({
         </Card>
       )}
 
-      {/* ── Cash / Check Fields ── */}
-      {isCash && (
+      {/* ── Check Fields (only when method = check) ── */}
+      {isCheck && (
         <Card>
           <CardContent className="py-5 space-y-4">
             <Input
