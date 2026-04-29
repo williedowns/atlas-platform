@@ -200,145 +200,165 @@ export default async function FinancingPage() {
 
       <main className="max-w-5xl mx-auto px-4 py-6 space-y-6">
 
-        {/* Quick links */}
-        <div className="flex justify-end">
-          <Link
-            href="/financing/reconciliation"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            Post-Show Reconciliation →
-          </Link>
-        </div>
+        {/* ─────────────────────────────────────────────────────────────────
+            1. OVERVIEW — at-a-glance KPIs + quick navigation
+        ───────────────────────────────────────────────────────────────── */}
+        <section className="space-y-3">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <KpiCard
+              label="Total Financed"
+              value={formatCurrency(totalFinanced)}
+              sublabel={`${rows.length} deal${rows.length === 1 ? "" : "s"}`}
+              accentColor="#0f172a"
+            />
+            <KpiCard
+              label="Funded to Atlas"
+              value={formatCurrency(totalFunded)}
+              sublabel={`${totalFinanced > 0 ? ((totalFunded / totalFinanced) * 100).toFixed(0) : 0}% of financed`}
+              accentColor="#059669"
+            />
+            <KpiCard
+              label="Outstanding"
+              value={formatCurrency(totalOutstanding)}
+              sublabel={attentionTotal > 0 ? `${attentionTotal} need attention` : "All clear"}
+              accentColor={totalOutstanding > 0 ? "#D97706" : "#059669"}
+            />
+            {Object.entries(byLender)
+              .sort((a, b) => b[1].total - a[1].total)
+              .slice(0, 1)
+              .map(([name, stats]) => (
+                <KpiCard
+                  key={name}
+                  label={`Top: ${name}`}
+                  value={formatCurrency(stats.total)}
+                  sublabel={`${stats.count} deal${stats.count !== 1 ? "s" : ""}`}
+                  accentColor="#1d4ed8"
+                />
+              ))}
+          </div>
+          <div className="flex justify-end">
+            <Link
+              href="/financing/reconciliation"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Post-Show Reconciliation →
+            </Link>
+          </div>
+        </section>
 
-        {/* ── Salta In-House Financing tracker ─────────────────────────────── */}
-        <SectionCard
-          title="Salta In-House Financing"
-          subtitle={inhouseRows.length === 0 ? "No applications yet" : `${inhouseRows.length} application${inhouseRows.length === 1 ? "" : "s"}`}
-        >
-          <InhouseTrackerSection rows={inhouseRows} />
-        </SectionCard>
-
-        {/* ── Robert's Queue: contracts that need someone to act ──────────── */}
+        {/* ─────────────────────────────────────────────────────────────────
+            2. ACTION ITEMS — what needs Robert's attention right now
+        ───────────────────────────────────────────────────────────────── */}
         {attentionTotal > 0 && (
-          <SectionCard
-            title="Needs Attention"
-            subtitle={`${attentionTotal} contract${attentionTotal === 1 ? "" : "s"} blocked or stale`}
-          >
-            <div className="space-y-4">
-              {Object.entries(attentionByFinancier)
-                .sort((a, b) => b[1].length - a[1].length)
-                .map(([financerName, items]) => (
-                  <div key={financerName}>
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="text-xs font-bold uppercase tracking-wide text-slate-600">
-                        {financerName}
-                      </p>
-                      <span className="text-xs font-bold rounded-full px-2 py-0.5 bg-amber-100 text-amber-800 border border-amber-300">
-                        {items.length}
-                      </span>
-                    </div>
-                    <div className="divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white">
-                      {items.map(({ contract: c, financing: f, reasons }, i) => {
-                        const customer = Array.isArray(c.customer) ? c.customer[0] : c.customer;
-                        return (
-                          <Link key={`${c.id}-${i}`} href={`/contracts/${c.id}`} className="block">
-                            <div className="px-4 py-3 hover:bg-slate-50 active:bg-slate-100 transition-colors">
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="font-semibold text-slate-900 text-sm">{c.contract_number}</span>
-                                    <span className="text-xs text-slate-500">
-                                      {customer?.first_name} {customer?.last_name}
-                                    </span>
-                                  </div>
-                                  <div className="flex flex-wrap gap-1.5 mt-1.5">
-                                    {reasons.map((r) => (
-                                      <span
-                                        key={r}
-                                        className="text-xs font-semibold rounded px-2 py-0.5 bg-amber-50 text-amber-800 border border-amber-200"
-                                      >
-                                        {REASON_LABEL[r]}
+          <section>
+            <SectionHeader title="Action Items" subtitle="Contracts blocked, stale, or missing required docs" />
+            <SectionCard
+              title="Needs Attention"
+              subtitle={`${attentionTotal} contract${attentionTotal === 1 ? "" : "s"} blocked or stale`}
+            >
+              <div className="space-y-4">
+                {Object.entries(attentionByFinancier)
+                  .sort((a, b) => b[1].length - a[1].length)
+                  .map(([financerName, items]) => (
+                    <div key={financerName}>
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-xs font-bold uppercase tracking-wide text-slate-600">
+                          {financerName}
+                        </p>
+                        <span className="text-xs font-bold rounded-full px-2 py-0.5 bg-amber-100 text-amber-800 border border-amber-300">
+                          {items.length}
+                        </span>
+                      </div>
+                      <div className="divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white">
+                        {items.map(({ contract: c, financing: f, reasons }, i) => {
+                          const customer = Array.isArray(c.customer) ? c.customer[0] : c.customer;
+                          return (
+                            <Link key={`${c.id}-${i}`} href={`/contracts/${c.id}`} className="block">
+                              <div className="px-4 py-3 hover:bg-slate-50 active:bg-slate-100 transition-colors">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="font-semibold text-slate-900 text-sm">{c.contract_number}</span>
+                                      <span className="text-xs text-slate-500">
+                                        {customer?.first_name} {customer?.last_name}
                                       </span>
-                                    ))}
+                                    </div>
+                                    <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                      {reasons.map((r) => (
+                                        <span
+                                          key={r}
+                                          className="text-xs font-semibold rounded px-2 py-0.5 bg-amber-50 text-amber-800 border border-amber-200"
+                                        >
+                                          {REASON_LABEL[r]}
+                                        </span>
+                                      ))}
+                                    </div>
                                   </div>
-                                </div>
-                                <div className="text-right flex-shrink-0">
-                                  <p className="text-sm font-bold text-blue-700">{formatCurrency(f.financed_amount)}</p>
-                                  <p className="text-xs text-slate-400">{formatDate(c.created_at)}</p>
+                                  <div className="text-right flex-shrink-0">
+                                    <p className="text-sm font-bold text-blue-700">{formatCurrency(f.financed_amount)}</p>
+                                    <p className="text-xs text-slate-400">{formatDate(c.created_at)}</p>
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          </Link>
-                        );
-                      })}
+                            </Link>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                ))}
-            </div>
-          </SectionCard>
+                  ))}
+              </div>
+            </SectionCard>
+          </section>
         )}
 
-        {/* Summary cards */}
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <KpiCard
-            label="Total Financed"
-            value={formatCurrency(totalFinanced)}
-            sublabel={`${rows.length} deal${rows.length === 1 ? "" : "s"}`}
-            accentColor="#0f172a"
-          />
-          <KpiCard
-            label="Funded to Atlas"
-            value={formatCurrency(totalFunded)}
-            sublabel={`${totalFinanced > 0 ? ((totalFunded / totalFinanced) * 100).toFixed(0) : 0}% of financed`}
-            accentColor="#059669"
-          />
-          <KpiCard
-            label="Outstanding"
-            value={formatCurrency(totalOutstanding)}
-            sublabel={attentionTotal > 0 ? `${attentionTotal} need attention` : "All clear"}
-            accentColor={totalOutstanding > 0 ? "#D97706" : "#059669"}
-          />
-          {Object.entries(byLender)
-            .sort((a, b) => b[1].total - a[1].total)
-            .slice(0, 1)
-            .map(([name, stats]) => (
-              <KpiCard
-                key={name}
-                label={`Top: ${name}`}
-                value={formatCurrency(stats.total)}
-                sublabel={`${stats.count} deal${stats.count !== 1 ? "s" : ""}`}
-                accentColor="#1d4ed8"
-              />
-            ))}
-        </div>
+        {/* ─────────────────────────────────────────────────────────────────
+            3. LENDER PIPELINES — by-lender workflow trackers
+        ───────────────────────────────────────────────────────────────── */}
+        <section className="space-y-4">
+          <SectionHeader title="Lender Pipelines" subtitle="Track each lender's workflow as contracts move through their stages" />
 
-        {/* Lender mix donut + bars */}
-        {(() => {
-          const LENDER_PALETTE = ["#1d4ed8", "#0891B2", "#00929C", "#7C3AED", "#DB2777", "#059669", "#D97706", "#0EA5E9"];
-          const lenderData = Object.entries(byLender)
-            .sort((a, b) => b[1].total - a[1].total)
-            .map(([name, stats], i) => ({
-              name,
-              value: stats.total,
-              count: stats.count,
-              color: LENDER_PALETTE[i % LENDER_PALETTE.length],
-            }));
-          return (
-            <SectionCard title="Lender Mix" subtitle="Share of financed volume by partner">
-              <LenderMixChart data={lenderData} total={totalFinanced} />
-            </SectionCard>
-          );
-        })()}
+          {/* Salta In-House Financing tracker */}
+          <SectionCard
+            title="Salta In-House Financing"
+            subtitle={inhouseRows.length === 0 ? "No applications yet" : `${inhouseRows.length} application${inhouseRows.length === 1 ? "" : "s"}`}
+          >
+            <InhouseTrackerSection rows={inhouseRows} />
+          </SectionCard>
+        </section>
 
-        {/* Financed contracts list */}
-        <SectionCard
-          title="Financed Contracts"
-          subtitle={rows.length ? `${rows.length} showing` : undefined}
-          bodyClassName="p-0"
-        >
+        {/* ─────────────────────────────────────────────────────────────────
+            4. PORTFOLIO OVERVIEW — lender mix and full list
+        ───────────────────────────────────────────────────────────────── */}
+        <section className="space-y-4">
+          <SectionHeader title="Portfolio Overview" subtitle="Mix and full list of every financed contract" />
+
+          {/* Lender mix donut + bars */}
+          {(() => {
+            const LENDER_PALETTE = ["#1d4ed8", "#0891B2", "#00929C", "#7C3AED", "#DB2777", "#059669", "#D97706", "#0EA5E9"];
+            const lenderData = Object.entries(byLender)
+              .sort((a, b) => b[1].total - a[1].total)
+              .map(([name, stats], i) => ({
+                name,
+                value: stats.total,
+                count: stats.count,
+                color: LENDER_PALETTE[i % LENDER_PALETTE.length],
+              }));
+            return (
+              <SectionCard title="Lender Mix" subtitle="Share of financed volume by partner">
+                <LenderMixChart data={lenderData} total={totalFinanced} />
+              </SectionCard>
+            );
+          })()}
+
+          {/* Financed contracts list */}
+          <SectionCard
+            title="All Financed Contracts"
+            subtitle={rows.length ? `${rows.length} contract${rows.length === 1 ? "" : "s"}` : undefined}
+            bodyClassName="p-0"
+          >
         {rows.length === 0 ? (
           <EmptyState
             title="No financed contracts"
@@ -404,8 +424,20 @@ export default async function FinancingPage() {
             })}
           </div>
         )}
-        </SectionCard>
+          </SectionCard>
+        </section>
       </main>
     </AppShell>
+  );
+}
+
+function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 px-1">
+      <div>
+        <h2 className="text-base font-bold text-slate-900">{title}</h2>
+        {subtitle && <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>}
+      </div>
+    </div>
   );
 }
