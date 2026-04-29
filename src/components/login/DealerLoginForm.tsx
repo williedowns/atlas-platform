@@ -46,11 +46,6 @@ export function DealerLoginForm({ demoMode }: DealerLoginFormProps) {
     }
   }
 
-  function fillDemo() {
-    setEmail(DEMO_EMAIL);
-    setPassword(DEMO_PASSWORD);
-  }
-
   return (
     <div className="min-h-screen bg-[#010F21] flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
@@ -116,15 +111,9 @@ export function DealerLoginForm({ demoMode }: DealerLoginFormProps) {
             </Button>
           </form>
 
-          {!demoMode && (
-            <button
-              type="button"
-              onClick={fillDemo}
-              className="mt-3 w-full text-center text-xs text-slate-500 hover:text-[#00929C] py-2 rounded-lg border border-dashed border-slate-200 hover:border-[#00929C] transition-colors"
-            >
-              Use Demo Credentials
-            </button>
-          )}
+          {/* Demo Credentials button hidden on the main /login page.
+              The /demo route still pre-fills credentials via demoMode=true
+              for sales-pitch sessions if needed. */}
 
           <div className="mt-4 text-center">
             <Link
