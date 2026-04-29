@@ -34,7 +34,16 @@ const BLANK_FORM = {
   // Lyon Financial
   lyonProjectType: "" as "" | LyonProjectType,
   lyonFundingFlavor: "lyon_direct" as "lyon_direct" | "lightstream_via_customer",
+  // In-House Financing (emailed to Robert Kennedy on sign)
+  inhouseAchRouting: "",
+  inhouseAchAccount: "",
+  inhouseAchBank: "",
+  inhouseAchHolder: "",
 };
+
+function isInHouseProvider(name: string): boolean {
+  return name.toLowerCase().includes("in-house") || name.toLowerCase().includes("inhouse") || name.toLowerCase().includes("in house");
+}
 
 /** Foundation Finance runs AFTER the show — financed amount carries to balance due */
 function isFoundationProvider(name: string): boolean {
@@ -103,6 +112,7 @@ export default function Step4Financing({ onNext }: Step4FinancingProps) {
 
     const isFoundation = isFoundationProvider(selectedProvider.name);
     const isLyon = isLyonProvider(selectedProvider.name);
+    const isInHouse = isInHouseProvider(selectedProvider.name);
 
     const entry: ContractFinancing = {
       type: selectedProvider.name === "In-House Financing" ? "in_house" : "third_party",
@@ -138,6 +148,14 @@ export default function Step4Financing({ onNext }: Step4FinancingProps) {
             lyon_stages: buildLyonStages(form.lyonProjectType, amount),
           }
         : {}),
+      ...(isInHouse && (form.inhouseAchRouting || form.inhouseAchAccount || form.inhouseAchBank || form.inhouseAchHolder)
+        ? {
+            inhouse_ach_routing: form.inhouseAchRouting || undefined,
+            inhouse_ach_account: form.inhouseAchAccount || undefined,
+            inhouse_ach_bank: form.inhouseAchBank || undefined,
+            inhouse_ach_holder_name: form.inhouseAchHolder || undefined,
+          }
+        : {}),
     };
     addFinancing(entry);
     setForm(BLANK_FORM);
@@ -146,6 +164,7 @@ export default function Step4Financing({ onNext }: Step4FinancingProps) {
 
   const isFoundationSelected = selectedProvider ? isFoundationProvider(selectedProvider.name) : false;
   const isLyonSelected = selectedProvider ? isLyonProvider(selectedProvider.name) : false;
+  const isInHouseSelected = selectedProvider ? isInHouseProvider(selectedProvider.name) : false;
   // Foundation requires 2-signer email when secondary first/last are entered (catch the half-filled case)
   const foundationSecondaryIncomplete =
     isFoundationSelected &&
@@ -640,6 +659,55 @@ export default function Step4Financing({ onNext }: Step4FinancingProps) {
                     Project type required so we can generate the Lyon draw schedule.
                   </p>
                 )}
+              </div>
+            )}
+
+            {/* ── In-House Financing ──────────────────────────────────────── */}
+            {isInHouseSelected && form.planId && (
+              <div className="space-y-3 rounded-xl border-2 border-[#00929C]/30 bg-[#00929C]/5 p-3">
+                <p className="text-xs font-bold uppercase tracking-wide text-[#00929C]">
+                  In-House Financing — ACH for Atlas Withdrawals
+                </p>
+                <p className="text-xs text-slate-600">
+                  Atlas will withdraw installments from this account. On sign, an
+                  application packet emails to Robert Kennedy with all customer info,
+                  product details, financed amount, ACH info, and the customer's
+                  driver's license.
+                </p>
+                <Input
+                  label="Account Holder Name"
+                  type="text"
+                  value={form.inhouseAchHolder}
+                  onChange={(e) => setForm({ ...form, inhouseAchHolder: e.target.value })}
+                  placeholder="As printed on the check"
+                />
+                <Input
+                  label="Routing Number"
+                  type="text"
+                  inputMode="numeric"
+                  value={form.inhouseAchRouting}
+                  onChange={(e) => setForm({ ...form, inhouseAchRouting: e.target.value.replace(/\D/g, "").slice(0, 9) })}
+                  placeholder="9 digits"
+                />
+                <Input
+                  label="Account Number"
+                  type="text"
+                  inputMode="numeric"
+                  value={form.inhouseAchAccount}
+                  onChange={(e) => setForm({ ...form, inhouseAchAccount: e.target.value.replace(/\D/g, "") })}
+                  placeholder="Account number"
+                />
+                <Input
+                  label="Bank Name"
+                  type="text"
+                  value={form.inhouseAchBank}
+                  onChange={(e) => setForm({ ...form, inhouseAchBank: e.target.value })}
+                  placeholder="Bank name"
+                />
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                  <strong>Don't forget:</strong> upload a copy of the customer's driver's license
+                  to Customer Files at Step 5. The application packet to Robert pulls it from there.
+                </p>
               </div>
             )}
 

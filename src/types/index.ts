@@ -205,6 +205,12 @@ export interface ContractFinancing {
   foundation_ach_bank?: string;
   /** True if salesperson opted to waive ACH (cost up to $250 from commission) */
   foundation_ach_waived?: boolean;
+
+  /** In-House Financing — ACH info collected at sale; emailed to Robert Kennedy */
+  inhouse_ach_routing?: string;
+  inhouse_ach_account?: string;
+  inhouse_ach_bank?: string;
+  inhouse_ach_holder_name?: string;
   /** Wells Fargo: charge mode at point of sale */
   wf_charge_mode?: "charge_now" | "authorize_future";
   /** Wells Fargo: scheduled date for the future charge (when wf_charge_mode = authorize_future) */

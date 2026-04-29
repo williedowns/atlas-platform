@@ -121,6 +121,14 @@ export default function Step7Sign({ onNext }: Step7SignProps) {
         // Fire-and-forget welcome email
         fetch(`/api/contracts/${createdId}/welcome-email`, { method: "POST" })
           .catch(() => {/* non-fatal */});
+        // If In-House Financing is on the contract, fire-and-forget the
+        // application packet to Robert Kennedy. The endpoint short-circuits
+        // when no in-house entry exists, so it's safe to always invoke.
+        const hasInHouse = (draft.financing ?? []).some((f) => f?.type === "in_house");
+        if (hasInHouse) {
+          fetch(`/api/contracts/${createdId}/inhouse-application`, { method: "POST" })
+            .catch(() => {/* non-fatal */});
+        }
       }
 
       onNext();

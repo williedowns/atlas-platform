@@ -217,6 +217,38 @@ export default function FinancingDetailsCard({ contractId, financing }: Props) {
                   <Detail k="ACH on file" v={`acct ····${f.foundation_ach_account.slice(-4)}${f.foundation_ach_bank ? ` · ${f.foundation_ach_bank}` : ""}`} />
                 )}
 
+                {/* In-House specifics */}
+                {f.type === "in_house" && (
+                  <>
+                    {f.inhouse_ach_holder_name && (
+                      <Detail k="In-House ACH" v={`${f.inhouse_ach_holder_name}${f.inhouse_ach_account ? ` · acct ····${f.inhouse_ach_account.slice(-4)}` : ""}${f.inhouse_ach_bank ? ` · ${f.inhouse_ach_bank}` : ""}`} />
+                    )}
+                    <div className="flex justify-between items-center gap-4 text-xs pt-1">
+                      <span className="text-slate-500">Application packet</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={busy}
+                        onClick={async () => {
+                          setBusy(true);
+                          setError(null);
+                          const r = await fetch(`/api/contracts/${contractId}/inhouse-application`, { method: "POST" });
+                          setBusy(false);
+                          if (!r.ok) {
+                            const b = await r.json().catch(() => ({}));
+                            setError(b.error ?? "Failed to send application");
+                            return;
+                          }
+                          const body = await r.json().catch(() => ({}));
+                          if (body.skipped) setError(body.reason ?? "Skipped");
+                        }}
+                      >
+                        Resend to Robert
+                      </Button>
+                    </div>
+                  </>
+                )}
+
                 {/* Lyon specifics */}
                 {isLyon && f.lyon_project_type && (
                   <Detail
