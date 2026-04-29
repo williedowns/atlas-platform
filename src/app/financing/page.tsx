@@ -11,6 +11,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { LenderMixChart } from "@/components/financing/LenderMixChart";
 import InhouseTrackerSection, { type InhouseRow } from "@/components/financing/InhouseTrackerSection";
 import { Badge } from "@/components/ui/badge";
+import { lowDepositInfo } from "@/lib/low-deposit";
 
 const STATUS_COLORS: Record<string, "default" | "success" | "warning" | "destructive" | "secondary"> = {
   draft: "secondary", pending_signature: "warning", signed: "default",
@@ -92,7 +93,8 @@ export default async function FinancingPage() {
     | "foundation_secondary_buyer_no_email"
     | "lyon_stage_pending"
     | "funded_short"
-    | "balance_unfunded";
+    | "balance_unfunded"
+    | "low_deposit";
 
   const REASON_LABEL: Record<AttentionReason, string> = {
     missing_primary_dl: "Primary borrower's driver's license not uploaded",
@@ -103,6 +105,7 @@ export default async function FinancingPage() {
     lyon_stage_pending: "Lyon — stage awaiting funding",
     funded_short: "Balance to run via lender portal before delivery",
     balance_unfunded: "Outstanding balance with no funding source",
+    low_deposit: "Low deposit — below 30% of total",
   };
 
   const attention: Array<{ contract: any; financing: any; reasons: AttentionReason[] }> = [];
@@ -141,6 +144,14 @@ export default async function FinancingPage() {
     const isInstantDeduct = !isLyon && !isFoundation;
     if (isInstantDeduct && status !== "failed" && fundedAmt < (f.financed_amount ?? 0) - 0.01) {
       reasons.push("funded_short");
+    }
+    // Low deposit (Robert Downs 04-28): customer put down less than the suggested
+    // 30% — chase risk. Evaluated once per contract; only attached to the first
+    // financing entry to avoid duplicate flags when contract has multi-financier splits.
+    const ld = lowDepositInfo({ total: c.total, deposit_paid: c.deposit_paid, status: c.status });
+    const isFirstEntryForContract = (Array.isArray(c.financing) ? c.financing : []).indexOf(f) === 0;
+    if (ld.isLow && isFirstEntryForContract) {
+      reasons.push("low_deposit");
     }
     if (reasons.length > 0) attention.push({ contract: c, financing: f, reasons });
   }

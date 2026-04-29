@@ -11,6 +11,8 @@ import AppShell from "@/components/layout/AppShell";
 import { AppHeader } from "@/components/ui/AppHeader";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { OutstandingByAgeChart } from "@/components/bookkeeper/OutstandingByAgeChart";
+import { lowDepositInfo, DEFAULT_LOW_DEPOSIT_THRESHOLD } from "@/lib/low-deposit";
+import { LowDepositBadge } from "@/components/contracts/LowDepositBadge";
 
 export default async function BookkeeperPage() {
   const supabase = await createClient();
@@ -195,6 +197,12 @@ export default async function BookkeeperPage() {
   const blocked = readinessRows.filter((r) => r.blockers.length > 0);
   const ready = readinessRows.filter((r) => r.blockers.length === 0);
 
+  // ── Low-deposit watch — contracts where customer didn't put down at least 30%
+  const lowDepositContracts = contracts
+    .map((c) => ({ contract: c, info: lowDepositInfo({ total: c.total, deposit_paid: c.deposit_paid, status: c.status }) }))
+    .filter((r) => r.info.isLow)
+    .sort((a, b) => a.info.pct - b.info.pct); // lowest % first
+
   return (
     <AppShell role={profile?.role} userName={profile?.full_name} orgPerms={orgPerms}>
       <AppHeader
@@ -242,7 +250,43 @@ export default async function BookkeeperPage() {
             2. ACTION ITEMS — what needs Lori's attention right now
         ───────────────────────────────────────────────────────────────── */}
         <section className="space-y-4">
-          <SectionHeader title="Action Items" subtitle="Urgent: refunds to issue, certs expiring, deliveries blocked" />
+          <SectionHeader title="Action Items" subtitle="Urgent: refunds to issue, certs expiring, deliveries blocked, low-deposit risk" />
+
+        {/* ── Low Deposit Watch (Robert Downs flag) ── */}
+        {lowDepositContracts.length > 0 && (
+          <SectionCard
+            title="Low Deposit Watch"
+            subtitle={`${lowDepositContracts.length} contract${lowDepositContracts.length === 1 ? "" : "s"} below ${(DEFAULT_LOW_DEPOSIT_THRESHOLD * 100).toFixed(0)}% deposit`}
+          >
+            <div className="divide-y divide-slate-100 rounded-lg border border-amber-200 bg-amber-50/40">
+              {lowDepositContracts.map(({ contract: c, info }) => {
+                const customer = Array.isArray(c.customer) ? c.customer[0] : c.customer;
+                const location = Array.isArray(c.location) ? c.location[0] : c.location;
+                return (
+                  <Link key={c.id} href={`/contracts/${c.id}`} className="block">
+                    <div className="px-3 py-2 hover:bg-amber-50 active:bg-amber-100 transition-colors">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-semibold text-slate-900 text-sm">{c.contract_number}</span>
+                            <LowDepositBadge pct={info.pct} threshold={info.threshold} size="xs" />
+                          </div>
+                          <p className="text-xs text-slate-700 mt-0.5">
+                            {customer?.first_name} {customer?.last_name} · {location?.name ?? "—"}
+                          </p>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            {formatCurrency(c.deposit_paid ?? 0)} of {formatCurrency(c.total ?? 0)} collected
+                          </p>
+                        </div>
+                        <p className="text-sm font-bold text-amber-700 whitespace-nowrap">{formatCurrency((c.balance_due ?? 0))}</p>
+                      </div>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </SectionCard>
+        )}
 
         {/* ── Pre-Delivery Readiness (Lori's view) ── */}
         <SectionCard

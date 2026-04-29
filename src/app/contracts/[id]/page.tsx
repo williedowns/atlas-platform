@@ -16,6 +16,8 @@ import CustomerFileVault from "@/components/contracts/CustomerFileVault";
 import ContingencyTracker from "@/components/contracts/ContingencyTracker";
 import ScheduleDeliveryButton from "@/components/contracts/ScheduleDeliveryButton";
 import FinancingDetailsCard from "@/components/contracts/FinancingDetailsCard";
+import { LowDepositBadge } from "@/components/contracts/LowDepositBadge";
+import { lowDepositInfo } from "@/lib/low-deposit";
 import { AppHeader } from "@/components/ui/AppHeader";
 import { SectionCard } from "@/components/ui/SectionCard";
 
@@ -298,7 +300,17 @@ export default async function ContractDetailPage({
         {/* Financial Summary */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle>Financial Summary</CardTitle>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <CardTitle>Financial Summary</CardTitle>
+              {(() => {
+                const ld = lowDepositInfo({
+                  total: contract.total,
+                  deposit_paid: contract.deposit_paid,
+                  status: contract.status,
+                });
+                return ld.isLow ? <LowDepositBadge pct={ld.pct} threshold={ld.threshold} /> : null;
+              })()}
+            </div>
           </CardHeader>
           <CardContent>
             <div className="space-y-2 text-sm">
