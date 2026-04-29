@@ -27,10 +27,16 @@ const BLANK_FORM = {
   foundationAchAccount: "",
   foundationAchBank: "",
   foundationAchWaived: false,
-  // Secondary buyer (Foundation typically needs it when 2 signers)
+  // Primary borrower — defaults to spa contract customer (initialized in useEffect)
+  primaryFirstName: "",
+  primaryLastName: "",
+  primaryEmail: "",
+  primaryPhone: "",
+  // Secondary / co-buyer (optional)
   secondaryFirstName: "",
   secondaryLastName: "",
   secondaryEmail: "",
+  secondaryPhone: "",
   // Lyon Financial
   lyonProjectType: "" as "" | LyonProjectType,
   lyonFundingFlavor: "lyon_direct" as "lyon_direct" | "lightstream_via_customer",
@@ -67,8 +73,25 @@ export default function Step4Financing({ onNext }: Step4FinancingProps) {
   const [plans, setPlans] = useState<FinancingPlan[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [form, setForm] = useState(BLANK_FORM);
+  // Initialize primary borrower from the spa contract customer so the salesperson
+  // sees who's expected to be primary by default (and can edit if different).
+  const [form, setForm] = useState(() => ({
+    ...BLANK_FORM,
+    primaryFirstName: draft.customer?.first_name ?? "",
+    primaryLastName: draft.customer?.last_name ?? "",
+    primaryEmail: draft.customer?.email ?? "",
+    primaryPhone: draft.customer?.phone ?? "",
+  }));
   const [showForm, setShowForm] = useState(draft.financing.length === 0);
+
+  // Helper to reset form back to blank but keep primary defaulted to contract customer
+  const blankForm = () => ({
+    ...BLANK_FORM,
+    primaryFirstName: draft.customer?.first_name ?? "",
+    primaryLastName: draft.customer?.last_name ?? "",
+    primaryEmail: draft.customer?.email ?? "",
+    primaryPhone: draft.customer?.phone ?? "",
+  });
 
   useEffect(() => {
     async function load() {
@@ -134,11 +157,37 @@ export default function Step4Financing({ onNext }: Step4FinancingProps) {
               foundation_ach_bank: form.foundationAchBank || undefined,
             }
           : {}),
-      ...(form.secondaryEmail
+      // Primary borrower — only persist if it differs from the spa contract
+      // customer (avoids storing duplicate data; consumers fall back to customer).
+      ...((() => {
+        const cFirst = (draft.customer?.first_name ?? "").trim().toLowerCase();
+        const cLast = (draft.customer?.last_name ?? "").trim().toLowerCase();
+        const cEmail = (draft.customer?.email ?? "").trim().toLowerCase();
+        const cPhone = (draft.customer?.phone ?? "").trim();
+        const pFirst = form.primaryFirstName.trim();
+        const pLast = form.primaryLastName.trim();
+        const pEmail = form.primaryEmail.trim();
+        const pPhone = form.primaryPhone.trim();
+        const matchesCustomer =
+          pFirst.toLowerCase() === cFirst &&
+          pLast.toLowerCase() === cLast &&
+          pEmail.toLowerCase() === cEmail &&
+          pPhone === cPhone;
+        if (matchesCustomer) return {};
+        return {
+          ...(pFirst ? { primary_buyer_first_name: pFirst } : {}),
+          ...(pLast ? { primary_buyer_last_name: pLast } : {}),
+          ...(pEmail ? { primary_buyer_email: pEmail } : {}),
+          ...(pPhone ? { primary_buyer_phone: pPhone } : {}),
+        };
+      })()),
+      // Secondary / co-buyer
+      ...(form.secondaryEmail || form.secondaryFirstName || form.secondaryLastName
         ? {
-            secondary_buyer_email: form.secondaryEmail,
-            secondary_buyer_first_name: form.secondaryFirstName || undefined,
-            secondary_buyer_last_name: form.secondaryLastName || undefined,
+            ...(form.secondaryEmail ? { secondary_buyer_email: form.secondaryEmail.trim() } : {}),
+            ...(form.secondaryFirstName ? { secondary_buyer_first_name: form.secondaryFirstName.trim() } : {}),
+            ...(form.secondaryLastName ? { secondary_buyer_last_name: form.secondaryLastName.trim() } : {}),
+            ...(form.secondaryPhone ? { secondary_buyer_phone: form.secondaryPhone.trim() } : {}),
           }
         : {}),
       ...(isLyon && form.lyonProjectType
@@ -158,7 +207,7 @@ export default function Step4Financing({ onNext }: Step4FinancingProps) {
         : {}),
     };
     addFinancing(entry);
-    setForm(BLANK_FORM);
+    setForm(blankForm());
     setShowForm(false);
   }
 
@@ -248,9 +297,16 @@ export default function Step4Financing({ onNext }: Step4FinancingProps) {
                           Authorize-future · charge {entry.wf_future_charge_date ?? "TBD"}
                         </p>
                       )}
-                      {entry.secondary_buyer_email && (
+                      {(entry.primary_buyer_first_name || entry.primary_buyer_last_name || entry.primary_buyer_email) && (
                         <p className="text-xs text-slate-500 mt-0.5">
-                          Co-buyer: {[entry.secondary_buyer_first_name, entry.secondary_buyer_last_name].filter(Boolean).join(" ")} ({entry.secondary_buyer_email})
+                          Primary: {[entry.primary_buyer_first_name, entry.primary_buyer_last_name].filter(Boolean).join(" ") || "—"}
+                          {entry.primary_buyer_email ? ` (${entry.primary_buyer_email})` : ""}
+                        </p>
+                      )}
+                      {(entry.secondary_buyer_first_name || entry.secondary_buyer_last_name || entry.secondary_buyer_email) && (
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Co-borrower: {[entry.secondary_buyer_first_name, entry.secondary_buyer_last_name].filter(Boolean).join(" ") || "—"}
+                          {entry.secondary_buyer_email ? ` (${entry.secondary_buyer_email})` : ""}
                         </p>
                       )}
                       {entry.lyon_project_type && (
@@ -448,6 +504,153 @@ export default function Step4Financing({ onNext }: Step4FinancingProps) {
               </>
             )}
 
+            {/* ── Borrowers (Primary + Secondary) — universal for all financing ─ */}
+            {form.planId && (
+              <div className="space-y-3 rounded-xl border-2 border-slate-200 bg-slate-50 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-bold uppercase tracking-wide text-slate-700">
+                    Borrowers on the Loan
+                  </p>
+                  <button
+                    type="button"
+                    className="text-[10px] font-semibold text-[#00929C] hover:underline"
+                    onClick={() => {
+                      // Swap primary ↔ secondary — useful when the spa contract customer
+                      // is actually the secondary borrower (e.g., spouse signs the contract,
+                      // financing is in the other spouse's name).
+                      setForm({
+                        ...form,
+                        primaryFirstName: form.secondaryFirstName,
+                        primaryLastName: form.secondaryLastName,
+                        primaryEmail: form.secondaryEmail,
+                        primaryPhone: form.secondaryPhone,
+                        secondaryFirstName: form.primaryFirstName,
+                        secondaryLastName: form.primaryLastName,
+                        secondaryEmail: form.primaryEmail,
+                        secondaryPhone: form.primaryPhone,
+                      });
+                    }}
+                  >
+                    Swap Primary ↔ Secondary
+                  </button>
+                </div>
+                {isInHouseSelected && (
+                  <p className="text-[11px] text-slate-500 italic">
+                    Robert collects formal signatures via DocuSign for in-house — these are
+                    pre-fills for that packet.
+                  </p>
+                )}
+
+                {/* Primary borrower */}
+                <div className="rounded-lg border border-[#00929C]/30 bg-white p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-bold uppercase tracking-wide text-[#00929C]">
+                      Primary Borrower
+                    </p>
+                    <button
+                      type="button"
+                      className="text-[10px] font-semibold text-slate-500 hover:text-[#00929C]"
+                      onClick={() => setForm({
+                        ...form,
+                        primaryFirstName: draft.customer?.first_name ?? "",
+                        primaryLastName: draft.customer?.last_name ?? "",
+                        primaryEmail: draft.customer?.email ?? "",
+                        primaryPhone: draft.customer?.phone ?? "",
+                      })}
+                    >
+                      Use spa customer
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input
+                      label="First Name"
+                      type="text"
+                      value={form.primaryFirstName}
+                      onChange={(e) => setForm({ ...form, primaryFirstName: e.target.value })}
+                    />
+                    <Input
+                      label="Last Name"
+                      type="text"
+                      value={form.primaryLastName}
+                      onChange={(e) => setForm({ ...form, primaryLastName: e.target.value })}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input
+                      label="Email"
+                      type="email"
+                      value={form.primaryEmail}
+                      onChange={(e) => setForm({ ...form, primaryEmail: e.target.value })}
+                    />
+                    <Input
+                      label="Phone"
+                      type="tel"
+                      value={form.primaryPhone}
+                      onChange={(e) => setForm({ ...form, primaryPhone: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                {/* Secondary / co-buyer */}
+                <div className="rounded-lg border border-slate-200 bg-white p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-bold uppercase tracking-wide text-slate-600">
+                      Secondary Borrower (optional)
+                    </p>
+                    <button
+                      type="button"
+                      className="text-[10px] font-semibold text-slate-500 hover:text-[#00929C]"
+                      onClick={() => setForm({
+                        ...form,
+                        secondaryFirstName: draft.customer?.first_name ?? "",
+                        secondaryLastName: draft.customer?.last_name ?? "",
+                        secondaryEmail: draft.customer?.email ?? "",
+                        secondaryPhone: draft.customer?.phone ?? "",
+                      })}
+                    >
+                      Use spa customer
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input
+                      label="First Name"
+                      type="text"
+                      value={form.secondaryFirstName}
+                      onChange={(e) => setForm({ ...form, secondaryFirstName: e.target.value })}
+                      placeholder="Co-borrower first name"
+                    />
+                    <Input
+                      label="Last Name"
+                      type="text"
+                      value={form.secondaryLastName}
+                      onChange={(e) => setForm({ ...form, secondaryLastName: e.target.value })}
+                      placeholder="Co-borrower last name"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input
+                      label={isFoundationSelected ? "Email (required for Foundation)" : "Email"}
+                      type="email"
+                      value={form.secondaryEmail}
+                      onChange={(e) => setForm({ ...form, secondaryEmail: e.target.value })}
+                      placeholder={isFoundationSelected ? "Foundation needs unique email per signer" : "Co-borrower email"}
+                    />
+                    <Input
+                      label="Phone"
+                      type="tel"
+                      value={form.secondaryPhone}
+                      onChange={(e) => setForm({ ...form, secondaryPhone: e.target.value })}
+                    />
+                  </div>
+                  {foundationSecondaryIncomplete && (
+                    <p className="text-xs font-semibold text-red-700">
+                      Co-borrower email required for Foundation when co-borrower name is entered.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* ── Foundation Finance specifics ─────────────────────────────── */}
             {isFoundationSelected && form.planId && (
               <div className="space-y-3 rounded-xl border-2 border-amber-300 bg-amber-50 p-3">
@@ -542,42 +745,7 @@ export default function Step4Financing({ onNext }: Step4FinancingProps) {
                   </div>
                 )}
 
-                {/* Secondary buyer block */}
-                <div className="pt-2 border-t border-amber-200">
-                  <p className="text-xs font-semibold text-slate-700 mb-1">
-                    Co-buyer (optional, but Foundation needs a unique email if 2 signers)
-                  </p>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Input
-                      label="First Name"
-                      type="text"
-                      value={form.secondaryFirstName}
-                      onChange={(e) => setForm({ ...form, secondaryFirstName: e.target.value })}
-                      placeholder="Co-buyer first name"
-                    />
-                    <Input
-                      label="Last Name"
-                      type="text"
-                      value={form.secondaryLastName}
-                      onChange={(e) => setForm({ ...form, secondaryLastName: e.target.value })}
-                      placeholder="Co-buyer last name"
-                    />
-                  </div>
-                  <div className="mt-2">
-                    <Input
-                      label="Co-buyer Email"
-                      type="email"
-                      value={form.secondaryEmail}
-                      onChange={(e) => setForm({ ...form, secondaryEmail: e.target.value })}
-                      placeholder="Required if co-buyer name entered"
-                    />
-                  </div>
-                  {foundationSecondaryIncomplete && (
-                    <p className="text-xs font-semibold text-red-700 mt-1">
-                      Co-buyer email required when co-buyer name is entered.
-                    </p>
-                  )}
-                </div>
+                {/* Foundation co-buyer is now part of the universal Borrowers block below */}
               </div>
             )}
 
@@ -725,7 +893,7 @@ export default function Step4Financing({ onNext }: Step4FinancingProps) {
                 <Button
                   variant="ghost"
                   size="lg"
-                  onClick={() => { setForm(BLANK_FORM); setShowForm(false); }}
+                  onClick={() => { setForm(blankForm()); setShowForm(false); }}
                 >
                   Cancel
                 </Button>
@@ -736,7 +904,7 @@ export default function Step4Financing({ onNext }: Step4FinancingProps) {
       ) : (
         <button
           type="button"
-          onClick={() => { setForm(BLANK_FORM); setShowForm(true); }}
+          onClick={() => { setForm(blankForm()); setShowForm(true); }}
           className="w-full flex items-center justify-center gap-2 px-5 py-4 rounded-xl border-2 border-dashed border-slate-300 text-slate-500 hover:border-[#00929C] hover:text-[#00929C] transition-colors touch-manipulation font-semibold"
         >
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

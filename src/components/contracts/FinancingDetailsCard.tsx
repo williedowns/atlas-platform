@@ -257,11 +257,17 @@ export default function FinancingDetailsCard({ contractId, financing }: Props) {
                   />
                 )}
 
-                {/* Co-buyer */}
-                {f.secondary_buyer_email && (
+                {/* Borrowers — primary defaults to spa contract customer when fields are unset */}
+                {(f.primary_buyer_first_name || f.primary_buyer_last_name || f.primary_buyer_email || f.primary_buyer_phone) && (
                   <Detail
-                    k="Co-buyer"
-                    v={`${[f.secondary_buyer_first_name, f.secondary_buyer_last_name].filter(Boolean).join(" ") || "—"} (${f.secondary_buyer_email})`}
+                    k="Primary Borrower"
+                    v={`${[f.primary_buyer_first_name, f.primary_buyer_last_name].filter(Boolean).join(" ") || "—"}${f.primary_buyer_email ? ` · ${f.primary_buyer_email}` : ""}${f.primary_buyer_phone ? ` · ${f.primary_buyer_phone}` : ""}`}
+                  />
+                )}
+                {(f.secondary_buyer_first_name || f.secondary_buyer_last_name || f.secondary_buyer_email) && (
+                  <Detail
+                    k="Co-Borrower"
+                    v={`${[f.secondary_buyer_first_name, f.secondary_buyer_last_name].filter(Boolean).join(" ") || "—"}${f.secondary_buyer_email ? ` · ${f.secondary_buyer_email}` : ""}${f.secondary_buyer_phone ? ` · ${f.secondary_buyer_phone}` : ""}`}
                   />
                 )}
               </div>

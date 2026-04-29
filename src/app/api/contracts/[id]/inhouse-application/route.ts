@@ -60,21 +60,28 @@ export async function POST(
   const portalUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://app.atlasswimspas.com";
   const customer = Array.isArray((contract as any).customer) ? (contract as any).customer[0] : (contract as any).customer;
 
+  // Primary borrower: prefer fields stored on the financing entry; fall back to
+  // the spa contract customer (the entry only stores primary_* when different).
+  const primaryFirst = inhouse.primary_buyer_first_name ?? customer?.first_name;
+  const primaryLast = inhouse.primary_buyer_last_name ?? customer?.last_name;
+  const primaryEmail = inhouse.primary_buyer_email ?? customer?.email;
+  const primaryPhone = inhouse.primary_buyer_phone ?? customer?.phone;
+
   const html = buildInhouseApplicationHtml({
     contractNumber: (contract as any).contract_number,
     contractTotal: Number((contract as any).total ?? 0),
     contractUrl: `${portalUrl}/contracts/${id}`,
     customer: {
-      first_name: customer?.first_name,
-      last_name: customer?.last_name,
-      email: customer?.email,
-      phone: customer?.phone,
+      first_name: primaryFirst,
+      last_name: primaryLast,
+      email: primaryEmail,
+      phone: primaryPhone,
       address: customer?.address,
       city: customer?.city,
       state: customer?.state,
       zip: customer?.zip,
     },
-    secondaryBuyer: inhouse.secondary_buyer_email
+    secondaryBuyer: (inhouse.secondary_buyer_email || inhouse.secondary_buyer_first_name)
       ? {
           first_name: inhouse.secondary_buyer_first_name,
           last_name: inhouse.secondary_buyer_last_name,

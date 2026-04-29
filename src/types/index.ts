@@ -215,10 +215,20 @@ export interface ContractFinancing {
   wf_charge_mode?: "charge_now" | "authorize_future";
   /** Wells Fargo: scheduled date for the future charge (when wf_charge_mode = authorize_future) */
   wf_future_charge_date?: string;
-  /** Co-buyer email when 2 signers required (Foundation routinely needs this) */
+  /** Primary borrower on the loan. If unset, defaults to the spa contract customer.
+   * Stored only when different from the contract customer (to avoid duplication).
+   * Available on every financing entry — relevant for ALL financing types. */
+  primary_buyer_first_name?: string;
+  primary_buyer_last_name?: string;
+  primary_buyer_email?: string;
+  primary_buyer_phone?: string;
+
+  /** Secondary / co-buyer (optional). Foundation requires a unique email for the
+   * second signer; other lenders accept it as informational. */
   secondary_buyer_email?: string;
   secondary_buyer_first_name?: string;
   secondary_buyer_last_name?: string;
+  secondary_buyer_phone?: string;
 
   // ── Lyon Financial specifics (4-stage funding per 2026-04-28 letter) ──
   /** Project type drives the stage template Lyon uses */
