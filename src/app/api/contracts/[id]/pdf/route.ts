@@ -2,6 +2,32 @@ import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import { jsPDF } from "jspdf";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import fs from "node:fs/promises";
+import path from "node:path";
+
+// Cached logo bytes (read once per cold start)
+let LOGO_DATA_URL: string | null = null;
+async function getLogoDataUrl(): Promise<string | null> {
+  if (LOGO_DATA_URL) return LOGO_DATA_URL;
+  try {
+    const buf = await fs.readFile(path.join(process.cwd(), "public", "logo.png"));
+    LOGO_DATA_URL = `data:image/png;base64,${buf.toString("base64")}`;
+    return LOGO_DATA_URL;
+  } catch {
+    return null;
+  }
+}
+
+// Brand palette
+const NAVY: [number, number, number] = [1, 15, 33];           // #010F21 — header band
+const TEAL: [number, number, number] = [0, 146, 156];         // #00929C — accent
+const SLATE_900: [number, number, number] = [15, 23, 42];     // body
+const SLATE_500: [number, number, number] = [100, 116, 139];  // muted
+const SLATE_300: [number, number, number] = [203, 213, 225];  // dividers
+const SLATE_50: [number, number, number] = [248, 250, 252];   // backgrounds
+const RED: [number, number, number] = [180, 35, 24];          // discounts
+const AMBER: [number, number, number] = [180, 100, 0];        // balance-due
+const EMERALD: [number, number, number] = [5, 122, 85];       // paid
 
 export async function GET(
   _req: Request,
@@ -22,286 +48,376 @@ export async function GET(
 
   const isQuote = contract.status === "quote";
   const docTitle = isQuote ? "QUOTE" : "SALES AGREEMENT";
+  const logoDataUrl = await getLogoDataUrl();
 
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "letter" });
   const W = 216; // letter width in mm
+  const H = 279; // letter height in mm
+  const M = 16;  // outer margin
   let y = 0;
 
-  // ─── Header bar ───────────────────────────────────────────────────────────
-  doc.setFillColor(1, 15, 33); // #010F21
-  doc.rect(0, 0, W, 30, "F");
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(20);
-  doc.setFont("helvetica", "bold");
-  doc.text("ATLAS SPAS", 14, 13);
-  doc.setFontSize(10);
-  doc.setFont("helvetica", "normal");
-  doc.text("& Swim Spas", 14, 20);
+  // ─── Header band ─────────────────────────────────────────────────────────
+  // Navy strip with logo on left + doc metadata on right
+  const headerH = 34;
+  doc.setFillColor(...NAVY);
+  doc.rect(0, 0, W, headerH, "F");
 
-  // Doc type right side
-  doc.setFontSize(14);
-  doc.setFont("helvetica", "bold");
-  doc.text(docTitle, W - 14, 13, { align: "right" });
-  doc.setFontSize(9);
-  doc.setFont("helvetica", "normal");
-  doc.text(contract.contract_number, W - 14, 20, { align: "right" });
-  doc.text(formatDate(contract.created_at), W - 14, 26, { align: "right" });
-  doc.setTextColor(0, 0, 0);
-  y = 38;
-
-  // ─── Customer + Location side by side ────────────────────────────────────
-  const c = contract.customer ?? {};
-  const midX = W / 2 + 2;
-
-  doc.setFontSize(8);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(100, 100, 100);
-  doc.text("CUSTOMER", 14, y);
-  doc.text("SHOW / LOCATION", midX, y);
-  y += 5;
-
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(0, 0, 0);
-  doc.setFontSize(10);
-
-  const customerLines = [
-    `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim(),
-    c.email ?? "",
-    c.phone ?? "",
-    c.address ? `${c.address}` : "",
-    c.city ? `${c.city}, ${c.state} ${c.zip}` : "",
-  ].filter(Boolean);
-
-  const locationLines = [
-    contract.show?.name ?? contract.location?.name ?? "",
-    contract.show?.venue_name ?? "",
-    contract.sales_rep?.full_name ? `Rep: ${contract.sales_rep.full_name}` : "",
-  ].filter(Boolean);
-
-  const maxRows = Math.max(customerLines.length, locationLines.length);
-  for (let i = 0; i < maxRows; i++) {
-    const lSize = i === 0 ? 10 : 9;
-    const lBold = i === 0 ? "bold" : "normal";
-    doc.setFontSize(lSize);
-    doc.setFont("helvetica", lBold);
-    if (customerLines[i]) doc.text(customerLines[i], 14, y);
-    if (locationLines[i]) doc.text(locationLines[i], midX, y);
-    y += i === 0 ? 5.5 : 5;
+  // Logo (PNG) — left side, vertically centered
+  if (logoDataUrl) {
+    // Logo is 480x187 → preserve aspect at ~22mm tall, ~56mm wide
+    try { doc.addImage(logoDataUrl, "PNG", M, 7, 56, 22); } catch {/* fallback below */}
   }
-  y += 3;
+  // Fallback wordmark if logo embed failed
+  if (!logoDataUrl) {
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(22);
+    doc.text("ATLAS SPAS", M, 18);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.text("& Swim Spas", M, 25);
+  }
 
-  // ─── Divider ──────────────────────────────────────────────────────────────
-  doc.setDrawColor(0, 146, 156); // teal
-  doc.setLineWidth(0.5);
-  doc.line(14, y, W - 14, y);
-  y += 6;
-
-  // ─── Products table ───────────────────────────────────────────────────────
-  doc.setFontSize(8);
+  // Doc title + meta on right
+  doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold");
-  doc.setTextColor(100, 100, 100);
-  doc.text("PRODUCT", 14, y);
-  doc.text("SERIAL #", 120, y);
-  doc.text("PRICE", W - 14, y, { align: "right" });
-  y += 1;
-  doc.setDrawColor(220, 220, 220);
-  doc.setLineWidth(0.3);
-  doc.line(14, y + 1, W - 14, y + 1);
+  doc.setFontSize(15);
+  doc.text(docTitle, W - M, 16, { align: "right" });
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(180, 200, 220);
+  doc.text(contract.contract_number, W - M, 22, { align: "right" });
+  doc.text(formatDate(contract.created_at), W - M, 27, { align: "right" });
+
+  // Teal accent line under the header
+  doc.setFillColor(...TEAL);
+  doc.rect(0, headerH, W, 1.2, "F");
+
+  y = headerH + 10;
+
+  // ─── Customer + Show metadata (two columns) ──────────────────────────────
+  const c = contract.customer ?? {};
+  const colW = (W - M * 2 - 6) / 2;
+  const leftX = M;
+  const rightX = M + colW + 6;
+
+  function sectionLabel(label: string, x: number, atY: number) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7.5);
+    doc.setTextColor(...SLATE_500);
+    doc.text(label, x, atY);
+  }
+  function bodyLine(text: string, x: number, atY: number, opts?: { bold?: boolean; size?: number; color?: [number, number, number] }) {
+    doc.setFont("helvetica", opts?.bold ? "bold" : "normal");
+    doc.setFontSize(opts?.size ?? 10);
+    doc.setTextColor(...(opts?.color ?? SLATE_900));
+    doc.text(text, x, atY);
+  }
+
+  sectionLabel("BILL TO", leftX, y);
+  sectionLabel("LOCATION", rightX, y);
   y += 5;
 
+  // Customer block
+  const customerLines = [
+    [`${c.first_name ?? ""} ${c.last_name ?? ""}`.trim(), { bold: true, size: 11 }],
+    [c.email ?? "", { size: 9, color: SLATE_500 }],
+    [c.phone ?? "", { size: 9, color: SLATE_500 }],
+    [c.address ?? "", { size: 9, color: SLATE_500 }],
+    [c.city ? `${c.city}, ${c.state ?? ""} ${c.zip ?? ""}`.trim() : "", { size: 9, color: SLATE_500 }],
+  ].filter(([t]) => t) as Array<[string, { bold?: boolean; size?: number; color?: [number, number, number] }]>;
+
+  // Location/Show block
+  const showName = contract.show?.name ?? contract.location?.name ?? "";
+  const venue = contract.show?.venue_name ?? "";
+  const repName = contract.sales_rep?.full_name ?? "";
+  const locationLines: Array<[string, { bold?: boolean; size?: number; color?: [number, number, number] }]> = [
+    [showName, { bold: true, size: 11 }],
+    ...(venue ? [[venue, { size: 9, color: SLATE_500 }] as [string, { size?: number; color?: [number, number, number] }]] : []),
+    ...(repName ? [[`Sales Rep: ${repName}`, { size: 9, color: SLATE_500 }] as [string, { size?: number; color?: [number, number, number] }]] : []),
+  ];
+
+  const maxLines = Math.max(customerLines.length, locationLines.length);
+  let blockY = y;
+  for (let i = 0; i < maxLines; i++) {
+    const lh = i === 0 ? 5.5 : 4.8;
+    if (customerLines[i]) bodyLine(customerLines[i][0], leftX, blockY, customerLines[i][1]);
+    if (locationLines[i]) bodyLine(locationLines[i][0], rightX, blockY, locationLines[i][1]);
+    blockY += lh;
+  }
+  y = blockY + 4;
+
+  // Divider
+  doc.setDrawColor(...SLATE_300);
+  doc.setLineWidth(0.2);
+  doc.line(M, y, W - M, y);
+  y += 7;
+
+  // ─── Line items table ────────────────────────────────────────────────────
+  // Clean table: shaded header band, item rows with proper padding.
+  // Columns: Product (flex) | Serial # | Qty | Price (right)
+  const colProduct = M;
+  const colSerial = W - M - 60;
+  const colQty = W - M - 30;
+  const colPrice = W - M;
+
+  // Header
+  doc.setFillColor(...SLATE_50);
+  doc.rect(M, y - 4, W - M * 2, 7, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7.5);
+  doc.setTextColor(...SLATE_500);
+  doc.text("PRODUCT", colProduct + 1, y + 0.5);
+  doc.text("SERIAL #", colSerial, y + 0.5);
+  doc.text("QTY", colQty, y + 0.5, { align: "center" });
+  doc.text("PRICE", colPrice - 1, y + 0.5, { align: "right" });
+  y += 7;
+
   doc.setFont("helvetica", "normal");
-  doc.setTextColor(0, 0, 0);
   doc.setFontSize(10);
+  doc.setTextColor(...SLATE_900);
 
   const lineItems = Array.isArray(contract.line_items) ? contract.line_items : [];
+  let altRow = false;
   for (const item of lineItems) {
-    if (y > 220) { doc.addPage(); y = 20; }
+    if (y > 240) {
+      doc.addPage();
+      y = M;
+    }
+    if (altRow) {
+      doc.setFillColor(252, 252, 253);
+      doc.rect(M, y - 4, W - M * 2, 6.5, "F");
+    }
+    altRow = !altRow;
+
     const name = String(item.product_name ?? "");
-    // Truncate long names
-    const displayName = name.length > 55 ? name.substring(0, 52) + "…" : name;
-    doc.text(displayName, 14, y);
-    doc.text(String(item.serial_number ?? ""), 120, y);
-    if (item.waived) {
-      doc.setTextColor(0, 150, 80);
-      doc.text("FREE", W - 14, y, { align: "right" });
-      doc.setTextColor(0, 0, 0);
-    } else {
-      doc.text(formatCurrency(item.sell_price * (item.quantity ?? 1)), W - 14, y, { align: "right" });
-    }
-    y += 6;
-  }
+    const qty = item.quantity ?? 1;
+    const lineTotal = (item.sell_price ?? 0) * qty;
+    const displayName = name.length > 50 ? name.substring(0, 47) + "…" : name;
 
-  // Discounts
-  const discounts = Array.isArray(contract.discounts) ? contract.discounts : [];
-  if (discounts.length > 0) {
-    y += 2;
+    doc.setTextColor(...SLATE_900);
+    doc.setFont("helvetica", "normal");
+    doc.text(displayName, colProduct + 1, y);
     doc.setFontSize(9);
-    for (const d of discounts) {
-      doc.setTextColor(180, 0, 0);
-      doc.text(String(d.label ?? "Discount"), 14, y);
-      doc.text(`−${formatCurrency(d.amount)}`, W - 14, y, { align: "right" });
-      doc.setTextColor(0, 0, 0);
-      y += 5;
+    doc.setTextColor(...SLATE_500);
+    doc.text(String(item.serial_number ?? ""), colSerial, y);
+    doc.text(String(qty), colQty, y, { align: "center" });
+
+    if (item.waived) {
+      doc.setTextColor(...EMERALD);
+      doc.setFont("helvetica", "bold");
+      doc.text("FREE", colPrice - 1, y, { align: "right" });
+    } else {
+      doc.setTextColor(...SLATE_900);
+      doc.setFont("helvetica", "normal");
+      doc.text(formatCurrency(lineTotal), colPrice - 1, y, { align: "right" });
     }
-  }
-  y += 4;
-
-  // ─── Financial summary ────────────────────────────────────────────────────
-  doc.setDrawColor(220, 220, 220);
-  doc.setLineWidth(0.3);
-  doc.line(W / 2 - 5, y, W - 14, y);
-  y += 5;
-
-  const col1 = W / 2 - 5;
-  function row(label: string, value: string, bold = false, color?: [number, number, number]) {
-    if (y > 245) { doc.addPage(); y = 20; }
-    doc.setFont("helvetica", bold ? "bold" : "normal");
-    doc.setFontSize(bold ? 10 : 9);
-    if (color) doc.setTextColor(...color);
-    doc.text(label, col1, y);
-    doc.text(value, W - 14, y, { align: "right" });
-    if (color) doc.setTextColor(0, 0, 0);
-    y += bold ? 6.5 : 5.5;
+    doc.setFontSize(10);
+    y += 6.5;
   }
 
-  row("Sub Total", formatCurrency(contract.subtotal));
-  if (contract.discount_total > 0) row("Discounts", `−${formatCurrency(contract.discount_total)}`, false, [180, 0, 0]);
-  row(`Tax (${((contract.tax_rate ?? 0) * 100).toFixed(2)}%)`, formatCurrency(contract.tax_amount));
-  if (contract.surcharge_amount > 0) row("CC Surcharge", formatCurrency(contract.surcharge_amount));
+  // Bottom rule
+  doc.setDrawColor(...SLATE_300);
+  doc.setLineWidth(0.2);
+  doc.line(M, y, W - M, y);
+  y += 7;
 
-  // Total divider
-  doc.setDrawColor(1, 15, 33);
+  // ─── Totals card (right-aligned) ────────────────────────────────────────
+  // Discounts go HERE (not in the line-item table) to avoid duplication.
+  const discounts = Array.isArray(contract.discounts) ? contract.discounts : [];
+  const discountTotal = Number(contract.discount_total ?? 0);
+  const totalsLeft = W / 2 + 10;
+  const totalsRight = W - M;
+
+  function totalsRow(label: string, value: string, opts?: { bold?: boolean; color?: [number, number, number]; size?: number }) {
+    if (y > 250) { doc.addPage(); y = M; }
+    doc.setFont("helvetica", opts?.bold ? "bold" : "normal");
+    doc.setFontSize(opts?.size ?? 10);
+    doc.setTextColor(...(opts?.color ?? SLATE_900));
+    doc.text(label, totalsLeft, y);
+    doc.text(value, totalsRight, y, { align: "right" });
+    y += opts?.bold ? 7 : 5.5;
+  }
+
+  totalsRow("Subtotal", formatCurrency(contract.subtotal ?? 0));
+
+  // Discounts: show one line per discount entry (cleaner than a single sum).
+  // Customer-facing labels — strip internal jargon like "Calculated to $X out-the-door"
+  // (used by the show-discount calculator) and replace with a clean label.
+  function customerDiscountLabel(raw: string, type?: string): string {
+    const s = (raw ?? "").toString();
+    if (s.toLowerCase().startsWith("calculated to")) return "Negotiated Discount";
+    if (type === "show_special") return s || "Show Discount";
+    if (type === "factory_rebate") return s || "Factory Rebate";
+    if (type === "floor_model") return s || "Floor Model Discount";
+    if (type === "military") return s || "Military Discount";
+    if (type === "manager_override") return s || "Manager Discount";
+    return (s || "Discount").slice(0, 38);
+  }
+
+  if (discounts.length > 0) {
+    for (const d of discounts) {
+      const label = customerDiscountLabel(d.label, d.type);
+      totalsRow(label, `-${formatCurrency(d.amount ?? 0)}`, { color: RED });
+    }
+  } else if (discountTotal > 0) {
+    totalsRow("Discount", `-${formatCurrency(discountTotal)}`, { color: RED });
+  }
+
+  if ((contract.tax_rate ?? 0) > 0 || (contract.tax_amount ?? 0) > 0) {
+    totalsRow(`Tax (${((contract.tax_rate ?? 0) * 100).toFixed(2)}%)`, formatCurrency(contract.tax_amount ?? 0));
+  }
+  if ((contract.surcharge_amount ?? 0) > 0) {
+    totalsRow("CC Surcharge", formatCurrency(contract.surcharge_amount));
+  }
+
+  // Total divider (sits above the TOTAL row, not through it)
+  doc.setDrawColor(...NAVY);
   doc.setLineWidth(0.5);
-  doc.line(col1, y - 2, W - 14, y - 2);
+  doc.line(totalsLeft, y - 3.5, totalsRight, y - 3.5);
+  y += 1;
 
-  row("TOTAL", formatCurrency(contract.total), true);
+  totalsRow("TOTAL", formatCurrency(contract.total ?? 0), { bold: true, size: 12, color: NAVY });
+  y += 3;
 
-  // Financing breakdown
+  // ─── Funding & Balance breakdown ────────────────────────────────────────
   const financing = Array.isArray(contract.financing) ? contract.financing : [];
   for (const f of financing) {
+    if (!f || !f.financed_amount) continue;
     const isFoundation = f.deduct_from_balance === false;
     const label = isFoundation
       ? `${f.financer_name ?? "Foundation"} (carries to balance)`
-      : `${f.financer_name ?? "Financing"} (financed at sale)`;
-    row(label, isFoundation ? formatCurrency(f.financed_amount) : `−${formatCurrency(f.financed_amount)}`, false, isFoundation ? [180, 120, 0] : [0, 100, 120]);
+      : `Financing — ${f.financer_name ?? "Lender"}`;
+    totalsRow(label, `-${formatCurrency(f.financed_amount)}`, { color: TEAL });
   }
 
-  // Down payment
-  if (contract.deposit_paid > 0) {
-    row("Down Payment Received", `−${formatCurrency(contract.deposit_paid)}`);
-  } else if (contract.deposit_amount > 0 && isQuote) {
-    row("Estimated Down Payment", `−${formatCurrency(contract.deposit_amount)}`, false, [100, 100, 100]);
+  const depositPaid = Number(contract.deposit_paid ?? 0);
+  const depositAmount = Number(contract.deposit_amount ?? 0);
+  if (depositPaid > 0) {
+    totalsRow("Deposit Paid", `-${formatCurrency(depositPaid)}`, { color: EMERALD });
+  } else if (depositAmount > 0 && isQuote) {
+    totalsRow("Estimated Deposit", `-${formatCurrency(depositAmount)}`, { color: SLATE_500 });
   }
 
-  // Balance due
-  doc.setDrawColor(180, 100, 0);
-  doc.setLineWidth(0.3);
-  doc.line(col1, y - 2, W - 14, y - 2);
-  row("Balance Due at Delivery", formatCurrency(contract.balance_due), true, [160, 90, 0]);
+  // Balance Due banner
+  const balanceDue = Number(contract.balance_due ?? 0);
+  y += 2;
+  doc.setFillColor(...(balanceDue > 0.01 ? [253, 244, 224] as [number, number, number] : [232, 245, 233] as [number, number, number]));
+  doc.setDrawColor(...(balanceDue > 0.01 ? AMBER : EMERALD));
+  doc.setLineWidth(0.4);
+  doc.roundedRect(totalsLeft - 2, y - 4, totalsRight - totalsLeft + 4, 9, 1.5, 1.5, "FD");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.setTextColor(...(balanceDue > 0.01 ? AMBER : EMERALD));
+  doc.text(balanceDue > 0.01 ? "Balance Due at Delivery" : "Paid in Full", totalsLeft, y + 1.5);
+  doc.text(formatCurrency(balanceDue), totalsRight - 1, y + 1.5, { align: "right" });
+  y += 12;
 
-  y += 4;
-
-  // ─── Payment method ───────────────────────────────────────────────────────
-  if (!isQuote) {
-    doc.setDrawColor(220, 220, 220);
-    doc.setLineWidth(0.3);
-    doc.line(14, y, W - 14, y);
-    y += 6;
-
-    doc.setFontSize(8);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(100, 100, 100);
-    doc.text("PAYMENT", 14, y);
-    y += 5;
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.setTextColor(0, 0, 0);
-
-    const methodLabel = contract.payment_method
-      ? contract.payment_method.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())
-      : "Not specified";
-    doc.text(`Method: ${methodLabel}`, 14, y);
-    y += 10;
-  }
-
-  // ─── Special Instructions / External Notes ───────────────────────────────
-  // External notes only — internal `notes` are staff-only and never printed.
+  // ─── External notes (customer-facing) ────────────────────────────────────
   const externalNotes = (contract.external_notes ?? "").toString().trim();
   if (externalNotes.length > 0) {
-    if (y > 240) { doc.addPage(); y = 20; }
-    doc.setDrawColor(220, 220, 220);
-    doc.setLineWidth(0.3);
-    doc.line(14, y, W - 14, y);
-    y += 6;
-    doc.setFontSize(8);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(100, 100, 100);
-    doc.text("SPECIAL INSTRUCTIONS / NOTES", 14, y);
+    if (y > 235) { doc.addPage(); y = M; }
+    sectionLabel("SPECIAL INSTRUCTIONS / NOTES", M, y);
     y += 5;
+    doc.setFillColor(...SLATE_50);
+    const noteLines = doc.splitTextToSize(externalNotes, W - M * 2 - 6);
+    const noteH = noteLines.length * 4.5 + 6;
+    doc.roundedRect(M, y - 2, W - M * 2, noteH, 1.5, 1.5, "F");
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
-    doc.setTextColor(0, 0, 0);
-    const noteLines = doc.splitTextToSize(externalNotes, W - 28);
-    for (const line of noteLines) {
-      if (y > 260) { doc.addPage(); y = 20; }
-      doc.text(line, 14, y);
-      y += 4.5;
+    doc.setTextColor(...SLATE_900);
+    let ny = y + 3.5;
+    for (const ln of noteLines) {
+      if (ny > 260) { doc.addPage(); ny = M; }
+      doc.text(ln, M + 3, ny);
+      ny += 4.5;
     }
-    y += 4;
+    y = ny + 4;
   }
 
-  // ─── Signature ────────────────────────────────────────────────────────────
-  doc.setDrawColor(220, 220, 220);
-  doc.setLineWidth(0.3);
-  doc.line(14, y, W - 14, y);
-  y += 6;
-
-  doc.setFontSize(8);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(100, 100, 100);
-  doc.text(isQuote ? "ACKNOWLEDGEMENT" : "SIGNATURE", 14, y);
+  // ─── Signature ───────────────────────────────────────────────────────────
+  if (y > 235) { doc.addPage(); y = M; }
+  sectionLabel(isQuote ? "ACKNOWLEDGEMENT" : "SIGNATURE", M, y);
   y += 5;
+
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  doc.setTextColor(0, 0, 0);
+  doc.setFontSize(10);
+  doc.setTextColor(...SLATE_900);
 
   if (!isQuote && contract.signed_at) {
-    doc.text(`Signed: ${c.first_name} ${c.last_name}   Date: ${formatDate(contract.signed_at)}`, 14, y);
+    // Embed actual signature image if it's a base64 data URL (fallback path) or skip if remote
+    const sigUrl: string | undefined = contract.customer_signature_url;
+    let sigEmbedded = false;
+    if (sigUrl && sigUrl.startsWith("data:image/")) {
+      try {
+        doc.addImage(sigUrl, "PNG", M, y, 70, 16);
+        sigEmbedded = true;
+        y += 18;
+      } catch {/* ignore — fall through to text-only */}
+    }
+    const printedName = (contract.signature_metadata?.signed_name ?? `${c.first_name ?? ""} ${c.last_name ?? ""}`).toString().trim();
+    doc.setDrawColor(...SLATE_300);
+    doc.setLineWidth(0.2);
+    if (!sigEmbedded) {
+      // Draw a signature line then label
+      doc.line(M, y + 8, M + 80, y + 8);
+      y += 12;
+    } else {
+      doc.line(M, y - 2, M + 80, y - 2);
+    }
+    doc.setFontSize(9);
+    doc.setTextColor(...SLATE_500);
+    doc.text(`Signed by ${printedName}`, M, y + 3);
+    doc.text(`Date: ${formatDate(contract.signed_at)}`, M, y + 7.5);
+    y += 12;
   } else {
-    // Signature lines for paper printing
-    doc.text("Buyer:", 14, y + 5);
-    doc.line(30, y + 5, 120, y + 5);
-    doc.text("Date:", 130, y + 5);
-    doc.line(142, y + 5, W - 14, y + 5);
+    // Print-ready signature lines
+    doc.setDrawColor(...SLATE_300);
+    doc.setLineWidth(0.2);
+    doc.text("Buyer:", M, y + 6);
+    doc.line(M + 16, y + 6, M + 90, y + 6);
+    doc.text("Date:", M + 100, y + 6);
+    doc.line(M + 112, y + 6, W - M, y + 6);
     y += 14;
-    doc.text("Seller:", 14, y);
-    doc.line(32, y, 120, y);
-    doc.text("Date:", 130, y);
-    doc.line(142, y, W - 14, y);
+    doc.text("Seller:", M, y);
+    doc.line(M + 16, y, M + 90, y);
+    doc.text("Date:", M + 100, y);
+    doc.line(M + 112, y, W - M, y);
     y += 14;
   }
 
-  // ─── Terms snippet ────────────────────────────────────────────────────────
-  y += 4;
-  doc.setFontSize(7);
-  doc.setTextColor(130, 130, 130);
+  // ─── Terms ───────────────────────────────────────────────────────────────
+  if (y > 248) { doc.addPage(); y = M; }
+  doc.setDrawColor(...SLATE_300);
+  doc.setLineWidth(0.2);
+  doc.line(M, y, W - M, y);
+  y += 5;
+  doc.setFontSize(7.5);
+  doc.setTextColor(...SLATE_500);
   const terms = isQuote
-    ? "This quote is valid for 30 days. Prices subject to change. No refunds after 30 days."
-    : "All sales are final. No refunds. Balance is due at time of delivery. Please make checks payable to Atlas Spas & Swim Spas.";
-  const termLines = doc.splitTextToSize(terms, W - 28);
-  doc.text(termLines, 14, y);
+    ? "This quote is valid for 30 days. Prices are subject to change after expiration. No refunds after 30 days."
+    : "All sales are final. No refunds. Balance is due at the time of delivery. Please make checks payable to Atlas Spas & Swim Spas.";
+  const termLines = doc.splitTextToSize(terms, W - M * 2);
+  doc.text(termLines, M, y);
 
-  // ─── Footer ───────────────────────────────────────────────────────────────
-  const pageCount = (doc.internal as any).getNumberOfPages();
+  // ─── Footer (every page) ────────────────────────────────────────────────
+  const pageCount = (doc.internal as unknown as { getNumberOfPages: () => number }).getNumberOfPages();
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
-    doc.setFontSize(7.5);
-    doc.setTextColor(150, 150, 150);
+    // Thin teal accent line
+    doc.setDrawColor(...TEAL);
+    doc.setLineWidth(0.4);
+    doc.line(M, H - 12, W - M, H - 12);
+    doc.setFontSize(7);
+    doc.setTextColor(...SLATE_500);
+    doc.setFont("helvetica", "normal");
+    doc.text("Atlas Spas & Swim Spas", M, H - 7);
+    doc.text("www.atlasspas.com", W / 2, H - 7, { align: "center" });
+    doc.text(`Page ${i} of ${pageCount}`, W - M, H - 7, { align: "right" });
+    doc.setFontSize(6.5);
     doc.text(
-      `Atlas Spas & Swim Spas · www.atlasspas.com · ${docTitle} ${contract.contract_number} · Generated ${formatDate(new Date().toISOString())}`,
-      W / 2,
-      277,
-      { align: "center" }
+      `${docTitle} ${contract.contract_number} · Generated ${formatDate(new Date().toISOString())}`,
+      M, H - 3.5
     );
   }
 
