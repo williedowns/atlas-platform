@@ -127,7 +127,12 @@ export default function Step4Financing({ onNext }: Step4FinancingProps) {
   const hasInstantFinancing = draft.financing.some(
     (f) => f.deduct_from_balance !== false
   );
-  const isTexasLocation = (draft.location?.state ?? "").toUpperCase() === "TX";
+  // Show toggle if ANY of: store location, show, or customer state is Texas
+  // (Most sales are at shows where draft.location is undefined — bug Willie hit 04-29)
+  const isTexasLocation =
+    ((draft.location?.state ?? "").toUpperCase() === "TX") ||
+    ((draft.show?.state ?? "").toUpperCase() === "TX") ||
+    ((draft.customer?.state ?? "").toUpperCase() === "TX");
 
   function handleAddEntry() {
     if (!selectedProvider || !selectedPlan) return;
