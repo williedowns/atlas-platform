@@ -196,6 +196,23 @@ export function isSpaProduct(category: string): boolean {
   return SPA_CATEGORIES.has(category);
 }
 
+// Main product categories — used for revenue leaderboards (Top Products) so
+// add-ons / accessories / fees / options don't pollute the ranking. Includes
+// spa categories above plus pool families.
+export const MAIN_PRODUCT_CATEGORIES = new Set<string>([
+  ...SPA_CATEGORIES,
+  "Latham Fiberglass Pools",
+  "Barrier Reef Fiberglass Pools",
+  "Above-Ground Pools",
+]);
+
+/** Returns true if a product category is a "main" product (hot tub, swim spa,
+ *  cold tub, sauna, or pool) — i.e. a unit-of-sale, not an accessory/option/fee. */
+export function isMainProduct(category?: string | null): boolean {
+  if (!category) return false;
+  return MAIN_PRODUCT_CATEGORIES.has(category);
+}
+
 export function getStatusColor(status: string): "default" | "success" | "warning" | "destructive" | "secondary" {
   const found = INVENTORY_STATUSES.find((s) => s.value === status);
   return (found?.color as any) ?? "secondary";

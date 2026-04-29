@@ -12,6 +12,7 @@ import { AnalyticsTrendChart } from "@/components/analytics/AnalyticsTrendChart"
 import { RevenueBreakdownDonut } from "@/components/analytics/RevenueBreakdownDonut";
 import { RepLeaderboardBars } from "@/components/analytics/RepLeaderboardBars";
 import { ShowsBarChart } from "@/components/analytics/ShowsBarChart";
+import { isMainProduct } from "@/lib/inventory-constants";
 
 // ── Period helpers ────────────────────────────────────────────────────────────
 
@@ -294,13 +295,29 @@ export default async function AnalyticsPage({
   }
 
   // ── Top products (from line_items JSONB) ────────────────────────────────────
-  type LineItem = { product_name?: string; quantity?: number; sell_price?: number };
+  // Robert Downs 04-29: only rank MAIN products (hot tubs / swim spas / cold tubs /
+  // saunas / pools). Exclude options, accessories, fees, upgrades. We look up the
+  // category via product_id since it isn't stored on the line_item itself.
+  type LineItem = { product_id?: string; product_name?: string; quantity?: number; sell_price?: number };
+  const productIdsOnContracts = Array.from(new Set(
+    rows.flatMap((c) => (Array.isArray(c.line_items) ? c.line_items : []).map((i: LineItem) => i.product_id).filter(Boolean) as string[])
+  ));
+  const { data: productCategoryRows } = productIdsOnContracts.length
+    ? await supabase.from("products").select("id, category").in("id", productIdsOnContracts)
+    : { data: [] };
+  const categoryByProductId = new Map<string, string>();
+  for (const r of (productCategoryRows ?? []) as Array<{ id: string; category: string | null }>) {
+    if (r.category) categoryByProductId.set(r.id, r.category);
+  }
+
   const productMap = new Map<string, { units: number; revenue: number }>();
   for (const c of rows) {
     const items: LineItem[] = Array.isArray(c.line_items) ? c.line_items : [];
     for (const item of items) {
       const name = item.product_name ?? "Unknown";
       if (!name || name === "Unknown") continue;
+      const cat = item.product_id ? categoryByProductId.get(item.product_id) : null;
+      if (!isMainProduct(cat)) continue; // filter out add-ons / accessories / fees
       const existing = productMap.get(name) ?? { units: 0, revenue: 0 };
       const qty = item.quantity ?? 1;
       const price = item.sell_price ?? 0;
