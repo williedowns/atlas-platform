@@ -198,12 +198,21 @@ export function isSpaProduct(category: string): boolean {
 
 // Main product categories — used for revenue leaderboards (Top Products) so
 // add-ons / accessories / fees / options don't pollute the ranking. Includes
-// spa categories above plus pool families.
+// the specific Master Spas series + pool families plus generic top-level types
+// (Willie 04-29) so non-Master-Spas / custom / future line items still rank.
 export const MAIN_PRODUCT_CATEGORIES = new Set<string>([
   ...SPA_CATEGORIES,
+  // Pool families
   "Latham Fiberglass Pools",
   "Barrier Reef Fiberglass Pools",
   "Above-Ground Pools",
+  // Generic top-level product types — used for ad-hoc / non-Master-Spas line items
+  "Hot Tub",
+  "Swim Spa",
+  "BBQ Island",
+  "Sauna",
+  "Cold Tub",
+  "Above Ground Pool",
 ]);
 
 /** Returns true if a product category is a "main" product (hot tub, swim spa,
