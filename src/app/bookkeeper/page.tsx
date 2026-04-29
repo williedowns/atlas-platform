@@ -202,12 +202,47 @@ export default async function BookkeeperPage() {
         subtitle={`${contracts.length} active contracts`}
       />
 
-      <main className="px-4 py-5 space-y-4 max-w-4xl mx-auto pb-28">
+      <main className="px-4 py-5 space-y-6 max-w-4xl mx-auto pb-28">
 
-        {/* ── AR Aging chart ── */}
-        <SectionCard title="Outstanding Balances by Age" subtitle="Accounts receivable aging buckets">
-          <OutstandingByAgeChart data={agingData} />
-        </SectionCard>
+        {/* ─────────────────────────────────────────────────────────────────
+            1. OVERVIEW — at-a-glance numbers
+        ───────────────────────────────────────────────────────────────── */}
+        <section className="space-y-4">
+          {/* ── Summary stats ── */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-white rounded-xl border border-slate-200 p-4">
+              <p className="text-xs text-slate-400 uppercase tracking-wide font-semibold">Total Revenue</p>
+              <p className="text-2xl font-bold text-[#00929C] mt-1">{formatCurrency(totalRevenue)}</p>
+              <p className="text-xs text-slate-400 mt-1">{contracts.length} contracts</p>
+            </div>
+            <div className="bg-white rounded-xl border border-slate-200 p-4">
+              <p className="text-xs text-slate-400 uppercase tracking-wide font-semibold">Deposits Collected</p>
+              <p className="text-2xl font-bold text-emerald-600 mt-1">{formatCurrency(totalDeposits)}</p>
+              <p className="text-xs text-slate-400 mt-1">{formatCurrency(totalRevenue - totalDeposits)} remaining</p>
+            </div>
+            <div className="bg-white rounded-xl border border-slate-200 p-4">
+              <p className="text-xs text-slate-400 uppercase tracking-wide font-semibold">Balance Outstanding</p>
+              <p className="text-2xl font-bold text-amber-600 mt-1">{formatCurrency(totalBalance)}</p>
+              <p className="text-xs text-slate-400 mt-1">across {pendingCount} contracts</p>
+            </div>
+            <div className="bg-white rounded-xl border border-slate-200 p-4">
+              <p className="text-xs text-slate-400 uppercase tracking-wide font-semibold">Delivery Progress</p>
+              <p className="text-2xl font-bold text-slate-900 mt-1">{deliveredCount} <span className="text-lg font-normal text-slate-400">/ {deliveredCount + pendingCount}</span></p>
+              <p className="text-xs text-slate-400 mt-1">delivered</p>
+            </div>
+          </div>
+
+          {/* ── AR Aging chart ── */}
+          <SectionCard title="Outstanding Balances by Age" subtitle="Accounts receivable aging buckets">
+            <OutstandingByAgeChart data={agingData} />
+          </SectionCard>
+        </section>
+
+        {/* ─────────────────────────────────────────────────────────────────
+            2. ACTION ITEMS — what needs Lori's attention right now
+        ───────────────────────────────────────────────────────────────── */}
+        <section className="space-y-4">
+          <SectionHeader title="Action Items" subtitle="Urgent: refunds to issue, certs expiring, deliveries blocked" />
 
         {/* ── Pre-Delivery Readiness (Lori's view) ── */}
         <SectionCard
@@ -353,47 +388,49 @@ export default async function BookkeeperPage() {
             </p>
           </div>
         )}
+        </section>
 
-        {/* ── Summary stats ── */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="bg-white rounded-xl border border-slate-200 p-4">
-            <p className="text-xs text-slate-400 uppercase tracking-wide font-semibold">Total Revenue</p>
-            <p className="text-2xl font-bold text-[#00929C] mt-1">{formatCurrency(totalRevenue)}</p>
-            <p className="text-xs text-slate-400 mt-1">{contracts.length} contracts</p>
-          </div>
-          <div className="bg-white rounded-xl border border-slate-200 p-4">
-            <p className="text-xs text-slate-400 uppercase tracking-wide font-semibold">Deposits Collected</p>
-            <p className="text-2xl font-bold text-emerald-600 mt-1">{formatCurrency(totalDeposits)}</p>
-            <p className="text-xs text-slate-400 mt-1">{formatCurrency(totalRevenue - totalDeposits)} remaining</p>
-          </div>
-          <div className="bg-white rounded-xl border border-slate-200 p-4">
-            <p className="text-xs text-slate-400 uppercase tracking-wide font-semibold">Balance Outstanding</p>
-            <p className="text-2xl font-bold text-amber-600 mt-1">{formatCurrency(totalBalance)}</p>
-            <p className="text-xs text-slate-400 mt-1">across {pendingCount} contracts</p>
-          </div>
-          <div className="bg-white rounded-xl border border-slate-200 p-4">
-            <p className="text-xs text-slate-400 uppercase tracking-wide font-semibold">Delivery Progress</p>
-            <p className="text-2xl font-bold text-slate-900 mt-1">{deliveredCount} <span className="text-lg font-normal text-slate-400">/ {deliveredCount + pendingCount}</span></p>
-            <p className="text-xs text-slate-400 mt-1">delivered</p>
-          </div>
-        </div>
+        {/* ─────────────────────────────────────────────────────────────────
+            3. TRACKERS — ongoing workflows
+        ───────────────────────────────────────────────────────────────── */}
+        <section className="space-y-4">
+          <SectionHeader title="Trackers" subtitle="Ongoing workflows for tax exemptions and cancellations" />
 
-        {/* ── Tax Exemption Cert Tracker ── */}
-        {hasMigration ? (
-          <TaxExemptTracker contracts={taxTracked} />
-        ) : null}
+          {/* ── Tax Exemption Cert Tracker ── */}
+          {hasMigration ? (
+            <TaxExemptTracker contracts={taxTracked} />
+          ) : null}
 
-        {/* ── Cancellation Refund Tracker ── */}
-        <CancellationRefundTracker contracts={cancelledWithDeposits} />
+          {/* ── Cancellation Refund Tracker ── */}
+          <CancellationRefundTracker contracts={cancelledWithDeposits} />
+        </section>
 
-        {/* ── Deposit Reconciliation (Summary + Transaction Detail) ── */}
-        <ReconciliationView contracts={contracts} />
+        {/* ─────────────────────────────────────────────────────────────────
+            4. RECONCILIATION & REPORTS — drill-down detail
+        ───────────────────────────────────────────────────────────────── */}
+        <section className="space-y-4">
+          <SectionHeader title="Reconciliation & Reports" subtitle="Drill-down detail for monthly close and reporting" />
 
-        {/* ── Sales by Location / Event ── */}
-        <SalesByEventList contracts={contracts} />
+          {/* ── Deposit Reconciliation (Summary + Transaction Detail) ── */}
+          <ReconciliationView contracts={contracts} />
+
+          {/* ── Sales by Location / Event ── */}
+          <SalesByEventList contracts={contracts} />
+        </section>
 
       </main>
 
     </AppShell>
+  );
+}
+
+function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 px-1">
+      <div>
+        <h2 className="text-base font-bold text-slate-900">{title}</h2>
+        {subtitle && <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>}
+      </div>
+    </div>
   );
 }
