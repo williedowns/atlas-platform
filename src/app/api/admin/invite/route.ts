@@ -8,9 +8,13 @@ export async function POST(req: Request) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  // Pull the inviting admin's role AND organization_id — the new user MUST
+  // inherit the same org or RLS will hide their own profile from them and
+  // the sidebar nav will render empty (the bug we hit with Robert Kennedy
+  // on 2026-04-29).
   const { data: profile } = await supabase
     .from("profiles")
-    .select("role")
+    .select("role, organization_id")
     .eq("id", user.id)
     .single();
 
@@ -40,12 +44,20 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: inviteError.message }, { status: 500 });
   }
 
-  // Upsert profile so role is set even before the user accepts the invite
+  // Upsert profile so role is set even before the user accepts the invite.
+  // organization_id is inherited from the inviting admin so the new user
+  // can read their own profile via RLS and see nav populated correctly.
   if (inviteData?.user?.id) {
     await admin
       .from("profiles")
       .upsert(
-        { id: inviteData.user.id, email, full_name: full_name ?? "", role },
+        {
+          id: inviteData.user.id,
+          email,
+          full_name: full_name ?? "",
+          role,
+          organization_id: profile.organization_id,
+        },
         { onConflict: "id" }
       );
   }

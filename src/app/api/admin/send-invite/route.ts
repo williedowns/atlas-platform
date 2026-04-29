@@ -13,9 +13,11 @@ export async function POST(req: Request) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  // Need both role (admin gate) and organization_id (so the invitee inherits
+  // the same org — without this they hit RLS and get an empty sidebar).
   const { data: profile } = await supabase
     .from("profiles")
-    .select("role")
+    .select("role, organization_id")
     .eq("id", user.id)
     .single();
 
@@ -59,7 +61,13 @@ export async function POST(req: Request) {
 
   if (userId) {
     await admin.from("profiles").upsert(
-      { id: userId, email, full_name: full_name ?? "", role },
+      {
+        id: userId,
+        email,
+        full_name: full_name ?? "",
+        role,
+        organization_id: profile.organization_id,
+      },
       { onConflict: "id" }
     );
   }

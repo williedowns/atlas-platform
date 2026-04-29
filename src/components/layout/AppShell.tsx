@@ -85,7 +85,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { href: "/admin/inventory", label: "Inventory", icon: <InventoryIcon />, roles: ["admin","manager"], feature: "inventory" },
   { href: "/admin/customers", label: "Customers", icon: <CustomersIcon />, roles: ["admin","manager"] },
   { href: "/bookkeeper", label: "Books",       icon: <FinanceIcon />,     roles: ["admin","manager","bookkeeper"],             feature: "bookkeeper" },
-  { href: "/financing",  label: "Financing",   icon: <FinancingIcon />,   roles: ["admin","manager","bookkeeper"] },
+  { href: "/financing",  label: "Financing",   icon: <FinancingIcon />,   roles: ["admin","manager","bookkeeper"], feature: "bookkeeper" },
   { href: "/admin/audit", label: "Audit Trail", icon: <AuditIcon />,       roles: ["admin"] },
   { href: "/admin",      label: "Admin",       icon: <AdminIcon />,       roles: ["admin"] },
 ];

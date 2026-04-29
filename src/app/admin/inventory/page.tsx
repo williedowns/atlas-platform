@@ -19,8 +19,18 @@ export default async function AdminInventoryPage({
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
-  if (!["admin", "manager"].includes(profile?.role ?? "")) redirect("/inventory");
+  // Honor the org-level Inventory toggle — admins always pass, managers
+  // only if the matrix allows them. Mirrors what /inventory does so the
+  // matrix is the single source of truth for both surfaces.
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role, organization:organizations(role_permissions)")
+    .eq("id", user.id)
+    .single();
+
+  const { hasPermission } = await import("@/lib/permissions");
+  const orgPerms = (profile?.organization as any)?.role_permissions ?? null;
+  if (!hasPermission(orgPerms, profile?.role, "inventory")) redirect("/dashboard");
 
   const [{ data: units }, { data: locations }, { data: shows }] = await Promise.all([
     supabase

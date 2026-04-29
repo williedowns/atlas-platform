@@ -26,11 +26,18 @@ export default async function FinancingPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("role, full_name")
+    .select("role, full_name, organization:organizations(role_permissions)")
     .eq("id", user.id)
     .single();
 
+  // Role whitelist first (gates field_crew/sales_rep/customer entirely),
+  // then the org-level Finance toggle (so a manager with Finance OFF gets
+  // bounced just like they would on /bookkeeper).
   if (!["admin", "manager", "bookkeeper"].includes(profile?.role ?? "")) redirect("/dashboard");
+
+  const { hasPermission } = await import("@/lib/permissions");
+  const orgPerms = (profile?.organization as any)?.role_permissions ?? null;
+  if (!hasPermission(orgPerms, profile?.role, "bookkeeper")) redirect("/dashboard");
 
   // Fetch all contracts that have at least one financing entry
   const { data: contractsRaw } = await supabase
@@ -202,7 +209,7 @@ export default async function FinancingPage() {
   }
 
   return (
-    <AppShell role={profile?.role} userName={profile?.full_name}>
+    <AppShell role={profile?.role} userName={profile?.full_name} orgPerms={orgPerms}>
       <AppHeader
         title="Financing"
         subtitle={`${rows.length} financed contract${rows.length === 1 ? "" : "s"}`}
