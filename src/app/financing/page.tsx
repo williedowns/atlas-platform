@@ -54,10 +54,11 @@ export default async function FinancingPage() {
     ? await supabase
         .from("customer_files")
         .select("customer_id, category")
-        .in("category", ["drivers_license", "proof_of_homeownership"])
+        .in("category", ["drivers_license", "drivers_license_secondary", "proof_of_homeownership"])
         .in("customer_id", customerIds)
     : { data: [] };
   const customersWithDL = new Set((stipFiles ?? []).filter((f: any) => f.category === "drivers_license").map((f: any) => f.customer_id));
+  const customersWithSecondaryDL = new Set((stipFiles ?? []).filter((f: any) => f.category === "drivers_license_secondary").map((f: any) => f.customer_id));
   const customersWithProof = new Set((stipFiles ?? []).filter((f: any) => f.category === "proof_of_homeownership").map((f: any) => f.customer_id));
 
   const contracts = (contractsRaw ?? []) as any[];
@@ -84,7 +85,8 @@ export default async function FinancingPage() {
 
   // ── Needs-Attention queue (Robert Kennedy's view) ───────────────────────
   type AttentionReason =
-    | "foundation_missing_dl"
+    | "missing_primary_dl"
+    | "missing_secondary_dl"
     | "foundation_missing_proof"
     | "foundation_missing_ach"
     | "foundation_secondary_buyer_no_email"
@@ -93,7 +95,8 @@ export default async function FinancingPage() {
     | "balance_unfunded";
 
   const REASON_LABEL: Record<AttentionReason, string> = {
-    foundation_missing_dl: "Foundation — driver's license not uploaded",
+    missing_primary_dl: "Primary borrower's driver's license not uploaded",
+    missing_secondary_dl: "Co-borrower's driver's license not uploaded",
     foundation_missing_proof: "Foundation — proof of homeownership not uploaded",
     foundation_missing_ach: "Foundation — ACH not provided & not waived",
     foundation_secondary_buyer_no_email: "Foundation — co-buyer email missing",
@@ -108,8 +111,15 @@ export default async function FinancingPage() {
     const isFoundation = (f.financer_name ?? "").toLowerCase().includes("foundation");
     const isLyon = (f.financer_name ?? "").toLowerCase().includes("lyon");
 
+    // Universal: any financing requires a primary DL; secondary DL too when co-borrower exists
+    if (c.customer_id && !customersWithDL.has(c.customer_id)) {
+      reasons.push("missing_primary_dl");
+    }
+    const hasCoBorrowerOnEntry = !!(f.secondary_buyer_first_name || f.secondary_buyer_last_name || f.secondary_buyer_email);
+    if (hasCoBorrowerOnEntry && c.customer_id && !customersWithSecondaryDL.has(c.customer_id)) {
+      reasons.push("missing_secondary_dl");
+    }
     if (isFoundation) {
-      if (c.customer_id && !customersWithDL.has(c.customer_id)) reasons.push("foundation_missing_dl");
       if (c.customer_id && !customersWithProof.has(c.customer_id)) reasons.push("foundation_missing_proof");
       if (!f.foundation_ach_waived && !(f.foundation_ach_routing && f.foundation_ach_account)) {
         reasons.push("foundation_missing_ach");
@@ -153,7 +163,9 @@ export default async function FinancingPage() {
       const show = Array.isArray(c.show) ? c.show[0] : c.show;
       const location = Array.isArray(c.location) ? c.location[0] : c.location;
       const rep = Array.isArray(c.sales_rep) ? c.sales_rep[0] : c.sales_rep;
-      const dlOk = c.customer_id ? customersWithDL.has(c.customer_id) : false;
+      const primaryDlOk = c.customer_id ? customersWithDL.has(c.customer_id) : false;
+      const secondaryDlOk = c.customer_id ? customersWithSecondaryDL.has(c.customer_id) : false;
+      const hasCoBorrower = !!(f.secondary_buyer_first_name || f.secondary_buyer_last_name || f.secondary_buyer_email);
       inhouseRows.push({
         contractId: c.id,
         contractNumber: c.contract_number,
@@ -170,7 +182,9 @@ export default async function FinancingPage() {
         appSentAt: f.inhouse_app_sent_at ?? c.created_at ?? null,
         achOnFile: !!(f.inhouse_ach_routing && f.inhouse_ach_account),
         achWaived: !!f.inhouse_ach_waived,
-        dlUploaded: dlOk,
+        dlUploaded: primaryDlOk,
+        hasCoBorrower,
+        secondaryDlUploaded: secondaryDlOk,
         notes: f.inhouse_app_notes ?? null,
       });
     });

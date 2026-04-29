@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { formatCurrency } from "@/lib/utils";
 import type { FinancingProvider, FinancingPlan, ContractFinancing } from "@/types";
 import { LYON_PROJECT_TYPE_LABELS, buildLyonStages, type LyonProjectType } from "@/lib/lyon-stages";
-import CustomerFileVault from "@/components/contracts/CustomerFileVault";
+import RequiredDLUploader from "@/components/contracts/RequiredDLUploader";
 
 interface Step4FinancingProps {
   onNext: () => void;
@@ -651,6 +651,33 @@ export default function Step4Financing({ onNext }: Step4FinancingProps) {
                     </p>
                   )}
                 </div>
+
+                {/* DLs — required for both borrowers when applicable */}
+                {draft.customer?.id ? (
+                  <div className="space-y-2">
+                    <p className="text-xs font-bold uppercase tracking-wide text-slate-700">
+                      Driver's Licenses (required to sign)
+                    </p>
+                    <RequiredDLUploader
+                      customerId={draft.customer.id}
+                      category="drivers_license"
+                      label="Primary Borrower DL"
+                      borrowerName={[form.primaryFirstName, form.primaryLastName].filter(Boolean).join(" ") || undefined}
+                    />
+                    {(form.secondaryFirstName || form.secondaryLastName || form.secondaryEmail) && (
+                      <RequiredDLUploader
+                        customerId={draft.customer.id}
+                        category="drivers_license_secondary"
+                        label="Co-Borrower DL"
+                        borrowerName={[form.secondaryFirstName, form.secondaryLastName].filter(Boolean).join(" ") || undefined}
+                      />
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                    Save the customer at Step 2 first — then upload borrower DLs here.
+                  </p>
+                )}
               </div>
             )}
 
@@ -875,26 +902,9 @@ export default function Step4Financing({ onNext }: Step4FinancingProps) {
                   onChange={(e) => setForm({ ...form, inhouseAchBank: e.target.value })}
                   placeholder="Bank name"
                 />
-                {/* DL upload — required for the in-house application packet */}
-                {draft.customer?.id ? (
-                  <div className="rounded-lg bg-white border border-[#00929C]/20 p-2">
-                    <p className="text-xs font-bold uppercase tracking-wide text-[#00929C] mb-1">
-                      Driver's License
-                    </p>
-                    <p className="text-[11px] text-slate-500 mb-2">
-                      Required for the application packet emailed to Robert. Pick "Driver's License"
-                      as the category and upload a photo of the front.
-                    </p>
-                    <CustomerFileVault
-                      customerId={draft.customer.id}
-                      compact
-                    />
-                  </div>
-                ) : (
-                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
-                    Save the customer at Step 2 first — once saved, you can upload a driver's license here.
-                  </p>
-                )}
+                <p className="text-[11px] text-slate-500 italic">
+                  Driver's licenses for both borrowers are uploaded in the Borrowers section above.
+                </p>
               </div>
             )}
 

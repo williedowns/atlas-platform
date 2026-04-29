@@ -51,6 +51,8 @@ export interface InhouseRow {
   achOnFile: boolean;
   achWaived: boolean;
   dlUploaded: boolean;
+  hasCoBorrower: boolean;
+  secondaryDlUploaded: boolean;
   notes: string | null;
 }
 
@@ -136,7 +138,8 @@ export default function InhouseTrackerSection({ rows }: Props) {
                 <div className="divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white">
                   {groups[status].map((row) => {
                     const next = NEXT_BY_STATUS[row.status];
-                    const stuck = row.status === "application_sent" && (!row.dlUploaded || (!row.achOnFile && !row.achWaived));
+                    const dlsOk = row.dlUploaded && (!row.hasCoBorrower || row.secondaryDlUploaded);
+                    const stuck = row.status === "application_sent" && (!dlsOk || (!row.achOnFile && !row.achWaived));
                     return (
                       <div key={`${row.contractId}-${row.fundingIdx}`} className="px-4 py-3">
                         <div className="flex items-start justify-between gap-3">
@@ -153,7 +156,10 @@ export default function InhouseTrackerSection({ rows }: Props) {
                             </p>
                             {/* Readiness flags */}
                             <div className="flex flex-wrap gap-1 mt-1.5">
-                              <Flag ok={row.dlUploaded} label="DL" />
+                              <Flag ok={row.dlUploaded} label={row.hasCoBorrower ? "Primary DL" : "DL"} />
+                              {row.hasCoBorrower && (
+                                <Flag ok={row.secondaryDlUploaded} label="Co-Borrower DL" />
+                              )}
                               <Flag ok={row.achOnFile || row.achWaived} label={row.achWaived ? "ACH waived" : "ACH"} />
                               {row.appSentAt ? (
                                 <span className="text-[10px] text-slate-500">App sent {formatDate(row.appSentAt)}</span>
@@ -169,7 +175,11 @@ export default function InhouseTrackerSection({ rows }: Props) {
 
                         {stuck && (
                           <p className="text-[11px] font-semibold text-amber-700 mt-1">
-                            ⚠ Application can't fully process — missing {[!row.dlUploaded && "DL", !row.achOnFile && !row.achWaived && "ACH"].filter(Boolean).join(" + ")}.
+                            ⚠ Application can't fully process — missing {[
+                              !row.dlUploaded && "primary DL",
+                              row.hasCoBorrower && !row.secondaryDlUploaded && "co-borrower DL",
+                              !row.achOnFile && !row.achWaived && "ACH",
+                            ].filter(Boolean).join(" + ")}.
                           </p>
                         )}
 

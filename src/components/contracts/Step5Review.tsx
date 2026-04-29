@@ -92,10 +92,18 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
   // Customer must commit something to proceed: a deposit split OR financing.
   // 100% financing (e.g., GreenSky run at POS) IS the customer's commitment — no separate deposit required.
   const hasCommitment = splits.length > 0 || financingArr.length > 0;
-  // DL gate: any financing requires a driver's license on file before sign (Willie 2026-04-28 #8).
-  const [hasDriversLicense, setHasDriversLicense] = useState(false);
-  const dlRequired = financingArr.length > 0;
-  const dlSatisfied = !dlRequired || hasDriversLicense;
+  // DL gate: financing requires a primary borrower DL; secondary DL also required
+  // when any financing entry has a co-borrower (Willie 2026-04-29).
+  const [hasPrimaryDL, setHasPrimaryDL] = useState(false);
+  const [hasSecondaryDL, setHasSecondaryDL] = useState(false);
+  const primaryDlRequired = financingArr.length > 0;
+  const hasAnyCoBorrower = financingArr.some((f) =>
+    !!(f.secondary_buyer_first_name || f.secondary_buyer_last_name || f.secondary_buyer_email)
+  );
+  const secondaryDlRequired = primaryDlRequired && hasAnyCoBorrower;
+  const dlSatisfied =
+    (!primaryDlRequired || hasPrimaryDL) &&
+    (!secondaryDlRequired || hasSecondaryDL);
   const canProceed = hasCommitment && dlSatisfied;
 
   function handleAddSplit() {
@@ -652,23 +660,30 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
         </CardContent>
       </Card>
 
-      {/* ── Customer files (only when DL is required, i.e. there's financing) ─ */}
-      {dlRequired && draft.customer?.id && (
+      {/* ── Customer files (when financing exists, surface the vault for any other docs) ─ */}
+      {primaryDlRequired && draft.customer?.id && (
         <CustomerFileVault
           customerId={draft.customer.id}
           compact
           onFilesChange={(files) => {
-            setHasDriversLicense(files.some((f) => f.category === "drivers_license"));
+            setHasPrimaryDL(files.some((f) => f.category === "drivers_license"));
+            setHasSecondaryDL(files.some((f) => f.category === "drivers_license_secondary"));
           }}
         />
       )}
-      {dlRequired && !dlSatisfied && (
-        <div className="rounded-lg bg-amber-50 border-2 border-amber-300 px-4 py-3">
+      {primaryDlRequired && !dlSatisfied && (
+        <div className="rounded-lg bg-amber-50 border-2 border-amber-300 px-4 py-3 space-y-1">
           <p className="text-sm font-semibold text-amber-800">
-            Driver's license required before sign — financing is on this contract.
+            Driver's license required before sign:
           </p>
+          {!hasPrimaryDL && (
+            <p className="text-xs text-amber-700">• Primary borrower's driver's license missing.</p>
+          )}
+          {secondaryDlRequired && !hasSecondaryDL && (
+            <p className="text-xs text-amber-700">• Co-borrower's driver's license missing.</p>
+          )}
           <p className="text-xs text-amber-700 mt-1">
-            Upload via Customer Files above. Take a photo or attach an existing image.
+            Upload at Step 4 in the Borrowers section, or via the Customer Files vault above.
           </p>
         </div>
       )}
@@ -721,7 +736,7 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
         <p className="text-center text-sm text-slate-400">
           {!hasCommitment
             ? "Add a deposit or financing to sign \u0026 pay, or save as a quote to print"
-            : "Driver's license required before sign \u2014 upload above"}
+            : `Driver's license required before sign \u2014 upload ${secondaryDlRequired ? "primary + co-borrower DLs" : "DL"} above`}
         </p>
       )}
     </div>

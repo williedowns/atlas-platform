@@ -36,26 +36,25 @@ export async function POST(
     return NextResponse.json({ skipped: true, reason: "no in-house financing entry" });
   }
 
-  // Pull the most recent driver's license file for this customer (if any)
-  let dlSignedUrl: string | null = null;
-  let dlFilename: string | null = null;
-  if ((contract as any).customer_id) {
-    const { data: dlRow } = await supabase
+  // Pull most recent DLs (primary + secondary) for the customer
+  async function pullDl(category: "drivers_license" | "drivers_license_secondary") {
+    if (!(contract as any).customer_id) return { url: null as string | null, filename: null as string | null };
+    const { data: row } = await supabase
       .from("customer_files")
       .select("id, filename, storage_path")
       .eq("customer_id", (contract as any).customer_id)
-      .eq("category", "drivers_license")
+      .eq("category", category)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (dlRow) {
-      const { data: signed } = await supabase.storage
-        .from("customer-files")
-        .createSignedUrl(dlRow.storage_path, 60 * 60 * 24 * 7); // 7 days
-      dlSignedUrl = signed?.signedUrl ?? null;
-      dlFilename = dlRow.filename ?? null;
-    }
+    if (!row) return { url: null, filename: null };
+    const { data: signed } = await supabase.storage
+      .from("customer-files")
+      .createSignedUrl(row.storage_path, 60 * 60 * 24 * 7);
+    return { url: signed?.signedUrl ?? null, filename: row.filename ?? null };
   }
+  const primaryDl = await pullDl("drivers_license");
+  const secondaryDl = await pullDl("drivers_license_secondary");
 
   const portalUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://app.atlasswimspas.com";
   const customer = Array.isArray((contract as any).customer) ? (contract as any).customer[0] : (contract as any).customer;
@@ -101,8 +100,10 @@ export async function POST(
       account: inhouse.inhouse_ach_account,
       bank: inhouse.inhouse_ach_bank,
     },
-    driversLicenseSignedUrl: dlSignedUrl,
-    driversLicenseFilename: dlFilename,
+    driversLicenseSignedUrl: primaryDl.url,
+    driversLicenseFilename: primaryDl.filename,
+    secondaryDriversLicenseSignedUrl: secondaryDl.url,
+    secondaryDriversLicenseFilename: secondaryDl.filename,
     signedAt: (contract as any).signed_at,
   });
 
@@ -134,5 +135,10 @@ export async function POST(
     return NextResponse.json({ error: "Email send failed", details: body }, { status: 500 });
   }
 
-  return NextResponse.json({ sent: true, to: ROBERT_EMAIL, dl_attached: !!dlSignedUrl });
+  return NextResponse.json({
+    sent: true,
+    to: ROBERT_EMAIL,
+    primary_dl_attached: !!primaryDl.url,
+    secondary_dl_attached: !!secondaryDl.url,
+  });
 }

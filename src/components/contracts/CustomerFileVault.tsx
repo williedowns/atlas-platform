@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
 const CATEGORY_LABELS: Record<string, string> = {
-  drivers_license: "Driver's License",
+  drivers_license: "Driver's License (Primary)",
+  drivers_license_secondary: "Driver's License (Co-Borrower)",
   proof_of_homeownership: "Proof of Homeownership",
   permit_receipt: "Permit Receipt",
   survey: "Survey",

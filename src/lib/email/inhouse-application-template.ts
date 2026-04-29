@@ -50,6 +50,9 @@ export interface InhouseApplicationPayload {
   driversLicenseSignedUrl?: string | null;
   driversLicenseFilename?: string | null;
 
+  secondaryDriversLicenseSignedUrl?: string | null;
+  secondaryDriversLicenseFilename?: string | null;
+
   signedAt?: string;
 }
 
@@ -72,18 +75,17 @@ export function buildInhouseApplicationHtml(p: InhouseApplicationPayload): strin
       </tr>
     `).join("");
 
-  const dlBlock = p.driversLicenseSignedUrl
-    ? `
-      <p style="margin:0 0 8px;color:#475569;font-size:13px;">
-        Driver's License: <a href="${p.driversLicenseSignedUrl}" style="color:#00929C;font-weight:600;">${escapeHtml(p.driversLicenseFilename ?? "View")}</a>
-        <span style="color:#94a3b8;font-size:11px;">(link expires in 7 days; download a copy if needed)</span>
-      </p>
-    `
-    : `
-      <p style="margin:0 0 8px;color:#b45309;font-size:13px;font-weight:600;">
-        ⚠ Driver's License NOT uploaded. Have the salesperson upload it to Customer Files on the contract page.
-      </p>
-    `;
+  const hasSecondary = !!(p.secondaryBuyer?.first_name || p.secondaryBuyer?.email);
+  const dlRow = (label: string, url: string | null | undefined, filename: string | null | undefined) =>
+    url
+      ? `<p style="margin:0 0 6px;color:#475569;font-size:13px;">${label}: <a href="${url}" style="color:#00929C;font-weight:600;">${escapeHtml(filename ?? "View")}</a></p>`
+      : `<p style="margin:0 0 6px;color:#b45309;font-size:13px;font-weight:600;">⚠ ${label} NOT uploaded.</p>`;
+
+  const dlBlock = `
+    ${dlRow("Primary Borrower DL", p.driversLicenseSignedUrl, p.driversLicenseFilename)}
+    ${hasSecondary ? dlRow("Co-Borrower DL", p.secondaryDriversLicenseSignedUrl, p.secondaryDriversLicenseFilename) : ""}
+    <p style="margin:4px 0 0;color:#94a3b8;font-size:11px;">Links expire in 7 days; download a copy if needed.</p>
+  `;
 
   const secondary = p.secondaryBuyer && (p.secondaryBuyer.first_name || p.secondaryBuyer.email)
     ? `
