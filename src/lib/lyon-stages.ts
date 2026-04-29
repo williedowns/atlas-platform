@@ -7,16 +7,28 @@ import type { LyonStage } from "@/types";
 export type LyonProjectType =
   | "fiberglass_pool"
   | "vinyl_liner_pool"
+  | "above_ground_pool"
   | "materials_only"
   | "metal_building"
-  | "metal_building_prefab";
+  | "metal_building_prefab"
+  | "hot_tub"
+  | "swim_spa"
+  | "cold_tub"
+  | "sauna"
+  | "bbq_island";
 
 export const LYON_PROJECT_TYPE_LABELS: Record<LyonProjectType, string> = {
   fiberglass_pool: "Fiberglass Pool",
   vinyl_liner_pool: "Vinyl Liner Pool",
+  above_ground_pool: "Above Ground Pool",
   materials_only: "Materials Only / Shed",
   metal_building: "Metal Building / Shed (full)",
   metal_building_prefab: "Metal Building (prefab)",
+  hot_tub: "Hot Tub",
+  swim_spa: "Swim Spa",
+  cold_tub: "Cold Tub",
+  sauna: "Sauna",
+  bbq_island: "BBQ Island",
 };
 
 interface StageTemplate {
@@ -51,6 +63,37 @@ const TEMPLATES: Record<LyonProjectType, StageTemplate[]> = {
     { label: "Deposit", percent: 25 },
     { label: "Delivery of prefab building", percent: 25 },
     { label: "Walls / framing set", percent: 25 },
+    { label: "Project complete", percent: 25 },
+  ],
+  // Above-ground pools follow Lyon's materials-only-style 30/70 split per the
+  // 2026-04-28 letter pattern (no construction phases like fiberglass/vinyl).
+  above_ground_pool: [
+    { label: "Deposit", percent: 30 },
+    { label: "Installation complete", percent: 70 },
+  ],
+  // Single-delivery items — confirm the exact split with Lyon, defaulting to
+  // 25% deposit / 75% on delivery (the standard non-construction draw).
+  hot_tub: [
+    { label: "Deposit", percent: 25 },
+    { label: "Delivery complete", percent: 75 },
+  ],
+  swim_spa: [
+    { label: "Deposit", percent: 25 },
+    { label: "Delivery complete", percent: 75 },
+  ],
+  cold_tub: [
+    { label: "Deposit", percent: 25 },
+    { label: "Delivery complete", percent: 75 },
+  ],
+  sauna: [
+    { label: "Deposit", percent: 25 },
+    { label: "Delivery complete", percent: 75 },
+  ],
+  // BBQ Islands are an outdoor build — mirroring the metal-building 4-stage pattern
+  bbq_island: [
+    { label: "Deposit", percent: 25 },
+    { label: "Concrete / foundation", percent: 25 },
+    { label: "Frame / build", percent: 25 },
     { label: "Project complete", percent: 25 },
   ],
 };

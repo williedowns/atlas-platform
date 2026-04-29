@@ -129,6 +129,12 @@ export default function Step7Sign({ onNext }: Step7SignProps) {
           fetch(`/api/contracts/${createdId}/inhouse-application`, { method: "POST" })
             .catch(() => {/* non-fatal */});
         }
+        // If contract is contingent on HOA, fire-and-forget the Fair Housing
+        // packet to the customer. Endpoint short-circuits when needs_hoa is false.
+        if (draft.needs_hoa) {
+          fetch(`/api/contracts/${createdId}/hoa-packet`, { method: "POST" })
+            .catch(() => {/* non-fatal */});
+        }
       }
 
       onNext();

@@ -134,9 +134,34 @@ export default function ContingencyTracker(props: Props) {
               )}
             </div>
             <p className="text-xs text-slate-500">
-              HOA help packet auto-emails to the customer when this contingency is on (Phase 2 wires the email).
+              Fair Housing packet auto-emailed to the customer at sign — they can also access it in their portal.
             </p>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
+              <a
+                href="/legal/fair_housing_legal_compliance_memorandum.pdf"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center text-xs font-semibold px-3 py-1 rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
+              >
+                View Packet PDF
+              </a>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={async () => {
+                  setSaving(true);
+                  setError(null);
+                  const r = await fetch(`/api/contracts/${props.contractId}/hoa-packet`, { method: "POST" });
+                  setSaving(false);
+                  if (!r.ok) {
+                    const b = await r.json().catch(() => ({}));
+                    setError(b.error ?? "Resend failed");
+                  }
+                }}
+                className="text-xs font-semibold px-3 py-1 rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Resend to customer
+              </button>
               <Button
                 variant="default"
                 size="sm"

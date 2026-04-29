@@ -237,7 +237,18 @@ export interface ContractFinancing {
 
   // ── Lyon Financial specifics (4-stage funding per 2026-04-28 letter) ──
   /** Project type drives the stage template Lyon uses */
-  lyon_project_type?: "fiberglass_pool" | "vinyl_liner_pool" | "materials_only" | "metal_building" | "metal_building_prefab";
+  lyon_project_type?:
+    | "fiberglass_pool"
+    | "vinyl_liner_pool"
+    | "above_ground_pool"
+    | "materials_only"
+    | "metal_building"
+    | "metal_building_prefab"
+    | "hot_tub"
+    | "swim_spa"
+    | "cold_tub"
+    | "sauna"
+    | "bbq_island";
   /** Funding flavor — Lyon-direct ACH/wire vs LightStream funds the customer */
   lyon_funding_flavor?: "lyon_direct" | "lightstream_via_customer";
   /** Stage-by-stage progress; 2-4 stages depending on project type */
