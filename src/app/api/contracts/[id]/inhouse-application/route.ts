@@ -16,6 +16,13 @@ export async function POST(
   const { id } = await params;
   const supabase = await createClient();
 
+  // CRITICAL: this route emails ACH details + signed DL URLs to Robert Kennedy.
+  // Must be authenticated — never expose to anonymous callers.
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const { data: contract, error } = await supabase
     .from("contracts")
     .select(`

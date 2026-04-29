@@ -54,7 +54,7 @@ export async function POST(
         </tr>
         <tr>
           <td style="padding:12px;font-weight:bold;color:#334155;">Deposit Paid</td>
-          <td style="padding:12px;color:#059669;font-weight:bold;">${formatCurrency(contract.deposit_amount)}</td>
+          <td style="padding:12px;color:#059669;font-weight:bold;">${formatCurrency(contract.deposit_paid ?? 0)}</td>
         </tr>
         <tr style="background:#f1f5f9;">
           <td style="padding:12px;font-weight:bold;color:#334155;">Balance Due at Delivery</td>

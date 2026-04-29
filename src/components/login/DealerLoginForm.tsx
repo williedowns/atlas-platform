@@ -42,6 +42,13 @@ export function DealerLoginForm({ demoMode }: DealerLoginFormProps) {
       setError(error.message);
       setLoading(false);
     } else {
+      // Clear any leftover contract draft from a prior rep on this device.
+      // Belt-and-suspenders alongside the signOut clear in AppShell — covers
+      // direct logins on a shared iPad where the prior session was abandoned
+      // without an explicit signOut. Audit fix 2026-04-29.
+      if (typeof window !== "undefined") {
+        try { window.localStorage.removeItem("atlas-contract-draft-v4"); } catch {}
+      }
       router.push("/dashboard");
     }
   }

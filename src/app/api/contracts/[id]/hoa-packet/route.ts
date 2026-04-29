@@ -25,6 +25,13 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   const { id } = await params;
   const supabase = await createClient();
 
+  // CRITICAL: this route emails the customer (and attaches a PDF). Must be
+  // authenticated to prevent anonymous spam / enumeration.
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const { data: contract, error } = await supabase
     .from("contracts")
     .select(`

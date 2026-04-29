@@ -213,6 +213,11 @@ export default function AppShell({ role, userName, orgPerms, children }: AppShel
 
   async function handleSignOut() {
     const supabase = createClient();
+    // Clear any persisted contract draft so the next rep on this iPad doesn't
+    // see the previous rep's in-flight contract. Audit fix 2026-04-29.
+    if (typeof window !== "undefined") {
+      try { window.localStorage.removeItem("atlas-contract-draft-v4"); } catch {}
+    }
     await supabase.auth.signOut();
     router.push("/login");
   }
