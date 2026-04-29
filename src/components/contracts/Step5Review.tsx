@@ -30,7 +30,7 @@ interface Step5ReviewProps {
 
 export default function Step5Review({ onNext }: Step5ReviewProps) {
   const router = useRouter();
-  const { draft, addDepositSplit, removeDepositSplit, updateLineItemSerial, setNotes, setExternalNotes, setNeedsPermit, setNeedsHoa, setPermitJurisdiction } = useContractStore();
+  const { draft, addDepositSplit, removeDepositSplit, updateLineItemSerial, setNotes, setExternalNotes, setNeedsPermit, setNeedsHoa, setPermitJurisdiction, setTaxExempt } = useContractStore();
 
   const contractNumber = useMemo(() => generateContractNumber(), []);
   const today = useMemo(() => formatDate(new Date()), []);
@@ -307,6 +307,40 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
           </CardContent>
         </Card>
       )}
+
+      {/* ── Texas Tax Exemption toggle ─────────────────────── */}
+      {(() => {
+        const isTexas =
+          ((draft.location?.state ?? "").toUpperCase() === "TX") ||
+          ((draft.show?.state ?? "").toUpperCase() === "TX") ||
+          ((draft.customer?.state ?? "").toUpperCase() === "TX");
+        if (!isTexas) return null;
+        return (
+          <Card className={`border-2 transition-all ${draft.tax_exempt ? "border-emerald-400 bg-emerald-50" : "border-slate-200"}`}>
+            <CardContent className="p-4">
+              <button
+                type="button"
+                onClick={() => setTaxExempt(!draft.tax_exempt)}
+                className="flex items-center gap-4 w-full text-left touch-manipulation"
+              >
+                <div className={`w-12 h-7 rounded-full flex items-center px-1 transition-all flex-shrink-0 ${
+                  draft.tax_exempt ? "bg-emerald-500 justify-end" : "bg-slate-200 justify-start"
+                }`}>
+                  <div className="w-5 h-5 rounded-full bg-white shadow-sm" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900 text-sm">Texas Tax Exemption Certificate</p>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {draft.tax_exempt
+                      ? "Tax exempt — certificate on file. Tax zeroed out."
+                      : "Toggle on if customer has a Texas tax exemption certificate on file"}
+                  </p>
+                </div>
+              </button>
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       {/* ── Totals ─────────────────────────────────────────── */}
       <Card>
