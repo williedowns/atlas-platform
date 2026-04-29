@@ -182,14 +182,44 @@ export async function POST(req: Request) {
 
     // Update contract — accumulate deposit_paid
     const newDepositPaid = (contract.deposit_paid ?? 0) + Number(amount);
+    const contractUpdate: Record<string, unknown> = {
+      status: "deposit_collected",
+      deposit_paid: newDepositPaid,
+      balance_due: Math.max(0, contract.total - financedAtSale - newDepositPaid),
+      intuit_payment_id: chargeResult.id,
+    };
+
+    // ── GreenSky / WF auto-mark funded ───────────────────────────────────────
+    // When method === "financing" the salesperson is running the GreenSky-issued
+    // (or WF-issued) virtual credit card on our terminal — Atlas is funded the
+    // moment the card captures. Find the matching financing entry by amount and
+    // mark it fully_funded so Robert doesn't have to click anything.
+    if (method === "financing" && Array.isArray(contract.financing)) {
+      const arr = [...(contract.financing as Array<Record<string, unknown>>)];
+      const matchIdx = arr.findIndex((entry) => {
+        if (entry.deduct_from_balance === false) return false; // skip Foundation
+        const already = (entry.funding_status as string | undefined) ?? null;
+        if (already === "fully_funded") return false; // skip already-funded
+        const expected = Number(entry.financed_amount ?? 0);
+        return Math.abs(expected - Number(amount)) < 0.01;
+      });
+      if (matchIdx >= 0) {
+        arr[matchIdx] = {
+          ...arr[matchIdx],
+          funded_amount: Number(arr[matchIdx].financed_amount ?? amount),
+          funded_at: new Date().toISOString(),
+          funding_status: "fully_funded",
+          intuit_charge_id: chargeResult.id,
+          updated_at: new Date().toISOString(),
+          updated_by: user.id,
+        };
+        contractUpdate.financing = arr;
+      }
+    }
+
     await supabase
       .from("contracts")
-      .update({
-        status: "deposit_collected",
-        deposit_paid: newDepositPaid,
-        balance_due: Math.max(0, contract.total - financedAtSale - newDepositPaid),
-        intuit_payment_id: chargeResult.id,
-      })
+      .update(contractUpdate)
       .eq("id", contract_id);
 
     // Record tax transaction in Avalara for state filing & remittance (best-effort)
