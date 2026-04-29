@@ -204,8 +204,8 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
       });
       if (response.ok) {
         const data = await response.json();
-        if (data.unconfigured) {
-          console.warn("[tax] Avalara not configured — tax will be $0 until credentials are added to environment");
+        if (data.flat_rate) {
+          console.info(`[tax] Using flat-rate fallback (${(data.tax_rate * 100).toFixed(2)}%) until Avalara is connected`);
         }
         setTax(data.total_tax ?? 0, data.tax_rate ?? 0);
       } else {

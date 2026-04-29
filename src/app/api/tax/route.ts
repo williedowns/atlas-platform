@@ -36,17 +36,29 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Location address required for tax calculation" }, { status: 400 });
   }
 
-  // Guard: Avalara not configured — return gracefully
-  if (!process.env.AVALARA_ACCOUNT_ID || !process.env.AVALARA_LICENSE_KEY) {
-    console.warn("[tax] Avalara credentials not set — skipping tax calculation");
-    return NextResponse.json({ tax_amount: 0, total_tax: 0, tax_rate: 0, jurisdiction: null, unconfigured: true });
-  }
-
+  // Compute taxable up front so both the Avalara path and the flat-rate
+  // fallback can use it.
   const subtotal = (line_items as { sell_price: number; quantity: number }[])
     .reduce((sum: number, item) => sum + item.sell_price * item.quantity, 0);
   const discountTotal = (discounts as { amount: number }[])
     .reduce((sum: number, d) => sum + d.amount, 0);
   const taxableAmount = Math.max(0, subtotal - discountTotal);
+
+  // Flat-rate fallback: until Avalara is wired up, every order taxes at 8.25%
+  // (Willie 04-29). When Avalara credentials get added, this branch stops
+  // running and the live API call below takes over. Override the rate via
+  // FLAT_TAX_RATE env var if needed.
+  if (!process.env.AVALARA_ACCOUNT_ID || !process.env.AVALARA_LICENSE_KEY) {
+    const flatRate = Number(process.env.FLAT_TAX_RATE ?? "0.0825");
+    const totalTax = Math.round(taxableAmount * flatRate * 100) / 100;
+    return NextResponse.json({
+      tax_amount: totalTax,
+      total_tax: totalTax,
+      tax_rate: flatRate,
+      jurisdiction: "Flat rate (Avalara not yet connected)",
+      flat_rate: true,
+    });
+  }
 
   const shipFrom = {
     line1: process.env.SHIP_FROM_ADDRESS ?? "123 Main St",

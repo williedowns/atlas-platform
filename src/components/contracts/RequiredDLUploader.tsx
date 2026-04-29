@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import CameraCaptureModal from "@/components/contracts/CameraCaptureModal";
 
 interface CustomerFile {
   id: string;
@@ -28,6 +29,7 @@ export default function RequiredDLUploader({ customerId, contractId, category, l
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
 
   async function refresh() {
     if (!customerId) return;
@@ -49,10 +51,7 @@ export default function RequiredDLUploader({ customerId, contractId, category, l
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerId, category]);
 
-  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    e.target.value = ""; // reset input
-    if (!f) return;
+  async function uploadFile(f: File) {
     setUploading(true);
     setError(null);
     const fd = new FormData();
@@ -69,6 +68,13 @@ export default function RequiredDLUploader({ customerId, contractId, category, l
     }
     await refresh();
     onUploaded?.();
+  }
+
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    e.target.value = ""; // reset input
+    if (!f) return;
+    await uploadFile(f);
   }
 
   const ok = !!file;
@@ -92,7 +98,7 @@ export default function RequiredDLUploader({ customerId, contractId, category, l
       {loading ? (
         <p className="text-xs text-slate-400 mt-1">Loading…</p>
       ) : file ? (
-        <div className="flex items-center justify-between gap-2 mt-1.5">
+        <div className="flex items-center justify-between gap-2 mt-1.5 flex-wrap">
           <p className="text-xs text-slate-600 truncate flex-1 min-w-0">{file.filename}</p>
           <div className="flex items-center gap-2 flex-shrink-0">
             {file.signed_url && (
@@ -100,20 +106,53 @@ export default function RequiredDLUploader({ customerId, contractId, category, l
                 View
               </a>
             )}
+            <button
+              type="button"
+              onClick={() => setCameraOpen(true)}
+              disabled={uploading}
+              className="text-xs font-semibold text-slate-500 hover:text-[#00929C] disabled:opacity-50"
+            >
+              Retake
+            </button>
             <label className="text-xs font-semibold text-slate-500 hover:text-[#00929C] cursor-pointer">
-              Replace
-              <input type="file" accept="image/*,application/pdf" capture="environment" className="hidden" onChange={handleFile} disabled={uploading} />
+              Replace file
+              <input type="file" accept="image/*,application/pdf" className="hidden" onChange={handleFile} disabled={uploading} />
             </label>
           </div>
         </div>
       ) : (
-        <label className="mt-1.5 inline-flex items-center justify-center w-full px-3 py-1.5 rounded-lg border border-amber-400 bg-white text-amber-800 text-xs font-semibold hover:bg-amber-50 cursor-pointer">
-          {uploading ? "Uploading…" : "Upload DL"}
-          <input type="file" accept="image/*,application/pdf" capture="environment" className="hidden" onChange={handleFile} disabled={uploading} />
-        </label>
+        <div className="mt-1.5 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => setCameraOpen(true)}
+            disabled={uploading}
+            className="inline-flex items-center justify-center px-3 py-1.5 rounded-lg border border-[#00929C] bg-[#00929C] text-white text-xs font-semibold hover:bg-[#007279] disabled:opacity-50"
+          >
+            <svg className="w-3.5 h-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            Take Photo
+          </button>
+          <label className="inline-flex items-center justify-center px-3 py-1.5 rounded-lg border border-amber-400 bg-white text-amber-800 text-xs font-semibold hover:bg-amber-50 cursor-pointer">
+            {uploading ? "Uploading…" : "Choose File"}
+            <input type="file" accept="image/*,application/pdf" className="hidden" onChange={handleFile} disabled={uploading} />
+          </label>
+        </div>
       )}
 
       {error && <p className="text-xs text-red-700 mt-1">{error}</p>}
+
+      {cameraOpen && (
+        <CameraCaptureModal
+          title={`Take Photo — ${label}`}
+          filename={`dl-${category}-${Date.now()}.jpg`}
+          onCapture={async (f) => {
+            await uploadFile(f);
+          }}
+          onClose={() => setCameraOpen(false)}
+        />
+      )}
     </div>
   );
 }
