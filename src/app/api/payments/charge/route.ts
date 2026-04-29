@@ -181,73 +181,19 @@ export async function POST(req: Request) {
       .eq("id", payment!.id);
 
     // Update contract — accumulate deposit_paid
+    // NOTE: GreenSky/Wells Fargo/etc financing draws are NOT credit-card swipes
+    // through Intuit — they're ACH draws executed in each lender's portal.
+    // The financing entry's funded_amount is updated separately via the
+    // "Log draw" UI on FinancingDetailsCard (PATCH /api/contracts/[id]/financing/[idx]).
     const newDepositPaid = (contract.deposit_paid ?? 0) + Number(amount);
-    const contractUpdate: Record<string, unknown> = {
-      status: "deposit_collected",
-      deposit_paid: newDepositPaid,
-      balance_due: Math.max(0, contract.total - financedAtSale - newDepositPaid),
-      intuit_payment_id: chargeResult.id,
-    };
-
-    // ── GreenSky / WF accumulate-on-charge ───────────────────────────────────
-    // Salesperson can run partial charges on the GreenSky-issued virtual card.
-    // E.g. $20K total approved, $5K run at the show, $15K balance to run prior
-    // to delivery. Each capture accumulates to funded_amount; status flips:
-    //   funded == 0       → keep prior status (likely undefined / pending)
-    //   0 < funded < total → "partially_funded"
-    //   funded >= total    → "fully_funded"
-    //
-    // Match: the not-yet-fully-funded `deduct_from_balance:true` entry with the
-    // largest remaining balance. If you have multiple such entries on one
-    // contract (rare), Robert can correct via the manual UI on FinancingDetailsCard.
-    if (method === "financing" && Array.isArray(contract.financing)) {
-      const arr = [...(contract.financing as Array<Record<string, unknown>>)];
-      let bestIdx = -1;
-      let bestRemaining = -Infinity;
-      for (let i = 0; i < arr.length; i++) {
-        const entry = arr[i];
-        if (entry.deduct_from_balance === false) continue; // skip Foundation
-        if ((entry.funding_status as string | undefined) === "fully_funded") continue;
-        const total = Number(entry.financed_amount ?? 0);
-        const fundedSoFar = Number(entry.funded_amount ?? 0);
-        const remaining = total - fundedSoFar;
-        if (remaining > bestRemaining) {
-          bestRemaining = remaining;
-          bestIdx = i;
-        }
-      }
-      if (bestIdx >= 0) {
-        const entry = arr[bestIdx];
-        const total = Number(entry.financed_amount ?? 0);
-        const priorFunded = Number(entry.funded_amount ?? 0);
-        const newFunded = priorFunded + Number(amount);
-        const isFull = newFunded >= total - 0.01;
-        const priorHistory = Array.isArray(entry.charge_history) ? entry.charge_history as Array<Record<string, unknown>> : [];
-        arr[bestIdx] = {
-          ...entry,
-          funded_amount: newFunded,
-          funded_at: new Date().toISOString(),
-          funding_status: isFull ? "fully_funded" : "partially_funded",
-          intuit_charge_id: chargeResult.id,
-          charge_history: [
-            ...priorHistory,
-            {
-              amount: Number(amount),
-              charge_id: chargeResult.id,
-              charged_at: new Date().toISOString(),
-              charged_by: user.id,
-            },
-          ],
-          updated_at: new Date().toISOString(),
-          updated_by: user.id,
-        };
-        contractUpdate.financing = arr;
-      }
-    }
-
     await supabase
       .from("contracts")
-      .update(contractUpdate)
+      .update({
+        status: "deposit_collected",
+        deposit_paid: newDepositPaid,
+        balance_due: Math.max(0, contract.total - financedAtSale - newDepositPaid),
+        intuit_payment_id: chargeResult.id,
+      })
       .eq("id", contract_id);
 
     // Record tax transaction in Avalara for state filing & remittance (best-effort)

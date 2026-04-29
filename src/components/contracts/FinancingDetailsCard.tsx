@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -40,7 +39,9 @@ export default function FinancingDetailsCard({ contractId, financing }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   // Inline-edit state for funding update
-  const [fundedAmount, setFundedAmount] = useState("");
+  const [drawAmount, setDrawAmount] = useState("");
+  const [drawReference, setDrawReference] = useState("");
+  const [drawNotes, setDrawNotes] = useState("");
   const [externalAppId, setExternalAppId] = useState("");
   const [externalChargeId, setExternalChargeId] = useState("");
 
@@ -153,12 +154,9 @@ export default function FinancingDetailsCard({ contractId, financing }: Props) {
                             {formatCurrency(remaining)}
                           </p>
                           {remaining > 0 && (
-                            <Link
-                              href={`/contracts/${contractId}/collect-payment`}
-                              className="text-[10px] font-semibold text-amber-800 hover:underline whitespace-nowrap"
-                            >
-                              Run charge →
-                            </Link>
+                            <p className="text-[10px] font-semibold text-amber-800">
+                              Run via lender portal
+                            </p>
                           )}
                         </div>
                       );
@@ -177,21 +175,25 @@ export default function FinancingDetailsCard({ contractId, financing }: Props) {
                 )}
               </div>
 
-              {/* Charge history — each individual swipe against this financing entry */}
-              {Array.isArray((f as any).charge_history) && ((f as any).charge_history as Array<{ amount: number; charge_id: string; charged_at: string }>).length > 0 && (
-                <div className="px-4 py-3 border-b border-slate-100">
-                  <p className="text-[10px] uppercase tracking-wide text-slate-500 font-bold mb-2">Charge History</p>
-                  <div className="space-y-1">
-                    {((f as any).charge_history as Array<{ amount: number; charge_id: string; charged_at: string }>).map((ch, ci) => (
-                      <div key={ci} className="flex items-center justify-between text-xs">
-                        <span className="text-slate-700">{formatDate(ch.charged_at)}</span>
-                        <span className="text-slate-400 font-mono">{ch.charge_id?.slice(0, 12)}…</span>
-                        <span className="font-semibold text-emerald-700">{formatCurrency(ch.amount)}</span>
-                      </div>
-                    ))}
+              {/* Draw history — each individual portal-ACH draw logged against this entry */}
+              {(() => {
+                const draws = Array.isArray((f as any).draw_history) ? (f as any).draw_history : [];
+                if (draws.length === 0) return null;
+                return (
+                  <div className="px-4 py-3 border-b border-slate-100">
+                    <p className="text-[10px] uppercase tracking-wide text-slate-500 font-bold mb-2">Draw History</p>
+                    <div className="space-y-1">
+                      {(draws as Array<{ amount: number; reference?: string | null; notes?: string | null; drawn_at: string }>).map((d, di) => (
+                        <div key={di} className="flex items-center justify-between text-xs gap-2">
+                          <span className="text-slate-700 whitespace-nowrap">{formatDate(d.drawn_at)}</span>
+                          {d.reference && <span className="text-slate-400 font-mono truncate flex-1">Ref {d.reference}</span>}
+                          <span className="font-semibold text-emerald-700 whitespace-nowrap">{formatCurrency(d.amount)}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* Static details */}
               <div className="px-4 py-3 space-y-1 text-xs">
@@ -286,92 +288,129 @@ export default function FinancingDetailsCard({ contractId, financing }: Props) {
                 </div>
               )}
 
-              {/* Update funding status / external IDs */}
+              {/* Log draw / update IDs / status */}
               <div className="border-t border-slate-100 px-4 py-3">
                 {isOpen ? (
-                  <div className="space-y-2">
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="text-xs font-medium text-slate-600 block mb-1">Funded amount</label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          placeholder={f.financed_amount.toFixed(2)}
-                          value={fundedAmount}
-                          onChange={(e) => setFundedAmount(e.target.value)}
-                          className="h-9 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-600 block mb-1">External App ID</label>
+                  <div className="space-y-3">
+                    {/* Log a draw — primary action for GreenSky / WF / etc portal ACH */}
+                    {!isFoundation && (
+                      <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-3 space-y-2">
+                        <p className="text-xs font-bold uppercase tracking-wide text-emerald-800">Log a Draw</p>
+                        <p className="text-xs text-slate-600">
+                          After running an ACH through the lender's portal (GreenSky, WF, etc), log it here.
+                          The amount accumulates onto Run So Far.
+                        </p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-xs font-medium text-slate-600 block mb-1">This draw amount</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              placeholder={Math.max(0, f.financed_amount - fundedAmt).toFixed(2)}
+                              value={drawAmount}
+                              onChange={(e) => setDrawAmount(e.target.value)}
+                              className="h-9 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-600 block mb-1">Reference / confirmation #</label>
+                            <input
+                              type="text"
+                              placeholder="From the lender portal"
+                              value={drawReference}
+                              onChange={(e) => setDrawReference(e.target.value)}
+                              className="h-9 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm"
+                            />
+                          </div>
+                        </div>
                         <input
                           type="text"
-                          placeholder="e.g. 8611005447"
-                          value={externalAppId}
-                          onChange={(e) => setExternalAppId(e.target.value)}
+                          placeholder="Notes (optional)"
+                          value={drawNotes}
+                          onChange={(e) => setDrawNotes(e.target.value)}
                           className="h-9 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm"
                         />
+                        <Button
+                          variant="default"
+                          size="sm"
+                          disabled={busy || !(parseFloat(drawAmount) > 0)}
+                          onClick={async () => {
+                            await patchEntry(idx, {
+                              add_draw: {
+                                amount: parseFloat(drawAmount),
+                                reference: drawReference || undefined,
+                                notes: drawNotes || undefined,
+                              },
+                            });
+                            setDrawAmount("");
+                            setDrawReference("");
+                            setDrawNotes("");
+                          }}
+                        >
+                          Log Draw
+                        </Button>
                       </div>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-600 block mb-1">Charge Request # (GreenSky / Foundation)</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. 5197393"
-                        value={externalChargeId}
-                        onChange={(e) => setExternalChargeId(e.target.value)}
-                        className="h-9 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm"
-                      />
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        variant="default"
-                        size="sm"
-                        disabled={busy}
-                        onClick={() => {
-                          const amount = parseFloat(fundedAmount) || f.financed_amount;
-                          patchEntry(idx, {
-                            funded_amount: amount,
-                            funded_at: new Date().toISOString(),
-                            funding_status: amount >= f.financed_amount ? "fully_funded" : "partially_funded",
+                    )}
+
+                    {/* External IDs + status overrides */}
+                    <div className="rounded-lg border border-slate-200 p-3 space-y-2">
+                      <p className="text-xs font-bold uppercase tracking-wide text-slate-600">External IDs / Status</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-xs font-medium text-slate-600 block mb-1">External App ID</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. 8611005447"
+                            value={externalAppId}
+                            onChange={(e) => setExternalAppId(e.target.value)}
+                            className="h-9 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-slate-600 block mb-1">Charge Request #</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. 5197393"
+                            value={externalChargeId}
+                            onChange={(e) => setExternalChargeId(e.target.value)}
+                            className="h-9 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={busy || (!externalAppId && !externalChargeId)}
+                          onClick={() => patchEntry(idx, {
                             ...(externalAppId ? { external_application_id: externalAppId } : {}),
                             ...(externalChargeId ? { external_charge_request_id: externalChargeId } : {}),
-                          });
-                        }}
-                      >
-                        Mark Funded
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={busy}
-                        onClick={() => patchEntry(idx, { funding_status: "pending_funding" })}
-                      >
-                        Pending
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={busy}
-                        onClick={() => patchEntry(idx, { funding_status: "failed" })}
-                      >
-                        Mark Failed
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={busy || (!externalAppId && !externalChargeId)}
-                        onClick={() => patchEntry(idx, {
-                          ...(externalAppId ? { external_application_id: externalAppId } : {}),
-                          ...(externalChargeId ? { external_charge_request_id: externalChargeId } : {}),
-                        })}
-                      >
-                        Save IDs only
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => setOpenIdx(null)}>
-                        Close
-                      </Button>
+                          })}
+                        >
+                          Save IDs
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={busy}
+                          onClick={() => patchEntry(idx, { funding_status: "pending_funding" })}
+                        >
+                          Mark Pending
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={busy}
+                          onClick={() => patchEntry(idx, { funding_status: "failed" })}
+                        >
+                          Mark Failed
+                        </Button>
+                      </div>
                     </div>
+
+                    <Button variant="ghost" size="sm" onClick={() => setOpenIdx(null)}>
+                      Close
+                    </Button>
                   </div>
                 ) : (
                   <Button
@@ -379,12 +418,14 @@ export default function FinancingDetailsCard({ contractId, financing }: Props) {
                     size="sm"
                     onClick={() => {
                       setOpenIdx(idx);
-                      setFundedAmount(fundedAmt > 0 ? String(fundedAmt) : "");
+                      setDrawAmount("");
+                      setDrawReference("");
+                      setDrawNotes("");
                       setExternalAppId(externalAppIdStored ?? "");
                       setExternalChargeId(externalChargeIdStored ?? "");
                     }}
                   >
-                    Update funding status / external IDs
+                    Log a draw / update IDs
                   </Button>
                 )}
               </div>
