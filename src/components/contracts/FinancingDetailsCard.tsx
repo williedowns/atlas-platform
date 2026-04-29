@@ -90,7 +90,6 @@ export default function FinancingDetailsCard({ contractId, financing }: Props) {
         {financing.map((f, idx) => {
           const isFoundation = f.deduct_from_balance === false;
           const isLyon = !!f.lyon_project_type;
-          const isWf = (f.financer_name ?? "").toLowerCase().includes("wells");
           const fundedAmt = (f as any).funded_amount ?? 0;
           const fundedAt = (f as any).funded_at;
           const fundingStatus: string | undefined = (f as any).funding_status;
@@ -216,15 +215,6 @@ export default function FinancingDetailsCard({ contractId, financing }: Props) {
                 {f.foundation_ach_waived && <Detail k="ACH" v="WAIVED (commission absorbs up to $250)" valueClass="text-red-700 font-semibold" />}
                 {f.foundation_ach_routing && f.foundation_ach_account && (
                   <Detail k="ACH on file" v={`acct ····${f.foundation_ach_account.slice(-4)}${f.foundation_ach_bank ? ` · ${f.foundation_ach_bank}` : ""}`} />
-                )}
-
-                {/* WF specifics */}
-                {isWf && f.wf_charge_mode && (
-                  <Detail
-                    k="WF charge"
-                    v={f.wf_charge_mode === "authorize_future" ? `Authorize-future (${f.wf_future_charge_date ?? "TBD"})` : "Charge now"}
-                    valueClass={f.wf_charge_mode === "authorize_future" ? "text-amber-700 font-semibold" : ""}
-                  />
                 )}
 
                 {/* Lyon specifics */}

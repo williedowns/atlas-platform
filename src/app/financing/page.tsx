@@ -83,7 +83,6 @@ export default async function FinancingPage() {
 
   // ── Needs-Attention queue (Robert Kennedy's view) ───────────────────────
   type AttentionReason =
-    | "wf_authorize_future_stale"
     | "foundation_missing_dl"
     | "foundation_missing_proof"
     | "foundation_missing_ach"
@@ -93,30 +92,21 @@ export default async function FinancingPage() {
     | "balance_unfunded";
 
   const REASON_LABEL: Record<AttentionReason, string> = {
-    wf_authorize_future_stale: "WF authorize-future — Run Final not executed",
     foundation_missing_dl: "Foundation — driver's license not uploaded",
     foundation_missing_proof: "Foundation — proof of homeownership not uploaded",
     foundation_missing_ach: "Foundation — ACH not provided & not waived",
     foundation_secondary_buyer_no_email: "Foundation — co-buyer email missing",
     lyon_stage_pending: "Lyon — stage awaiting funding",
-    funded_short: "Balance to run before delivery (card not yet fully charged)",
+    funded_short: "Balance to run via lender portal before delivery",
     balance_unfunded: "Outstanding balance with no funding source",
   };
-
-  const now = Date.now();
-  const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
   const attention: Array<{ contract: any; financing: any; reasons: AttentionReason[] }> = [];
   for (const { contract: c, financing: f } of rows) {
     const reasons: AttentionReason[] = [];
     const isFoundation = (f.financer_name ?? "").toLowerCase().includes("foundation");
-    const isWf = (f.financer_name ?? "").toLowerCase().includes("wells");
     const isLyon = (f.financer_name ?? "").toLowerCase().includes("lyon");
 
-    if (isWf && f.wf_charge_mode === "authorize_future") {
-      const submittedAt = new Date(c.created_at).getTime();
-      if (now - submittedAt > SEVEN_DAYS_MS) reasons.push("wf_authorize_future_stale");
-    }
     if (isFoundation) {
       if (c.customer_id && !customersWithDL.has(c.customer_id)) reasons.push("foundation_missing_dl");
       if (c.customer_id && !customersWithProof.has(c.customer_id)) reasons.push("foundation_missing_proof");
@@ -131,9 +121,10 @@ export default async function FinancingPage() {
       const anyPending = f.lyon_stages.some((s: any) => s.status !== "funded" && s.status !== "skipped");
       if (anyPending) reasons.push("lyon_stage_pending");
     }
-    // Balance-to-run check: GreenSky / WF deduct-at-POS entries with funded < financed
-    // Per Willie 04-29: customer rarely runs 100% at the show — leftover balance must be
-    // run on the GreenSky-issued card prior to delivery. Flag both 0-funded and partial.
+    // Balance-to-run check: GreenSky / WF entries (deduct_from_balance:true,
+    // non-Lyon non-Foundation) with funded < financed. The customer's GreenSky/WF
+    // balance is drawn via the lender's portal as ACH; flag any leftover so
+    // Robert remembers to run it before delivery.
     const fundedAmt = (f as any).funded_amount ?? 0;
     const status = (f as any).funding_status ?? null;
     const isInstantDeduct = !isLyon && !isFoundation;

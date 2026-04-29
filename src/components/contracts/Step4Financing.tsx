@@ -31,17 +31,10 @@ const BLANK_FORM = {
   secondaryFirstName: "",
   secondaryLastName: "",
   secondaryEmail: "",
-  // Wells Fargo
-  wfChargeMode: "charge_now" as "charge_now" | "authorize_future",
-  wfFutureChargeDate: "",
   // Lyon Financial
   lyonProjectType: "" as "" | LyonProjectType,
   lyonFundingFlavor: "lyon_direct" as "lyon_direct" | "lightstream_via_customer",
 };
-
-function isWellsFargoProvider(name: string): boolean {
-  return name.toLowerCase().includes("wells");
-}
 
 /** Foundation Finance runs AFTER the show — financed amount carries to balance due */
 function isFoundationProvider(name: string): boolean {
@@ -109,7 +102,6 @@ export default function Step4Financing({ onNext }: Step4FinancingProps) {
     if (isNaN(amount) || amount <= 0) return;
 
     const isFoundation = isFoundationProvider(selectedProvider.name);
-    const isWf = isWellsFargoProvider(selectedProvider.name);
     const isLyon = isLyonProvider(selectedProvider.name);
 
     const entry: ContractFinancing = {
@@ -132,10 +124,6 @@ export default function Step4Financing({ onNext }: Step4FinancingProps) {
               foundation_ach_bank: form.foundationAchBank || undefined,
             }
           : {}),
-      ...(isWf ? { wf_charge_mode: form.wfChargeMode } : {}),
-      ...(isWf && form.wfChargeMode === "authorize_future" && form.wfFutureChargeDate
-        ? { wf_future_charge_date: form.wfFutureChargeDate }
-        : {}),
       ...(form.secondaryEmail
         ? {
             secondary_buyer_email: form.secondaryEmail,
@@ -157,7 +145,6 @@ export default function Step4Financing({ onNext }: Step4FinancingProps) {
   }
 
   const isFoundationSelected = selectedProvider ? isFoundationProvider(selectedProvider.name) : false;
-  const isWfSelected = selectedProvider ? isWellsFargoProvider(selectedProvider.name) : false;
   const isLyonSelected = selectedProvider ? isLyonProvider(selectedProvider.name) : false;
   // Foundation requires 2-signer email when secondary first/last are entered (catch the half-filled case)
   const foundationSecondaryIncomplete =
@@ -575,51 +562,7 @@ export default function Step4Financing({ onNext }: Step4FinancingProps) {
               </div>
             )}
 
-            {/* ── Wells Fargo charge mode ──────────────────────────────────── */}
-            {isWfSelected && form.planId && (
-              <div className="space-y-3 rounded-xl border-2 border-[#00929C]/30 bg-[#00929C]/5 p-3">
-                <p className="text-xs font-bold uppercase tracking-wide text-[#00929C]">
-                  Wells Fargo Charge Mode
-                </p>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setForm({ ...form, wfChargeMode: "charge_now" })}
-                    className={`px-3 py-2 rounded-lg border-2 text-sm font-semibold transition-all touch-manipulation ${
-                      form.wfChargeMode === "charge_now"
-                        ? "border-[#00929C] bg-[#00929C]/10 text-[#00929C]"
-                        : "border-slate-200 bg-white text-slate-600"
-                    }`}
-                  >
-                    Charge Now
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setForm({ ...form, wfChargeMode: "authorize_future" })}
-                    className={`px-3 py-2 rounded-lg border-2 text-sm font-semibold transition-all touch-manipulation ${
-                      form.wfChargeMode === "authorize_future"
-                        ? "border-amber-400 bg-amber-50 text-amber-700"
-                        : "border-slate-200 bg-white text-slate-600"
-                    }`}
-                  >
-                    Authorize Future
-                  </button>
-                </div>
-                {form.wfChargeMode === "authorize_future" && (
-                  <>
-                    <Input
-                      label="Future Charge Date"
-                      type="date"
-                      value={form.wfFutureChargeDate}
-                      onChange={(e) => setForm({ ...form, wfFutureChargeDate: e.target.value })}
-                    />
-                    <p className="text-xs text-amber-700">
-                      Reminder: WF doesn't fund until "Run Final" is executed. The contract will appear in the funding-watcher queue.
-                    </p>
-                  </>
-                )}
-              </div>
-            )}
+            {/* Wells Fargo uses the same portal-ACH model as GreenSky — no charge mode picker. */}
 
             {/* ── Lyon Financial 4-stage setup ─────────────────────────────── */}
             {isLyonSelected && form.planId && (
