@@ -3,13 +3,14 @@
 import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useContractStore } from "@/store/contractStore";
+import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, generateContractNumber } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 
-type OverallState = "pending" | "processing" | "success" | "error";
+type OverallState = "pending" | "processing" | "success" | "error" | "session_expired";
 
 const METHOD_LABEL: Record<string, string> = {
   credit_card: "Credit Card",
@@ -132,11 +133,32 @@ export default function Step8Payment() {
       };
     }
 
-    const res = await fetch(endpoint, {
+    let res = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
+
+    // Session expired mid-charge: try to refresh once and retry. Card data is
+    // already in component state, so we don't lose what the rep typed.
+    if (res.status === 401) {
+      const supabase = createClient();
+      const { data: refreshed } = await supabase.auth.refreshSession();
+      if (refreshed?.session) {
+        res = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      }
+      if (res.status === 401) {
+        setState("session_expired");
+        setErrorMessage(
+          "Your session expired. Please sign in again — your card details below are preserved and the charge will retry when you click Start."
+        );
+        return;
+      }
+    }
 
     const data = await res.json().catch(() => null);
 
@@ -423,11 +445,34 @@ export default function Step8Payment() {
               </div>
             )}
 
+            {state === "session_expired" && (
+              <div className="rounded-lg bg-amber-50 border-2 border-amber-300 p-4 space-y-3">
+                <div>
+                  <p className="text-sm font-bold text-amber-900">Session expired</p>
+                  <p className="text-sm text-amber-800 mt-1">{errorMessage}</p>
+                </div>
+                <Button
+                  variant="default"
+                  size="lg"
+                  className="w-full"
+                  onClick={() => {
+                    // Open login in a new tab so this Step8 stays mounted
+                    // (preserves entered card data). Rep signs in, comes
+                    // back, clicks Start to retry.
+                    window.open("/login", "_blank", "noopener,noreferrer");
+                    setState("pending");
+                  }}
+                >
+                  Sign in to retry
+                </Button>
+              </div>
+            )}
+
             <Button
               variant="success"
               size="xl"
               className="w-full text-lg"
-              disabled={state === "processing" || !canCharge}
+              disabled={state === "processing" || state === "session_expired" || !canCharge}
               onClick={handleStart}
             >
               {state === "processing"

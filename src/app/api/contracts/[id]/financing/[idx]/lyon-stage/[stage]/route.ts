@@ -45,7 +45,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   const { data: contract, error: readError } = await supabase
     .from("contracts")
-    .select("financing")
+    .select("financing, updated_at")
     .eq("id", id)
     .single();
   if (readError || !contract) return NextResponse.json({ error: "Contract not found" }, { status: 404 });
@@ -70,11 +70,21 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   arr[idx] = { ...entry, updated_at: new Date().toISOString(), updated_by: user.id };
 
-  const { error: writeError } = await supabase
+  // Optimistic concurrency: only commit if updated_at hasn't changed since we
+  // read it. Stale writes get 409; client must refetch and retry.
+  const { data: updated, error: writeError } = await supabase
     .from("contracts")
     .update({ financing: arr })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("updated_at", contract.updated_at)
+    .select("id");
   if (writeError) return NextResponse.json({ error: writeError.message }, { status: 500 });
+  if (!updated || updated.length === 0) {
+    return NextResponse.json(
+      { error: "Conflict — another change landed first. Refetch and retry." },
+      { status: 409 }
+    );
+  }
 
   return NextResponse.json({ stage: stages[stageIdx] });
 }

@@ -73,7 +73,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
     const { data: contract, error: readError } = await supabase
       .from("contracts")
-      .select("financing")
+      .select("financing, updated_at")
       .eq("id", id)
       .single();
     if (readError || !contract) return NextResponse.json({ error: "Contract not found" }, { status: 404 });
@@ -82,11 +82,22 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (idx >= arr.length) return NextResponse.json({ error: "idx out of bounds" }, { status: 400 });
     arr[idx] = { ...(arr[idx] ?? {}), ...updates, updated_at: new Date().toISOString(), updated_by: user.id };
 
-    const { error: writeError } = await supabase
+    // Optimistic concurrency: only commit if updated_at hasn't changed since
+    // we read it. If two reps PATCH the same JSONB array concurrently, one
+    // wins and the other gets 409 + must refetch & re-apply.
+    const { data: updated, error: writeError } = await supabase
       .from("contracts")
       .update({ financing: arr })
-      .eq("id", id);
+      .eq("id", id)
+      .eq("updated_at", contract.updated_at)
+      .select("id");
     if (writeError) return NextResponse.json({ error: writeError.message }, { status: 500 });
+    if (!updated || updated.length === 0) {
+      return NextResponse.json(
+        { error: "Conflict — another change landed first. Refetch and retry." },
+        { status: 409 }
+      );
+    }
 
     return NextResponse.json({ entry: arr[idx] });
   }
@@ -101,7 +112,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   const { data: contract, error: readError } = await supabase
     .from("contracts")
-    .select("financing")
+    .select("financing, updated_at")
     .eq("id", id)
     .single();
   if (readError || !contract) return NextResponse.json({ error: "Contract not found" }, { status: 404 });
@@ -135,11 +146,20 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     updated_by: user.id,
   };
 
-  const { error: writeError } = await supabase
+  // Same optimistic concurrency guard as the field-update path.
+  const { data: updated, error: writeError } = await supabase
     .from("contracts")
     .update({ financing: arr })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("updated_at", contract.updated_at)
+    .select("id");
   if (writeError) return NextResponse.json({ error: writeError.message }, { status: 500 });
+  if (!updated || updated.length === 0) {
+    return NextResponse.json(
+      { error: "Conflict — another change landed first. Refetch and retry." },
+      { status: 409 }
+    );
+  }
 
   return NextResponse.json({ entry: arr[idx] });
 }

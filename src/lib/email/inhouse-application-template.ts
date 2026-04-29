@@ -59,6 +59,16 @@ export interface InhouseApplicationPayload {
 const fmt = (n: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n ?? 0);
 
+// Mask sensitive numerics so the email log (Resend, Robert's inbox archive)
+// never holds full routing/account numbers in plaintext. Robert sees the full
+// values inside the app via the contract page link below.
+const maskLast4 = (s?: string) => {
+  if (!s) return "—";
+  const digits = s.replace(/\D/g, "");
+  if (digits.length < 4) return "••••";
+  return `••••${digits.slice(-4)}`;
+};
+
 export function buildInhouseApplicationHtml(p: InhouseApplicationPayload): string {
   const customerName = `${p.customer.first_name ?? ""} ${p.customer.last_name ?? ""}`.trim() || "—";
   const customerAddress = [p.customer.address, p.customer.city ? `${p.customer.city}, ${p.customer.state ?? ""} ${p.customer.zip ?? ""}`.trim() : ""]
@@ -145,11 +155,11 @@ export function buildInhouseApplicationHtml(p: InhouseApplicationPayload): strin
           </table>
         </td></tr>
 
-        <!-- ACH info card -->
+        <!-- ACH info card (REDACTED — full details in app for security) -->
         <tr><td style="padding:16px 28px 8px;">
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f1f9fa;border:1px solid #00929C33;border-radius:6px;">
             <tr><td style="padding:14px 16px;">
-              <p style="margin:0 0 8px;color:#00929C;font-size:11px;text-transform:uppercase;letter-spacing:0.7px;font-weight:700;">ACH for Withdrawals</p>
+              <p style="margin:0 0 8px;color:#00929C;font-size:11px;text-transform:uppercase;letter-spacing:0.7px;font-weight:700;">ACH for Withdrawals (last 4 only)</p>
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="font-size:13px;">
                 <tr>
                   <td style="padding:3px 0;color:#64748b;width:140px;">Account Holder</td>
@@ -157,17 +167,21 @@ export function buildInhouseApplicationHtml(p: InhouseApplicationPayload): strin
                 </tr>
                 <tr>
                   <td style="padding:3px 0;color:#64748b;">Routing #</td>
-                  <td style="padding:3px 0;color:#0f172a;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:600;">${escapeHtml(p.ach.routing ?? "—")}</td>
+                  <td style="padding:3px 0;color:#0f172a;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:600;">${escapeHtml(maskLast4(p.ach.routing))}</td>
                 </tr>
                 <tr>
                   <td style="padding:3px 0;color:#64748b;">Account #</td>
-                  <td style="padding:3px 0;color:#0f172a;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:600;">${escapeHtml(p.ach.account ?? "—")}</td>
+                  <td style="padding:3px 0;color:#0f172a;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:600;">${escapeHtml(maskLast4(p.ach.account))}</td>
                 </tr>
                 <tr>
                   <td style="padding:3px 0;color:#64748b;">Bank</td>
                   <td style="padding:3px 0;color:#0f172a;font-weight:600;">${escapeHtml(p.ach.bank ?? "—")}</td>
                 </tr>
               </table>
+              <p style="margin:10px 0 0;font-size:12px;color:#475569;">
+                Full routing &amp; account numbers are stored in Salta only.
+                <a href="${escapeHtml(p.contractUrl)}" style="color:#00929C;font-weight:600;">View full ACH details in app →</a>
+              </p>
             </td></tr>
           </table>
         </td></tr>

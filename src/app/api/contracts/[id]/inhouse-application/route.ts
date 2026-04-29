@@ -55,9 +55,12 @@ export async function POST(
       .limit(1)
       .maybeSingle();
     if (!row) return { url: null, filename: null };
+    // 24h TTL — short enough that a leaked email doesn't grant a week of
+    // access to the customer's DL. Robert opens the packet promptly; if it
+    // expires he can re-trigger from the contract page.
     const { data: signed } = await supabase.storage
       .from("customer-files")
-      .createSignedUrl(row.storage_path, 60 * 60 * 24 * 7);
+      .createSignedUrl(row.storage_path, 60 * 60 * 24);
     return { url: signed?.signedUrl ?? null, filename: row.filename ?? null };
   }
   const primaryDl = await pullDl("drivers_license");

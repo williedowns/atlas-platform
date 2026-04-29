@@ -52,6 +52,7 @@ export default function Step2Customer({ onNext }: Step2CustomerProps) {
   const [searchResults, setSearchResults] = useState<Customer[]>([]);
   const [searching, setSearching] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const { setCustomer } = useContractStore();
 
@@ -110,6 +111,7 @@ export default function Step2Customer({ onNext }: Step2CustomerProps) {
 
   async function onSubmitNewCustomer(values: CustomerFormValues) {
     setSubmitting(true);
+    setCreateError(null);
     const supabase = createClient();
 
     const { data, error } = await supabase
@@ -132,6 +134,13 @@ export default function Step2Customer({ onNext }: Step2CustomerProps) {
 
     if (error) {
       console.error("Failed to create customer:", error);
+      // Surface a usable message — duplicate email is the most common cause
+      // (unique index on customers.email). Otherwise show whatever Supabase
+      // returned so the rep has SOMETHING to act on.
+      const msg = /duplicate|unique/i.test(error.message)
+        ? "A customer with this email already exists. Try Search Existing instead."
+        : (error.message || "Failed to save customer. Please try again.");
+      setCreateError(msg);
       return;
     }
 
@@ -344,6 +353,13 @@ export default function Step2Customer({ onNext }: Step2CustomerProps) {
               {...register("zip")}
             />
           </div>
+
+          {createError && (
+            <div className="rounded-lg border-2 border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">
+              <p className="font-semibold">Couldn't save customer</p>
+              <p className="mt-1 text-red-700">{createError}</p>
+            </div>
+          )}
 
           <div className="pt-4">
             <Button
