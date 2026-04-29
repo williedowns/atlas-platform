@@ -7,12 +7,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { formatCurrency } from "@/lib/utils";
 
+// "Financing" intentionally NOT a picker option — lender draws are managed via
+// Step 4 financing entries + the Log-A-Draw flow on the contract detail page.
 const PAYMENT_METHODS = [
   { value: "credit_card", label: "Credit Card" },
   { value: "debit_card", label: "Debit Card" },
   { value: "ach", label: "ACH / eCheck" },
   { value: "cash", label: "Cash / Check" },
-  { value: "financing", label: "Financing (GreenSky / WF)" },
 ] as const;
 
 type PaymentState = "idle" | "processing" | "success" | "error";
