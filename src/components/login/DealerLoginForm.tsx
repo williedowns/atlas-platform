@@ -47,7 +47,10 @@ export function DealerLoginForm({ demoMode }: DealerLoginFormProps) {
       // direct logins on a shared iPad where the prior session was abandoned
       // without an explicit signOut. Audit fix 2026-04-29.
       if (typeof window !== "undefined") {
-        try { window.localStorage.removeItem("atlas-contract-draft-v4"); } catch {}
+        try {
+          window.localStorage.removeItem("atlas-contract-draft-v5");
+          window.localStorage.removeItem("atlas-contract-draft-v4"); // legacy key
+        } catch {}
       }
       router.push("/dashboard");
     }

@@ -30,7 +30,7 @@ interface Step5ReviewProps {
 
 export default function Step5Review({ onNext }: Step5ReviewProps) {
   const router = useRouter();
-  const { draft, addDepositSplit, removeDepositSplit, updateLineItemSerial, setNotes, setExternalNotes, setNeedsPermit, setNeedsHoa, setPermitJurisdiction, setTaxExempt } = useContractStore();
+  const { draft, addDepositSplit, removeDepositSplit, updateLineItemSerial, setNotes, setExternalNotes, setNeedsPermit, setNeedsHoa, setPermitJurisdiction, setTaxExempt, setDocFeeWaived } = useContractStore();
 
   const contractNumber = useMemo(() => generateContractNumber(), []);
   const today = useMemo(() => formatDate(new Date()), []);
@@ -349,10 +349,17 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
         </CardHeader>
         <CardContent>
           <div className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-slate-600">Subtotal</span>
-              <span className="font-medium">{formatCurrency(draft.subtotal)}</span>
-            </div>
+            {/* Items subtotal — pull doc fee back out so the row shows just the goods */}
+            {(() => {
+              const docFee = draft.doc_fee_waived ? 0 : (draft.doc_fee_amount ?? 0);
+              const itemsSubtotal = Math.max(0, draft.subtotal - docFee);
+              return (
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Subtotal</span>
+                  <span className="font-medium">{formatCurrency(itemsSubtotal)}</span>
+                </div>
+              );
+            })()}
 
             {draft.discount_total > 0 && (
               <div className="flex justify-between">
@@ -375,24 +382,56 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
               ) : null;
             })()}
 
+            {/* Document Fee — auto-added, waivable. Shown even when waived so
+                the rep can see the line + un-waive without hunting for a button. */}
             <div className="flex justify-between items-center">
-              <span className="text-slate-600">
-                Tax ({(draft.tax_rate * 100).toFixed(2)}%)
-              </span>
               <div className="flex items-center gap-2">
-                {draft.tax_exempt && (
-                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
-                    EXEMPT
-                  </span>
-                )}
-                <span className={`font-medium ${draft.tax_exempt ? "line-through text-slate-400" : ""}`}>
-                  {formatCurrency(draft.tax_amount)}
-                </span>
-                {draft.tax_exempt && (
-                  <span className="font-medium text-emerald-700">{formatCurrency(0)}</span>
-                )}
+                <span className="text-slate-600">Document Fee</span>
+                <button
+                  type="button"
+                  onClick={() => setDocFeeWaived(!draft.doc_fee_waived)}
+                  className={`text-[11px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full border transition-colors ${
+                    draft.doc_fee_waived
+                      ? "bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200"
+                      : "bg-slate-100 text-slate-600 border-slate-300 hover:bg-slate-200"
+                  }`}
+                >
+                  {draft.doc_fee_waived ? "Waived · Restore" : "Waive"}
+                </button>
               </div>
+              <span className={`font-medium ${draft.doc_fee_waived ? "line-through text-slate-400" : ""}`}>
+                {formatCurrency(draft.doc_fee_amount ?? 0)}
+              </span>
             </div>
+
+            {/* Items tax — hide entirely when items tax is $0 (e.g. tax_exempt
+                on file). Cleaner than the prior strikethrough + EXEMPT badge,
+                which Robert read as "tax is still charged." */}
+            {!draft.tax_exempt && draft.tax_amount > 0 && (
+              <div className="flex justify-between">
+                <span className="text-slate-600">
+                  Tax ({(draft.tax_rate * 100).toFixed(2)}%)
+                </span>
+                <span className="font-medium">{formatCurrency(draft.tax_amount)}</span>
+              </div>
+            )}
+
+            {draft.tax_exempt && (
+              <div className="flex justify-between items-center">
+                <span className="text-emerald-700 font-medium">Tax — Exempt (Rx on file)</span>
+                <span className="text-xs text-emerald-700">Refunded after Atlas receives Rx</span>
+              </div>
+            )}
+
+            {/* Doc-fee tax — shown whenever the doc fee is being charged.
+                State requires this even when items tax is exempt; this
+                portion is never refunded once the Rx arrives. */}
+            {!draft.doc_fee_waived && (draft.doc_fee_tax_amount ?? 0) > 0 && (
+              <div className="flex justify-between">
+                <span className="text-slate-600">Doc Fee Tax ({(draft.tax_rate * 100).toFixed(2)}%)</span>
+                <span className="font-medium">{formatCurrency(draft.doc_fee_tax_amount ?? 0)}</span>
+              </div>
+            )}
 
             {draft.surcharge_enabled && draft.surcharge_amount > 0 && (
               <div className="flex justify-between">

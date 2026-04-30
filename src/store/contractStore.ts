@@ -35,11 +35,23 @@ export interface ContractDraft {
   surcharge_enabled: boolean;
   surcharge_rate: number;
 
-  // Tax (from Avalara)
+  // Tax (from Avalara). `tax_amount` is items-only — see doc_fee_tax_amount
+  // below for the always-charged portion that survives a Tax Exempt toggle.
   tax_amount: number;
   tax_rate: number;
   /** Customer has a Texas tax exemption certificate on file */
   tax_exempt: boolean;
+
+  // Documentation fee — auto-added to every contract at $99 per Atlas's
+  // legacy paper agreement. Sales rep can waive it (toggle on Step 5).
+  // Doc-fee tax is ALWAYS charged even when tax_exempt is true: TX statute
+  // requires the tax on the doc fee to be collected and that portion is
+  // never refunded when the Rx certificate arrives. Persisting
+  // doc_fee_tax_amount separately so the bookkeeping flow can surface
+  // exactly which portion is non-refundable.
+  doc_fee_amount: number;
+  doc_fee_waived: boolean;
+  doc_fee_tax_amount: number;
 
   // Computed totals
   subtotal: number;
@@ -107,6 +119,7 @@ interface ContractStore {
   removeFinancing: (index: number) => void;
   setTax: (taxAmount: number, taxRate: number) => void;
   setTaxExempt: (exempt: boolean) => void;
+  setDocFeeWaived: (waived: boolean) => void;
   setSurcharge: (enabled: boolean, rate: number) => void;
   addDepositSplit: (split: DepositSplit) => void;
   removeDepositSplit: (index: number) => void;
@@ -131,6 +144,9 @@ const initialDraft: ContractDraft = {
   tax_amount: 0,
   tax_rate: 0,
   tax_exempt: false,
+  doc_fee_amount: 99,
+  doc_fee_waived: false,
+  doc_fee_tax_amount: 0,
   subtotal: 0,
   discount_total: 0,
   surcharge_amount: 0,
@@ -139,27 +155,37 @@ const initialDraft: ContractDraft = {
 };
 
 function computeTotalsFromDraft(draft: ContractDraft): Partial<ContractDraft> {
-  const subtotal = draft.line_items.reduce(
+  const itemsSubtotal = draft.line_items.reduce(
     (sum, item) => sum + item.sell_price * item.quantity,
     0
   );
+  // Doc fee participates in subtotal unless waived. /api/tax does NOT see it
+  // (it's not a line item) — its tax is computed locally and stays separate
+  // so we can persist + display the always-charged portion explicitly.
+  const docFeeAmount = draft.doc_fee_waived ? 0 : (draft.doc_fee_amount ?? 0);
+  const subtotal = itemsSubtotal + docFeeAmount;
   const discount_total = draft.discounts.reduce((sum, d) => sum + d.amount, 0);
-  const financingArr = Array.isArray(draft.financing) ? draft.financing : [];
-  const financed = financingArr.reduce((sum, f) => sum + (f.financed_amount ?? 0), 0);
-  const taxable = Math.max(0, subtotal - discount_total - financed);
   // Surcharge applies to the post-discount base (what the customer is actually charged),
   // not the original subtotal. Otherwise discounts don't reduce the surcharge.
   const surchargeBase = Math.max(0, subtotal - discount_total);
   const surcharge_amount = draft.surcharge_enabled
     ? Math.round(surchargeBase * draft.surcharge_rate * 100) / 100
     : 0;
-  // Tax exempt zeroes out tax for this sale
-  const effectiveTax = draft.tax_exempt ? 0 : (draft.tax_amount ?? 0);
-  const total = Math.max(0, subtotal - discount_total + effectiveTax + surcharge_amount);
+  // Items tax — what /api/tax computed for the goods. Tax-exempt customers
+  // (TX Rx on file) zero this out; the items tax is the portion eligible
+  // for refund once Atlas receives the Rx certificate.
+  const effectiveItemsTax = draft.tax_exempt ? 0 : (draft.tax_amount ?? 0);
+  // Doc-fee tax is collected on EVERY contract regardless of tax_exempt
+  // and is the portion that is never refunded when the Rx arrives.
+  const doc_fee_tax_amount = docFeeAmount > 0
+    ? Math.round(docFeeAmount * (draft.tax_rate ?? 0) * 100) / 100
+    : 0;
+  const totalTax = effectiveItemsTax + doc_fee_tax_amount;
+  const total = Math.max(0, subtotal - discount_total + totalTax + surcharge_amount);
   const splitsArr = Array.isArray(draft.deposit_splits) ? draft.deposit_splits : [];
   const deposit_amount = splitsArr.reduce((sum, s) => sum + s.amount, 0);
 
-  return { subtotal, discount_total, surcharge_amount, total, deposit_amount };
+  return { subtotal, discount_total, surcharge_amount, total, deposit_amount, doc_fee_tax_amount };
 }
 
 export const useContractStore = create<ContractStore>()(
@@ -314,6 +340,13 @@ export const useContractStore = create<ContractStore>()(
         });
       },
 
+      setDocFeeWaived: (doc_fee_waived) => {
+        set((state) => {
+          const newDraft = { ...state.draft, doc_fee_waived };
+          return { draft: { ...newDraft, ...computeTotalsFromDraft(newDraft) } };
+        });
+      },
+
       setSurcharge: (surcharge_enabled, surcharge_rate) => {
         set((state) => {
           const newDraft = { ...state.draft, surcharge_enabled, surcharge_rate };
@@ -366,7 +399,7 @@ export const useContractStore = create<ContractStore>()(
       resetDraft: () => set({ draft: initialDraft }),
     }),
     {
-      name: "atlas-contract-draft-v4",
+      name: "atlas-contract-draft-v5",
       partialize: (state) => ({ draft: state.draft }),
     }
   )

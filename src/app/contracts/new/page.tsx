@@ -69,6 +69,13 @@ function NewContractContent() {
           tax_amount: data.tax_amount ?? 0,
           tax_rate: data.tax_rate ?? 0,
           tax_exempt: data.tax_exempt ?? false,
+          // Quote → contract conversion: preserve the saved doc-fee state.
+          // Quotes saved before this migration have doc_fee_amount=0 and
+          // doc_fee_waived=true (column-level defaults), so converting them
+          // doesn't accidentally surface a phantom $99 line.
+          doc_fee_amount: data.doc_fee_amount ?? 99,
+          doc_fee_waived: data.doc_fee_waived ?? false,
+          doc_fee_tax_amount: data.doc_fee_tax_amount ?? 0,
           surcharge_enabled: (data.surcharge_rate ?? 0) > 0,
           surcharge_rate: data.surcharge_rate ?? 0.035,
           surcharge_amount: data.surcharge_amount ?? 0,

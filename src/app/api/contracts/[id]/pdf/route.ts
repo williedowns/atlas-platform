@@ -239,7 +239,14 @@ export async function GET(
     y += opts?.bold ? 7 : 5.5;
   }
 
-  totalsRow("Subtotal", formatCurrency(contract.subtotal ?? 0));
+  // Subtotal here is the items-only subtotal — pull the doc fee back out of
+  // the saved subtotal so the PDF reads the way the old paper Sales
+  // Agreement did (Sub Total / Tax / Document Fee / Total).
+  const docFeeAmount = Number(contract.doc_fee_amount ?? 0);
+  const docFeeWaived = !!contract.doc_fee_waived;
+  const docFeeTax = Number(contract.doc_fee_tax_amount ?? 0);
+  const itemsSubtotal = Math.max(0, Number(contract.subtotal ?? 0) - (docFeeWaived ? 0 : docFeeAmount));
+  totalsRow("Subtotal", formatCurrency(itemsSubtotal));
 
   // Discounts: show one line per discount entry (cleaner than a single sum).
   // Customer-facing labels — strip internal jargon like "Calculated to $X out-the-door"
@@ -264,8 +271,21 @@ export async function GET(
     totalsRow("Discount", `-${formatCurrency(discountTotal)}`, { color: RED });
   }
 
-  if ((contract.tax_rate ?? 0) > 0 || (contract.tax_amount ?? 0) > 0) {
-    totalsRow(`Tax (${((contract.tax_rate ?? 0) * 100).toFixed(2)}%)`, formatCurrency(contract.tax_amount ?? 0));
+  // contract.tax_amount is the items-only tax that /api/tax returned at the
+  // POS — it's already $0 for tax_exempt customers. doc_fee_tax_amount is
+  // persisted separately because it's always charged regardless of
+  // tax_exempt and isn't refunded when the Rx arrives.
+  const itemsTax = Number(contract.tax_amount ?? 0);
+  if (itemsTax > 0) {
+    totalsRow(`Tax (${((contract.tax_rate ?? 0) * 100).toFixed(2)}%)`, formatCurrency(itemsTax));
+  } else if (contract.tax_exempt) {
+    totalsRow("Tax — Exempt (Rx)", "$0.00", { color: SLATE_500 });
+  }
+  if (!docFeeWaived && docFeeAmount > 0) {
+    totalsRow("Document Fee", formatCurrency(docFeeAmount));
+    if (docFeeTax > 0) {
+      totalsRow(`Doc Fee Tax (${((contract.tax_rate ?? 0) * 100).toFixed(2)}%)`, formatCurrency(docFeeTax));
+    }
   }
   if ((contract.surcharge_amount ?? 0) > 0) {
     totalsRow("CC Surcharge", formatCurrency(contract.surcharge_amount));

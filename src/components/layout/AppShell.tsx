@@ -279,7 +279,10 @@ export default function AppShell({
     // Clear any persisted contract draft so the next rep on this iPad doesn't
     // see the previous rep's in-flight contract. Audit fix 2026-04-29.
     if (typeof window !== "undefined") {
-      try { window.localStorage.removeItem("atlas-contract-draft-v4"); } catch {}
+      try {
+        window.localStorage.removeItem("atlas-contract-draft-v5");
+        window.localStorage.removeItem("atlas-contract-draft-v4"); // legacy key, clear in case the user signed in before the v5 bump
+      } catch {}
     }
     await supabase.auth.signOut();
     router.push("/login");
