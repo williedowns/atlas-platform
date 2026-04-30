@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -116,6 +117,7 @@ function SidebarNav({
   realRole,
   effectiveRole,
   viewAsUserId,
+  onNavigate,
 }: {
   role?: string | null;
   userName?: string | null;
@@ -124,6 +126,8 @@ function SidebarNav({
   realRole?: string | null;
   effectiveRole?: string | null;
   viewAsUserId?: string | null;
+  /** Called when a nav link is tapped — used to close the mobile drawer. */
+  onNavigate?: () => void;
 }) {
   const pathname = usePathname();
 
@@ -171,6 +175,7 @@ function SidebarNav({
             <Link
               key={item.href}
               href={item.href}
+              onClick={onNavigate}
               className={`relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
                 active
                   ? "bg-white/10 text-white font-semibold"
@@ -202,6 +207,7 @@ function SidebarNav({
       <div className="px-4 py-4 border-t border-white/10 space-y-3">
         <Link
           href="/profile"
+          onClick={onNavigate}
           className="flex items-center gap-3 group"
         >
           <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#00929C] to-[#007a82] flex items-center justify-center text-white font-bold text-sm shrink-0 shadow-sm">
@@ -244,6 +250,29 @@ export default function AppShell({
   children,
 }: AppShellProps) {
   const router = useRouter();
+  const pathname = usePathname();
+
+  // Mobile sidebar drawer state. On lg+ the sidebar is always visible and
+  // this flag is ignored. On small screens the sidebar is hidden by default
+  // and slides in when the hamburger is tapped.
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Auto-close the mobile drawer whenever the route changes. Belt-and-
+  // suspenders alongside the per-Link onClick — covers programmatic nav.
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
+
+  // Lock body scroll while the mobile drawer is open so the page behind
+  // doesn't scroll when the user touches it.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = mobileOpen ? "hidden" : prev || "";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [mobileOpen]);
 
   async function handleSignOut() {
     const supabase = createClient();
@@ -263,8 +292,42 @@ export default function AppShell({
 
   return (
     <div className="flex min-h-screen bg-slate-50">
+      {/* Mobile-only top bar with hamburger. Hidden on lg+ where the
+          sidebar is always visible. */}
+      <header className="lg:hidden fixed top-0 left-0 right-0 h-12 z-30 flex items-center px-3 gap-3" style={{ backgroundColor: "#010F21" }}>
+        <button
+          type="button"
+          onClick={() => setMobileOpen(true)}
+          aria-label="Open menu"
+          className="w-10 h-10 -ml-1 flex items-center justify-center rounded-lg text-white hover:bg-white/10 active:bg-white/20"
+        >
+          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
+        <div className="flex items-center gap-2 min-w-0">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.png" alt="Atlas" className="h-6 w-6 object-contain rounded bg-white p-0.5" />
+          <span className="text-white text-sm font-semibold truncate">
+            {process.env.NEXT_PUBLIC_COMPANY_NAME ?? "Atlas Spas"}
+          </span>
+        </div>
+      </header>
+
+      {/* Backdrop — only on mobile when drawer is open */}
+      {mobileOpen && (
+        <button
+          type="button"
+          aria-label="Close menu"
+          onClick={() => setMobileOpen(false)}
+          className="lg:hidden fixed inset-0 z-30 bg-black/50"
+        />
+      )}
+
       <aside
-        className="fixed left-0 top-0 bottom-0 w-64 flex-shrink-0 flex flex-col z-30"
+        className={`fixed left-0 top-0 bottom-0 w-64 flex-shrink-0 flex flex-col z-40 transition-transform duration-200 ease-out ${
+          mobileOpen ? "translate-x-0" : "-translate-x-full"
+        } lg:translate-x-0`}
         style={{ backgroundColor: "#010F21", boxShadow: "4px 0 20px rgba(0,0,0,0.25)" }}
       >
         <SidebarNav
@@ -275,10 +338,13 @@ export default function AppShell({
           realRole={realRoleResolved}
           effectiveRole={effectiveRole}
           viewAsUserId={viewAsUser?.id ?? null}
+          onNavigate={() => setMobileOpen(false)}
         />
       </aside>
 
-      <div className="flex-1 min-w-0 ml-64 flex flex-col">
+      {/* Main content. On mobile, leave room for the 48px top bar. On lg+,
+          shift right by the 256px sidebar width. */}
+      <div className="flex-1 min-w-0 lg:ml-64 flex flex-col pt-12 lg:pt-0">
         <ViewAsBanner
           effectiveRole={effectiveRole}
           viewAsUserName={viewAsUser?.full_name ?? null}
