@@ -40,6 +40,7 @@ export async function POST(req: Request) {
     signed_name,
     electronic_consent,
     consent_timestamp,
+    acknowledgments,
     delivery_diagram,
   } = body;
 
@@ -120,6 +121,10 @@ export async function POST(req: Request) {
         electronic_consent: electronic_consent ?? false,
         consent_timestamp: consent_timestamp ?? null,
         signed_name: signed_name ?? null,
+        // Per-clause acknowledgments — All Sales Final, Cancellation
+        // Forfeits Deposits, TX Rx 30-day deadline. Stored alongside the
+        // signature audit so the legal trail is co-located.
+        acknowledgments: acknowledgments ?? null,
       },
     })
     .select()

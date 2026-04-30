@@ -8,6 +8,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { formatCurrency } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
+import {
+  TERMS_AND_CONDITIONS,
+  REQUIRED_ACKNOWLEDGMENTS,
+  type AcknowledgmentClause,
+} from "@/lib/contract-terms";
 
 // react-signature-canvas types are incompatible with Next.js dynamic — cast to any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -38,6 +43,15 @@ export default function Step7Sign({ onNext }: Step7SignProps) {
   const [printedName, setPrintedName] = useState("");
   const [hasSigned, setHasSigned] = useState(false);
   const [hasConsented, setHasConsented] = useState(false);
+  // Per-clause acknowledgments — All Sales Final, Cancellation Forfeits
+  // Deposits, TX Rx 30-day deadline. Must all be true to enable submit.
+  const [acks, setAcks] = useState<Record<AcknowledgmentClause["key"], boolean>>({
+    sales_final: false,
+    cancellation_forfeit: false,
+    rx_30_day: false,
+  });
+  const allAcked = REQUIRED_ACKNOWLEDGMENTS.every((a) => acks[a.key]);
+  const missingAcks = REQUIRED_ACKNOWLEDGMENTS.filter((a) => !acks[a.key]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -55,7 +69,7 @@ export default function Step7Sign({ onNext }: Step7SignProps) {
     setHasSigned(false);
   };
 
-  const canSubmit = hasSigned && printedName.trim().length > 0 && hasConsented && !isSubmitting;
+  const canSubmit = hasSigned && printedName.trim().length > 0 && hasConsented && allAcked && !isSubmitting;
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
@@ -93,6 +107,7 @@ export default function Step7Sign({ onNext }: Step7SignProps) {
       }
 
       // Submit the contract
+      const nowIso = new Date().toISOString();
       const contractResponse = await fetch("/api/contracts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -100,9 +115,15 @@ export default function Step7Sign({ onNext }: Step7SignProps) {
           ...draft,
           customer_signature_url: signatureUrl,
           signed_name: printedName.trim(),
-          signed_at: new Date().toISOString(),
+          signed_at: nowIso,
           electronic_consent: true,
-          consent_timestamp: new Date().toISOString(),
+          consent_timestamp: nowIso,
+          acknowledgments: {
+            sales_final: acks.sales_final,
+            cancellation_forfeit: acks.cancellation_forfeit,
+            rx_30_day: acks.rx_30_day,
+            acknowledged_at: nowIso,
+          },
         }),
       });
 
@@ -194,7 +215,62 @@ export default function Step7Sign({ onNext }: Step7SignProps) {
         </CardContent>
       </Card>
 
-      {/* ── Legal Disclosure ── */}
+      {/* ── Terms & Conditions ── */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg">Terms & Conditions</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {/* Scrollable so the customer can read on iPad without pushing the
+              signature pad off-screen. Same legal language is rendered into
+              the generated PDF (src/lib/contract-terms.ts). */}
+          <div className="max-h-72 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50/60 p-3 space-y-3 text-xs leading-relaxed text-slate-700">
+            {TERMS_AND_CONDITIONS.map((section, sIdx) => (
+              <div key={section.heading}>
+                <p className="font-bold uppercase tracking-wide text-[10px] text-slate-500">
+                  {section.heading}
+                </p>
+                <ol className="mt-1 space-y-1 list-decimal pl-5">
+                  {section.clauses.map((c, cIdx) => (
+                    <li key={`${sIdx}-${cIdx}`}>{c}</li>
+                  ))}
+                </ol>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ── Customer Acknowledgments — required initials boxes ── */}
+      <Card className="border-amber-200 bg-amber-50/50">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg text-amber-900">Required Acknowledgments</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-xs text-amber-800">
+            Please review and check each item. The customer must acknowledge all three to proceed.
+          </p>
+          {REQUIRED_ACKNOWLEDGMENTS.map((a) => (
+            <label
+              key={a.key}
+              className="flex items-start gap-3 cursor-pointer rounded-lg border border-amber-200 bg-white px-3 py-2.5 hover:bg-amber-50 transition-colors"
+            >
+              <input
+                type="checkbox"
+                checked={acks[a.key]}
+                onChange={(e) => setAcks((prev) => ({ ...prev, [a.key]: e.target.checked }))}
+                className="mt-0.5 h-5 w-5 rounded border-amber-300 text-amber-700 accent-amber-700 cursor-pointer flex-shrink-0"
+              />
+              <span className="min-w-0">
+                <span className="block text-sm font-bold text-slate-900">{a.label}</span>
+                <span className="block text-xs text-slate-600 mt-0.5">{a.text}</span>
+              </span>
+            </label>
+          ))}
+        </CardContent>
+      </Card>
+
+      {/* ── Electronic Signature Disclosure ── */}
       <Card className="border-slate-200">
         <CardContent className="py-4 space-y-3">
           <p className="text-xs text-slate-600 leading-relaxed">
@@ -285,7 +361,11 @@ export default function Step7Sign({ onNext }: Step7SignProps) {
 
       {!canSubmit && !isSubmitting && (
         <p className="text-center text-sm text-slate-400">
-          Please sign above and print your name to continue
+          {missingAcks.length > 0
+            ? `Acknowledge: ${missingAcks.map((a) => a.label).join(" · ")}`
+            : !hasConsented
+              ? "Check the electronic-signature consent box to continue"
+              : "Please sign above and print your name to continue"}
         </p>
       )}
     </div>

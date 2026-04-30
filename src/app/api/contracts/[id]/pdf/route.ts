@@ -2,6 +2,11 @@ import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import { jsPDF } from "jspdf";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import {
+  TERMS_AND_CONDITIONS,
+  REQUIRED_ACKNOWLEDGMENTS,
+  type AcknowledgmentsRecord,
+} from "@/lib/contract-terms";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -406,19 +411,118 @@ export async function GET(
     y += 14;
   }
 
-  // ─── Terms ───────────────────────────────────────────────────────────────
-  if (y > 248) { doc.addPage(); y = M; }
+  // ─── Terms & Conditions ─────────────────────────────────────────────────
+  // Always start the legal block on a fresh page so the printed agreement
+  // mirrors the legacy Atlas Sales Agreement (front: contract, back: terms).
+  doc.addPage();
+  y = M;
+
+  sectionLabel("TERMS & CONDITIONS", M, y);
+  y += 5;
   doc.setDrawColor(...SLATE_300);
   doc.setLineWidth(0.2);
   doc.line(M, y, W - M, y);
+  y += 4;
+
+  for (const section of TERMS_AND_CONDITIONS) {
+    if (y > 270) { doc.addPage(); y = M; }
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.5);
+    doc.setTextColor(...NAVY);
+    doc.text(section.heading.toUpperCase(), M, y);
+    y += 4;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(...SLATE_900);
+    for (let i = 0; i < section.clauses.length; i++) {
+      const clause = section.clauses[i];
+      const lines = doc.splitTextToSize(`${i + 1}. ${clause}`, W - M * 2 - 2);
+      const blockH = lines.length * 3.6;
+      if (y + blockH > 275) { doc.addPage(); y = M; }
+      doc.text(lines, M + 2, y);
+      y += blockH + 1.2;
+    }
+    y += 2;
+  }
+
+  // ─── Customer Acknowledgments — three required initials boxes ──────────
+  if (y > 245) { doc.addPage(); y = M; }
+  y += 2;
+  sectionLabel("CUSTOMER ACKNOWLEDGMENTS", M, y);
   y += 5;
-  doc.setFontSize(7.5);
-  doc.setTextColor(...SLATE_500);
-  const terms = isQuote
-    ? "This quote is valid for 30 days. Prices are subject to change after expiration. No refunds after 30 days."
-    : "All sales are final. No refunds. Balance is due at the time of delivery. Please make checks payable to Atlas Spas & Swim Spas.";
-  const termLines = doc.splitTextToSize(terms, W - M * 2);
-  doc.text(termLines, M, y);
+
+  // Pull persisted acknowledgments off signature_metadata (defaults to
+  // empty for legacy contracts that pre-date this column of behavior).
+  const acks: AcknowledgmentsRecord =
+    (contract.signature_metadata as { acknowledgments?: AcknowledgmentsRecord })?.acknowledgments ?? {};
+  const initials = (() => {
+    const name = (contract.signature_metadata?.signed_name ?? `${c.first_name ?? ""} ${c.last_name ?? ""}`).toString().trim();
+    if (!name) return "";
+    return name
+      .split(/\s+/)
+      .map((part: string) => part[0]?.toUpperCase() ?? "")
+      .join("")
+      .slice(0, 4);
+  })();
+  const ackedAt = acks.acknowledged_at ? formatDate(acks.acknowledged_at) : "";
+
+  for (const a of REQUIRED_ACKNOWLEDGMENTS) {
+    const isChecked = !isQuote && !!acks[a.key];
+    const lines = doc.splitTextToSize(a.text, W - M * 2 - 30);
+    const blockH = Math.max(10, lines.length * 3.6 + 3);
+    if (y + blockH > 275) { doc.addPage(); y = M; }
+
+    // Checkbox square
+    doc.setDrawColor(...SLATE_500);
+    doc.setLineWidth(0.4);
+    doc.rect(M, y, 4.5, 4.5);
+    if (isChecked) {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor(...EMERALD);
+      doc.text("X", M + 1, y + 3.5);
+    }
+
+    // Label + body
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.5);
+    doc.setTextColor(...NAVY);
+    doc.text(a.label, M + 7, y + 3.5);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(...SLATE_900);
+    let ly = y + 7;
+    for (const ln of lines) {
+      doc.text(ln, M + 7, ly);
+      ly += 3.4;
+    }
+
+    // Initials box on the right
+    const initialsLeft = W - M - 26;
+    doc.setDrawColor(...SLATE_300);
+    doc.setLineWidth(0.2);
+    doc.rect(initialsLeft, y, 26, blockH);
+    doc.setFontSize(6.5);
+    doc.setTextColor(...SLATE_500);
+    doc.text("INITIALS", initialsLeft + 13, y + 3, { align: "center" });
+    if (isChecked && initials) {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(...NAVY);
+      doc.text(initials, initialsLeft + 13, y + blockH - 3, { align: "center" });
+    }
+
+    y += blockH + 2;
+  }
+
+  if (!isQuote && ackedAt) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(...SLATE_500);
+    doc.text(`Acknowledged electronically on ${ackedAt}`, M, y + 2);
+    y += 6;
+  }
 
   // ─── Footer (every page) ────────────────────────────────────────────────
   const pageCount = (doc.internal as unknown as { getNumberOfPages: () => number }).getNumberOfPages();
