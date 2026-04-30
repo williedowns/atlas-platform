@@ -103,9 +103,11 @@ export default function ViewAsControls({
       .finally(() => setLoadingUsers(false));
   }, [open, users.length, autoLoadedUsers]);
 
-  // Don't render anything until we know whether the user is an admin
-  if (autoDetectedAdmin !== true) return null;
-
+  // Memo must run on every render (Rules of Hooks) — keep it above the
+  // admin gate so the hook order stays stable when autoDetectedAdmin flips
+  // from null → true on the second render. Previously calling it after the
+  // early return triggered React #310 (rendered fewer hooks than expected),
+  // which crashed every admin page during hydration.
   const filteredUsers = useMemo(() => {
     if (!search.trim()) return users;
     const q = search.trim().toLowerCase();
@@ -115,6 +117,9 @@ export default function ViewAsControls({
         (u.role ?? "").toLowerCase().includes(q)
     );
   }, [users, search]);
+
+  // Don't render anything until we know whether the user is an admin
+  if (autoDetectedAdmin !== true) return null;
 
   async function applyRole(role: string) {
     setSubmitting(true);
