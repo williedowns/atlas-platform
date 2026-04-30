@@ -36,24 +36,46 @@ interface Step7SignProps {
   onNext: () => void;
 }
 
+type AckKey = AcknowledgmentClause["key"];
+
 export default function Step7Sign({ onNext }: Step7SignProps) {
   const { draft, setCreatedContractId } = useContractStore();
   const sigCanvasRef = useRef<any>(null);
+  // Per-clause initials pads — one mini SignatureCanvas per acknowledgment.
+  // Customer hand-draws their initials in each box. The captured ink is
+  // stored as a data URL in `initialsUrls` and embedded into the generated
+  // PDF so the printed contract shows the actual handwritten initials, not
+  // a typed approximation.
+  const initialsRefs = useRef<Record<AckKey, any>>({
+    sales_final: null,
+    cancellation_forfeit: null,
+    rx_30_day: null,
+  });
 
   const [printedName, setPrintedName] = useState("");
   const [hasSigned, setHasSigned] = useState(false);
   const [hasConsented, setHasConsented] = useState(false);
-  // Per-clause acknowledgments — All Sales Final, Cancellation Forfeits
-  // Deposits, TX Rx 30-day deadline. Must all be true to enable submit.
-  const [acks, setAcks] = useState<Record<AcknowledgmentClause["key"], boolean>>({
-    sales_final: false,
-    cancellation_forfeit: false,
-    rx_30_day: false,
+  const [initialsUrls, setInitialsUrls] = useState<Record<AckKey, string | null>>({
+    sales_final: null,
+    cancellation_forfeit: null,
+    rx_30_day: null,
   });
-  const allAcked = REQUIRED_ACKNOWLEDGMENTS.every((a) => acks[a.key]);
-  const missingAcks = REQUIRED_ACKNOWLEDGMENTS.filter((a) => !acks[a.key]);
+  const allAcked = REQUIRED_ACKNOWLEDGMENTS.every((a) => !!initialsUrls[a.key]);
+  const missingAcks = REQUIRED_ACKNOWLEDGMENTS.filter((a) => !initialsUrls[a.key]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const handleInitialsEnd = useCallback((key: AckKey) => () => {
+    const ref = initialsRefs.current[key];
+    if (ref && !ref.isEmpty()) {
+      setInitialsUrls((prev) => ({ ...prev, [key]: ref.toDataURL("image/png") }));
+    }
+  }, []);
+
+  const handleInitialsClear = (key: AckKey) => () => {
+    initialsRefs.current[key]?.clear();
+    setInitialsUrls((prev) => ({ ...prev, [key]: null }));
+  };
 
   const depositAmount = draft.deposit_amount;
   const balance = Math.max(0, draft.total - depositAmount);
@@ -119,9 +141,12 @@ export default function Step7Sign({ onNext }: Step7SignProps) {
           electronic_consent: true,
           consent_timestamp: nowIso,
           acknowledgments: {
-            sales_final: acks.sales_final,
-            cancellation_forfeit: acks.cancellation_forfeit,
-            rx_30_day: acks.rx_30_day,
+            sales_final: !!initialsUrls.sales_final,
+            sales_final_initials_url: initialsUrls.sales_final ?? null,
+            cancellation_forfeit: !!initialsUrls.cancellation_forfeit,
+            cancellation_forfeit_initials_url: initialsUrls.cancellation_forfeit ?? null,
+            rx_30_day: !!initialsUrls.rx_30_day,
+            rx_30_day_initials_url: initialsUrls.rx_30_day ?? null,
             acknowledged_at: nowIso,
           },
         }),
@@ -241,32 +266,65 @@ export default function Step7Sign({ onNext }: Step7SignProps) {
         </CardContent>
       </Card>
 
-      {/* ── Customer Acknowledgments — required initials boxes ── */}
+      {/* ── Customer Acknowledgments — required initials pads ── */}
       <Card className="border-amber-200 bg-amber-50/50">
         <CardHeader className="pb-2">
-          <CardTitle className="text-lg text-amber-900">Required Acknowledgments</CardTitle>
+          <CardTitle className="text-lg text-amber-900">Required Initials</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-xs text-amber-800">
-            Please review and check each item. The customer must acknowledge all three to proceed.
+            Please initial each clause below. The customer must initial all three boxes to proceed.
           </p>
-          {REQUIRED_ACKNOWLEDGMENTS.map((a) => (
-            <label
-              key={a.key}
-              className="flex items-start gap-3 cursor-pointer rounded-lg border border-amber-200 bg-white px-3 py-2.5 hover:bg-amber-50 transition-colors"
-            >
-              <input
-                type="checkbox"
-                checked={acks[a.key]}
-                onChange={(e) => setAcks((prev) => ({ ...prev, [a.key]: e.target.checked }))}
-                className="mt-0.5 h-5 w-5 rounded border-amber-300 text-amber-700 accent-amber-700 cursor-pointer flex-shrink-0"
-              />
-              <span className="min-w-0">
-                <span className="block text-sm font-bold text-slate-900">{a.label}</span>
-                <span className="block text-xs text-slate-600 mt-0.5">{a.text}</span>
-              </span>
-            </label>
-          ))}
+          {REQUIRED_ACKNOWLEDGMENTS.map((a) => {
+            const url = initialsUrls[a.key];
+            return (
+              <div
+                key={a.key}
+                className={`rounded-lg border-2 px-3 py-2.5 transition-colors ${
+                  url ? "border-emerald-300 bg-white" : "border-amber-300 bg-white"
+                }`}
+              >
+                <div className="flex flex-col md:flex-row gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-slate-900">{a.label}</p>
+                    <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">{a.text}</p>
+                  </div>
+                  <div className="flex flex-col gap-1.5 md:w-44 flex-shrink-0">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Initials</p>
+                    <div className="relative">
+                      <div className={`w-full rounded border-2 bg-slate-50 overflow-hidden ${
+                        url ? "border-emerald-400" : "border-dashed border-amber-400"
+                      }`}>
+                        <SignatureCanvas
+                          ref={(el: any) => {
+                            initialsRefs.current[a.key] = el;
+                          }}
+                          penColor="#0f172a"
+                          canvasProps={{
+                            className: "w-full touch-manipulation",
+                            style: { width: "100%", height: "70px" },
+                          }}
+                          onEnd={handleInitialsEnd(a.key)}
+                        />
+                      </div>
+                      {!url && (
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                          <span className="text-amber-300 text-sm italic">Initial here</span>
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleInitialsClear(a.key)}
+                      className="text-[11px] font-semibold text-slate-500 hover:text-red-600 self-end"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </CardContent>
       </Card>
 

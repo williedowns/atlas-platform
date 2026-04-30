@@ -452,10 +452,13 @@ export async function GET(
   y += 5;
 
   // Pull persisted acknowledgments off signature_metadata (defaults to
-  // empty for legacy contracts that pre-date this column of behavior).
+  // empty for legacy contracts that pre-date this surface).
   const acks: AcknowledgmentsRecord =
     (contract.signature_metadata as { acknowledgments?: AcknowledgmentsRecord })?.acknowledgments ?? {};
-  const initials = (() => {
+  // Typed-initials fallback for legacy contracts that have a signature on
+  // file but no per-clause ink yet — derive the initials from the signed
+  // name so the box isn't blank.
+  const fallbackInitials = (() => {
     const name = (contract.signature_metadata?.signed_name ?? `${c.first_name ?? ""} ${c.last_name ?? ""}`).toString().trim();
     if (!name) return "";
     return name
@@ -467,50 +470,63 @@ export async function GET(
   const ackedAt = acks.acknowledged_at ? formatDate(acks.acknowledged_at) : "";
 
   for (const a of REQUIRED_ACKNOWLEDGMENTS) {
+    const inkUrl = (acks as Record<string, unknown>)[`${a.key}_initials_url`] as string | undefined;
     const isChecked = !isQuote && !!acks[a.key];
-    const lines = doc.splitTextToSize(a.text, W - M * 2 - 30);
-    const blockH = Math.max(10, lines.length * 3.6 + 3);
+    const lines = doc.splitTextToSize(a.text, W - M * 2 - 36);
+    // Block height needs to comfortably hold 18mm-tall ink so initials
+    // render at a real legible size, never as a thumbnail.
+    const blockH = Math.max(20, lines.length * 3.6 + 6);
     if (y + blockH > 275) { doc.addPage(); y = M; }
 
-    // Checkbox square
-    doc.setDrawColor(...SLATE_500);
-    doc.setLineWidth(0.4);
-    doc.rect(M, y, 4.5, 4.5);
-    if (isChecked) {
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(9);
-      doc.setTextColor(...EMERALD);
-      doc.text("X", M + 1, y + 3.5);
-    }
-
-    // Label + body
+    // Label + body (left side)
     doc.setFont("helvetica", "bold");
     doc.setFontSize(8.5);
     doc.setTextColor(...NAVY);
-    doc.text(a.label, M + 7, y + 3.5);
+    doc.text(a.label, M, y + 3.5);
 
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7.5);
     doc.setTextColor(...SLATE_900);
     let ly = y + 7;
     for (const ln of lines) {
-      doc.text(ln, M + 7, ly);
+      doc.text(ln, M, ly);
       ly += 3.4;
     }
 
-    // Initials box on the right
-    const initialsLeft = W - M - 26;
-    doc.setDrawColor(...SLATE_300);
-    doc.setLineWidth(0.2);
-    doc.rect(initialsLeft, y, 26, blockH);
+    // Initials box (right side) — embed the actual hand-drawn ink when
+    // present, fall back to the typed initials for legacy data, leave
+    // empty for quotes so the rep can hand-collect on print.
+    const boxW = 32;
+    const boxH = blockH;
+    const boxLeft = W - M - boxW;
+    doc.setDrawColor(...SLATE_500);
+    doc.setLineWidth(0.4);
+    doc.rect(boxLeft, y, boxW, boxH);
     doc.setFontSize(6.5);
     doc.setTextColor(...SLATE_500);
-    doc.text("INITIALS", initialsLeft + 13, y + 3, { align: "center" });
-    if (isChecked && initials) {
+    doc.text("INITIALS", boxLeft + boxW / 2, y + 3, { align: "center" });
+
+    if (inkUrl && inkUrl.startsWith("data:image/")) {
+      // Embed the actual ink. Pad inside the box so the strokes don't
+      // touch the border.
+      try {
+        doc.addImage(inkUrl, "PNG", boxLeft + 1.5, y + 4, boxW - 3, boxH - 6);
+      } catch {
+        // Fall through to typed initials if jsPDF rejects the image
+        if (fallbackInitials) {
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(11);
+          doc.setTextColor(...NAVY);
+          doc.text(fallbackInitials, boxLeft + boxW / 2, y + boxH - 3, { align: "center" });
+        }
+      }
+    } else if (isChecked && fallbackInitials) {
+      // Legacy contract acked via the prior checkbox flow — show typed
+      // initials so the box isn't blank.
       doc.setFont("helvetica", "bold");
       doc.setFontSize(11);
       doc.setTextColor(...NAVY);
-      doc.text(initials, initialsLeft + 13, y + blockH - 3, { align: "center" });
+      doc.text(fallbackInitials, boxLeft + boxW / 2, y + boxH - 3, { align: "center" });
     }
 
     y += blockH + 2;
@@ -520,7 +536,7 @@ export async function GET(
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7);
     doc.setTextColor(...SLATE_500);
-    doc.text(`Acknowledged electronically on ${ackedAt}`, M, y + 2);
+    doc.text(`Initialed electronically on ${ackedAt}`, M, y + 2);
     y += 6;
   }
 

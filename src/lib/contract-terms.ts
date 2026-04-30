@@ -90,12 +90,20 @@ export const REQUIRED_ACKNOWLEDGMENTS: AcknowledgmentClause[] = [
 
 /**
  * Shape persisted under contracts.signature_metadata.acknowledgments.
- * Each boolean is `true` when the customer ticked the acknowledgment at
- * Step 7. acknowledged_at is ISO timestamp of the latest tick.
+ *
+ * Each boolean flag mirrors the legacy paper contract's "Customer Initials
+ * ___" line: true means the customer drew their initials inside the
+ * dedicated pad on Step 7. The companion `*_initials_url` field is the
+ * captured PNG (data URL or signed Supabase Storage URL — same fallback
+ * pattern as the main customer_signature_url) so the generated PDF can
+ * embed the actual ink, not a typed approximation.
  */
 export interface AcknowledgmentsRecord {
   sales_final?: boolean;
+  sales_final_initials_url?: string;
   cancellation_forfeit?: boolean;
+  cancellation_forfeit_initials_url?: string;
   rx_30_day?: boolean;
+  rx_30_day_initials_url?: string;
   acknowledged_at?: string;
 }
