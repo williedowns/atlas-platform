@@ -118,6 +118,7 @@ export default async function ReconciliationPage({ searchParams }: PageProps) {
           deposit_paid: c.deposit_paid,
           balance_due: c.balance_due,
           financer: f.financer_name ?? "—",
+          planNumber: f.plan_number ?? "—",
           financed_amount: f.financed_amount,
           stipsOk,
           dlOk,

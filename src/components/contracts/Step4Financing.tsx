@@ -227,6 +227,15 @@ export default function Step4Financing({ onNext }: Step4FinancingProps) {
     isFoundationSelected &&
     !!(form.secondaryFirstName || form.secondaryLastName) &&
     !form.secondaryEmail;
+  // Co-borrower must have a different email and phone than the primary borrower —
+  // Foundation rejects duplicate signer contacts, and a shared inbox/number means
+  // the co-borrower never gets their own e-sign link.
+  const secondaryEmailDuplicatesPrimary =
+    !!form.secondaryEmail &&
+    form.secondaryEmail.trim().toLowerCase() === form.primaryEmail.trim().toLowerCase();
+  const secondaryPhoneDuplicatesPrimary =
+    !!form.secondaryPhone &&
+    form.secondaryPhone.trim() === form.primaryPhone.trim();
   // Lyon requires a project type so we can build the stage template
   const lyonProjectMissing = isLyonSelected && !form.lyonProjectType;
   const canAdd =
@@ -234,6 +243,8 @@ export default function Step4Financing({ onNext }: Step4FinancingProps) {
     !!form.planId &&
     parseFloat(form.amount) > 0 &&
     !foundationSecondaryIncomplete &&
+    !secondaryEmailDuplicatesPrimary &&
+    !secondaryPhoneDuplicatesPrimary &&
     !lyonProjectMissing;
 
   if (loading) {
@@ -629,6 +640,16 @@ export default function Step4Financing({ onNext }: Step4FinancingProps) {
                   {foundationSecondaryIncomplete && (
                     <p className="text-xs font-semibold text-red-700">
                       Co-borrower email required for Foundation when co-borrower name is entered.
+                    </p>
+                  )}
+                  {secondaryEmailDuplicatesPrimary && (
+                    <p className="text-xs font-semibold text-red-700">
+                      Co-borrower email must differ from the primary borrower&apos;s email.
+                    </p>
+                  )}
+                  {secondaryPhoneDuplicatesPrimary && (
+                    <p className="text-xs font-semibold text-red-700">
+                      Co-borrower phone must differ from the primary borrower&apos;s phone.
                     </p>
                   )}
                 </div>

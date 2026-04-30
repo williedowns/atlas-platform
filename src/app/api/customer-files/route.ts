@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 
 const ALLOWED_CATEGORIES = new Set([
   "drivers_license",
+  "drivers_license_secondary",
   "proof_of_homeownership",
   "permit_receipt",
   "survey",

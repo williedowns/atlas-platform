@@ -412,10 +412,12 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
               </div>
             </div>
 
-            <div className="flex justify-between text-sm text-slate-500 pt-1">
-              <span>Suggested deposit (30%)</span>
-              <span>{formatCurrency(suggestedDeposit)}</span>
-            </div>
+            {remaining > 0 && (
+              <div className="flex justify-between text-sm text-slate-500 pt-1">
+                <span>Suggested deposit (30%)</span>
+                <span>{formatCurrency(suggestedDeposit)}</span>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

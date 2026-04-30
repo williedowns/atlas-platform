@@ -10,6 +10,7 @@ interface Row {
   deposit_paid: number;
   balance_due: number;
   financer: string;
+  planNumber: string;
   financed_amount: number;
   stipsOk: boolean;
   dlOk: boolean;
@@ -27,7 +28,7 @@ export function ReconciliationCsvExport({ rows }: { rows: Row[] }) {
     const headers = [
       "Contract", "Customer", "Show/Location", "Rep", "Product",
       "Total", "Deposit Paid", "Balance Due", "Status",
-      "Financier", "Financed", "Lyon Stages",
+      "Financier", "Plan #", "Financed", "Lyon Stages",
       "DL", "Proof of Ownership", "ACH", "Stipulations OK",
       "Permit OK", "HOA OK", "Date",
     ];
@@ -36,7 +37,7 @@ export function ReconciliationCsvExport({ rows }: { rows: Row[] }) {
       const cells = [
         r.contract_number, r.customerName, r.showName, r.rep, r.product,
         r.total.toFixed(2), r.deposit_paid.toFixed(2), r.balance_due.toFixed(2), r.status,
-        r.financer, r.financed_amount.toFixed(2), r.lyonStageSummary,
+        r.financer, r.planNumber, r.financed_amount.toFixed(2), r.lyonStageSummary,
         r.dlOk ? "Y" : "N", r.proofOk ? "Y" : "N", r.achOk ? "Y" : "N", r.stipsOk ? "Y" : "N",
         r.permitOk ? "Y" : "N", r.hoaOk ? "Y" : "N", r.createdAt,
       ].map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`);
