@@ -459,22 +459,20 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
               </span>
             </div>
 
-            {/* Items tax — hide entirely when items tax is $0 (e.g. tax_exempt
-                on file). Cleaner than the prior strikethrough + EXEMPT badge,
-                which Robert read as "tax is still charged." */}
-            {!draft.tax_exempt && draft.tax_amount > 0 && (
+            {/* Items tax. When tax-exempt (Rx on file) the row still renders
+                so the breakdown reads cleanly, but the dollar amount shows
+                $0.00 — the exempt-status hint sits in the label rather than
+                the value column. */}
+            {(draft.tax_amount > 0 || draft.tax_exempt) && (
               <div className="flex justify-between">
-                <span className="text-slate-600">
-                  Tax ({(draft.tax_rate * 100).toFixed(2)}%)
+                <span className={draft.tax_exempt ? "text-emerald-700 font-medium" : "text-slate-600"}>
+                  {draft.tax_exempt
+                    ? `Tax (${(draft.tax_rate * 100).toFixed(2)}%) — Exempt (Rx on file)`
+                    : `Tax (${(draft.tax_rate * 100).toFixed(2)}%)`}
                 </span>
-                <span className="font-medium">{formatCurrency(draft.tax_amount)}</span>
-              </div>
-            )}
-
-            {draft.tax_exempt && (
-              <div className="flex justify-between items-center">
-                <span className="text-emerald-700 font-medium">Tax — Exempt (Rx on file)</span>
-                <span className="text-xs text-emerald-700">Refunded after Atlas receives Rx</span>
+                <span className={`font-medium ${draft.tax_exempt ? "text-emerald-700" : ""}`}>
+                  {formatCurrency(draft.tax_exempt ? 0 : draft.tax_amount)}
+                </span>
               </div>
             )}
 

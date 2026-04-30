@@ -333,20 +333,18 @@ export default async function ContractDetailPage({
                   <span>−{formatCurrency(contract.discount_total)}</span>
                 </div>
               )}
-              {/* Items tax (refundable when Rx arrives). Hidden when zero
-                  AND tax-exempt — the exempt label below carries the
-                  context, no need for a "$0.00" line. */}
-              {(contract.tax_amount ?? 0) > 0 ? (
-                <div className="flex justify-between text-slate-600">
-                  <span>Tax ({((contract.tax_rate ?? 0) * 100).toFixed(2)}%)</span>
-                  <span>{formatCurrency(contract.tax_amount)}</span>
+              {/* Items tax. When tax-exempt the row still renders with $0
+                  in the value column so the totals breakdown stays
+                  consistent — the exempt-status hint moves into the label. */}
+              {((contract.tax_amount ?? 0) > 0 || contract.tax_exempt) && (
+                <div className={`flex justify-between ${contract.tax_exempt ? "text-emerald-700" : "text-slate-600"}`}>
+                  <span>
+                    Tax ({((contract.tax_rate ?? 0) * 100).toFixed(2)}%)
+                    {contract.tax_exempt ? " — Exempt (Rx)" : ""}
+                  </span>
+                  <span>{formatCurrency(contract.tax_exempt ? 0 : contract.tax_amount)}</span>
                 </div>
-              ) : contract.tax_exempt ? (
-                <div className="flex justify-between text-emerald-700">
-                  <span>Tax — Exempt (Rx)</span>
-                  <span className="text-xs">Refunded after Atlas receives Rx</span>
-                </div>
-              ) : null}
+              )}
               {contract.tax_exempt_cert_received && (
                 <div className="flex justify-between items-center text-sm">
                   <span className="flex items-center gap-1.5 text-emerald-700">
