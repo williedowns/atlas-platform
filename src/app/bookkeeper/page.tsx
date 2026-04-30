@@ -208,6 +208,17 @@ export default async function BookkeeperPage() {
       <AppHeader
         title="Bookkeeper"
         subtitle={`${contracts.length} active contracts`}
+        actions={
+          <Link
+            href="/bookkeeper/tax-report"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-white text-slate-900 hover:bg-slate-100"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 17v-2a4 4 0 014-4h6m0 0l-3-3m3 3l-3 3M5 21h11a2 2 0 002-2v-2M5 21V7a2 2 0 012-2h6l4 4v2M5 21H3" />
+            </svg>
+            Tax Report
+          </Link>
+        }
       />
 
       <main className="px-4 py-5 space-y-6 max-w-4xl mx-auto pb-28">
