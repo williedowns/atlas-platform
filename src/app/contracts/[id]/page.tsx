@@ -314,20 +314,39 @@ export default async function ContractDetailPage({
           </CardHeader>
           <CardContent>
             <div className="space-y-2 text-sm">
-              <div className="flex justify-between text-slate-600">
-                <span>Subtotal</span>
-                <span>{formatCurrency(contract.subtotal)}</span>
-              </div>
+              {/* Items subtotal — pull doc fee back out so the breakdown
+                  reads the way the legacy paper Sales Agreement did
+                  (Sub Total / Tax / Document Fee / Total). */}
+              {(() => {
+                const docFeeAmt = contract.doc_fee_waived ? 0 : Number(contract.doc_fee_amount ?? 0);
+                const itemsSub = Math.max(0, Number(contract.subtotal ?? 0) - docFeeAmt);
+                return (
+                  <div className="flex justify-between text-slate-600">
+                    <span>Subtotal</span>
+                    <span>{formatCurrency(itemsSub)}</span>
+                  </div>
+                );
+              })()}
               {contract.discount_total > 0 && (
                 <div className="flex justify-between text-emerald-600">
                   <span>Discounts</span>
                   <span>−{formatCurrency(contract.discount_total)}</span>
                 </div>
               )}
-              <div className="flex justify-between text-slate-600">
-                <span>Tax ({((contract.tax_rate ?? 0) * 100).toFixed(2)}%)</span>
-                <span>{formatCurrency(contract.tax_amount)}</span>
-              </div>
+              {/* Items tax (refundable when Rx arrives). Hidden when zero
+                  AND tax-exempt — the exempt label below carries the
+                  context, no need for a "$0.00" line. */}
+              {(contract.tax_amount ?? 0) > 0 ? (
+                <div className="flex justify-between text-slate-600">
+                  <span>Tax ({((contract.tax_rate ?? 0) * 100).toFixed(2)}%)</span>
+                  <span>{formatCurrency(contract.tax_amount)}</span>
+                </div>
+              ) : contract.tax_exempt ? (
+                <div className="flex justify-between text-emerald-700">
+                  <span>Tax — Exempt (Rx)</span>
+                  <span className="text-xs">Refunded after Atlas receives Rx</span>
+                </div>
+              ) : null}
               {contract.tax_exempt_cert_received && (
                 <div className="flex justify-between items-center text-sm">
                   <span className="flex items-center gap-1.5 text-emerald-700">
@@ -341,6 +360,31 @@ export default async function ContractDetailPage({
                   ) : (
                     <span className="text-xs text-slate-400">No file attached</span>
                   )}
+                </div>
+              )}
+              {/* Document Fee — first-class field. Always taxed; tax shown
+                  on its own line so the bookkeeper can see the
+                  non-refundable portion at a glance. Read-only here
+                  (the contract is signed); waiver is locked at sale time
+                  and the toggle lives only in the Step 5 builder. */}
+              {!contract.doc_fee_waived && Number(contract.doc_fee_amount ?? 0) > 0 && (
+                <>
+                  <div className="flex justify-between text-slate-600">
+                    <span>Document Fee</span>
+                    <span>{formatCurrency(contract.doc_fee_amount)}</span>
+                  </div>
+                  {Number(contract.doc_fee_tax_amount ?? 0) > 0 && (
+                    <div className="flex justify-between text-slate-600">
+                      <span>Doc Fee Tax ({((contract.tax_rate ?? 0) * 100).toFixed(2)}%)</span>
+                      <span>{formatCurrency(contract.doc_fee_tax_amount)}</span>
+                    </div>
+                  )}
+                </>
+              )}
+              {contract.doc_fee_waived && (
+                <div className="flex justify-between text-slate-400">
+                  <span className="line-through">Document Fee</span>
+                  <span className="text-xs uppercase tracking-wide font-semibold text-amber-700">Waived</span>
                 </div>
               )}
               {contract.surcharge_amount > 0 && (
