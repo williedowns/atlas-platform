@@ -94,7 +94,11 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
   const remaining = Math.max(0, draft.total - financedAtSale - totalSplits);
 
   const splitAmountNum = parseFloat(splitAmount) || 0;
-  const canAddSplit = splitAmountNum > 0;
+  // Over-collection guard: deposits + at-POS financing must not exceed total.
+  // Robert hit this 04-30 — financed $21,609 + deposit $10,000 on a $19,962
+  // contract; balance_due math floored at $0 and quietly hid the overage.
+  const wouldOverCollect = splitAmountNum > remaining + 0.01;
+  const canAddSplit = splitAmountNum > 0 && !wouldOverCollect;
   // Customer must commit something to proceed: a deposit split OR financing.
   // 100% financing (e.g., GreenSky run at POS) IS the customer's commitment — no separate deposit required.
   const hasCommitment = splits.length > 0 || financingArr.length > 0;
@@ -615,17 +619,41 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
             </div>
           )}
 
+          {/* Already over-collected — total financing already exceeds total.
+              Lock the rep out of adding more so the contract can't continue
+              over-funded. They have to delete a financing or split first. */}
+          {financedAtSale + totalSplits > draft.total + 0.01 && (
+            <div className="rounded-lg bg-red-50 border-2 border-red-300 px-3 py-2 text-xs text-red-800">
+              <p className="font-bold">
+                Over-collected by {formatCurrency(financedAtSale + totalSplits - draft.total)}
+              </p>
+              <p className="mt-0.5">
+                Total funding ({formatCurrency(financedAtSale + totalSplits)}) exceeds
+                contract total ({formatCurrency(draft.total)}). Reduce financing at Step 4
+                or remove a deposit split before continuing.
+              </p>
+            </div>
+          )}
+
           {/* Add split form */}
           <div className="space-y-3 pt-1">
             <Input
               label={splits.length === 0 ? "Deposit Amount ($)" : "Add Another ($)"}
               type="number"
               min="0.01"
+              max={remaining > 0 ? remaining.toFixed(2) : undefined}
               step="0.01"
               value={splitAmount}
               onChange={(e) => setSplitAmount(e.target.value)}
               placeholder={remaining > 0 ? remaining.toFixed(2) : "0.00"}
             />
+            {wouldOverCollect && (
+              <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">
+                Over-collection blocked. Only {formatCurrency(remaining)} remaining
+                to collect — the entered amount ({formatCurrency(splitAmountNum)})
+                exceeds it. Reduce to {formatCurrency(remaining)} or lower.
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-2">
               {PAYMENT_METHODS.map((m) => (

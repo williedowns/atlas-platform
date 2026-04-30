@@ -121,7 +121,21 @@ export default function Step4Financing({ onNext }: Step4FinancingProps) {
   const selectedPlan = plans.find((p) => p.id === form.planId);
 
   const totalFinanced = draft.financing.reduce((sum, f) => sum + f.financed_amount, 0);
+  // POS-deducted financing only — what actually reduces the customer's
+  // balance at sale time. Foundation (deduct_from_balance === false) carries
+  // to balance and is funded separately, so it doesn't compete for the
+  // POS budget.
+  const totalPosFinanced = draft.financing
+    .filter((f) => f.deduct_from_balance !== false)
+    .reduce((sum, f) => sum + f.financed_amount, 0);
   const remaining = Math.max(0, draft.total - totalFinanced);
+  // Available room for the NEW POS-deducted entry the rep is composing.
+  // Foundation entries can be uncapped (they don't reduce balance), but a
+  // GreenSky / Wells / In-House line + everything already on the contract
+  // must not exceed total — otherwise the customer is being over-funded
+  // (Robert 04-30: $21,609 in-house + $10,000 deposit on a $19,962
+  // contract = $11,646 over-collected, balance_due math floored at $0).
+  const remainingForPos = Math.max(0, draft.total - totalPosFinanced);
 
   // Which providers have been added — used to determine if TX exemption toggle is relevant
   const hasInstantFinancing = draft.financing.some(
@@ -238,6 +252,13 @@ export default function Step4Financing({ onNext }: Step4FinancingProps) {
     form.secondaryPhone.trim() === form.primaryPhone.trim();
   // Lyon requires a project type so we can build the stage template
   const lyonProjectMissing = isLyonSelected && !form.lyonProjectType;
+  // Over-funding guard: a non-Foundation entry must not push the POS-deducted
+  // total past the contract total. Foundation entries are exempt (they
+  // carry to balance and pay Atlas separately).
+  const enteredAmount = parseFloat(form.amount) || 0;
+  const wouldOverfundPos =
+    !isFoundationSelected &&
+    enteredAmount > remainingForPos + 0.01;
   const canAdd =
     !!form.providerId &&
     !!form.planId &&
@@ -245,7 +266,8 @@ export default function Step4Financing({ onNext }: Step4FinancingProps) {
     !foundationSecondaryIncomplete &&
     !secondaryEmailDuplicatesPrimary &&
     !secondaryPhoneDuplicatesPrimary &&
-    !lyonProjectMissing;
+    !lyonProjectMissing &&
+    !wouldOverfundPos;
 
   if (loading) {
     return (
@@ -489,6 +511,14 @@ export default function Step4Financing({ onNext }: Step4FinancingProps) {
                   value={form.amount}
                   onChange={(e) => setForm({ ...form, amount: e.target.value })}
                 />
+                {wouldOverfundPos && (
+                  <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">
+                    This amount over-funds the contract.{" "}
+                    {formatCurrency(enteredAmount)} financed against{" "}
+                    {formatCurrency(remainingForPos)} remaining for POS-deducted financing.
+                    Reduce to {formatCurrency(remainingForPos)} or lower.
+                  </div>
+                )}
                 <Input
                   label="Approval Number (optional)"
                   type="text"
