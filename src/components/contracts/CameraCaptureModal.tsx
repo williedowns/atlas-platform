@@ -141,18 +141,21 @@ export default function CameraCaptureModal({ title = "Take Photo", onCapture, on
         </div>
 
         {/* Body */}
-        <div className="flex-1 bg-slate-900 flex items-center justify-center min-h-[280px]">
+        <div className="flex-1 bg-slate-900 flex items-center justify-center min-h-[280px] relative">
+          {/* Video element is rendered for every phase so videoRef.current
+              exists the moment getUserMedia resolves. Previously it was
+              gated on `phase === "live"` — but that branch wasn't mounted
+              yet when the stream came back, so srcObject silently no-op'd
+              and the user saw a blank slate-900 area on phones. */}
+          <video
+            ref={videoRef}
+            playsInline
+            muted
+            autoPlay
+            className={`w-full h-auto max-h-[60vh] object-contain ${phase === "live" ? "" : "hidden"}`}
+          />
           {phase === "requesting" && (
             <p className="text-white text-sm">Requesting camera…</p>
-          )}
-          {phase === "live" && (
-            <video
-              ref={videoRef}
-              playsInline
-              muted
-              autoPlay
-              className="w-full h-auto max-h-[60vh] object-contain"
-            />
           )}
           {phase === "preview" && previewDataUrl && (
             // eslint-disable-next-line @next/next/no-img-element
