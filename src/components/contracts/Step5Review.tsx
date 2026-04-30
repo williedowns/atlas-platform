@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import CustomerFileVault from "@/components/contracts/CustomerFileVault";
+import CameraCaptureModal from "@/components/contracts/CameraCaptureModal";
 import {
   formatCurrency,
   formatDate,
@@ -66,6 +67,11 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
   // Check-only fields
   const [checkNumber, setCheckNumber] = useState("");
   const [checkBankName, setCheckBankName] = useState("");
+  const [checkPhotoFileId, setCheckPhotoFileId] = useState<string | null>(null);
+  const [checkPhotoUrl, setCheckPhotoUrl] = useState<string | null>(null);
+  const [checkCameraOpen, setCheckCameraOpen] = useState(false);
+  const [checkPhotoUploading, setCheckPhotoUploading] = useState(false);
+  const [checkPhotoError, setCheckPhotoError] = useState<string | null>(null);
   // ACH-only fields (collected here for Robert/Lori; Plaid integration will replace manual entry later)
   const [achRouting, setAchRouting] = useState("");
   const [achAccount, setAchAccount] = useState("");
@@ -106,6 +112,46 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
     (!secondaryDlRequired || hasSecondaryDL);
   const canProceed = hasCommitment && dlSatisfied;
 
+  // Upload a captured check photo against the customer (no contract_id yet —
+  // contract is created at Step 7). The bookkeeper can later filter
+  // customer_files by category=deposit_check_photo and customer_id to find
+  // every check photo for a given customer. Saving the file_id + signed_url
+  // on the deposit split so the contract record carries the linkage too.
+  async function uploadCheckPhoto(file: File) {
+    if (!draft.customer?.id) {
+      setCheckPhotoError("Save the customer at Step 2 before capturing a check photo.");
+      return;
+    }
+    setCheckPhotoUploading(true);
+    setCheckPhotoError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("customer_id", draft.customer.id);
+      fd.append("category", "deposit_check_photo");
+      const r = await fetch("/api/customer-files", { method: "POST", body: fd });
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        throw new Error(body.error ?? "Upload failed");
+      }
+      const data = await r.json();
+      setCheckPhotoFileId(data.file?.id ?? null);
+      // The POST response doesn't include a signed URL — refetch to get one.
+      const listR = await fetch(
+        `/api/customer-files?customer_id=${draft.customer.id}&category=deposit_check_photo`
+      );
+      if (listR.ok) {
+        const list = await listR.json();
+        const fresh = (list.files ?? []).find((f: { id: string }) => f.id === data.file?.id);
+        setCheckPhotoUrl(fresh?.signed_url ?? null);
+      }
+    } catch (err) {
+      setCheckPhotoError((err as Error).message ?? "Upload failed");
+    } finally {
+      setCheckPhotoUploading(false);
+    }
+  }
+
   function handleAddSplit() {
     if (!canAddSplit) return;
     const split: DepositSplit = {
@@ -113,6 +159,8 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
       method: splitMethod,
       ...(splitMethod === "check" && checkNumber ? { check_number: checkNumber } : {}),
       ...(splitMethod === "check" && checkBankName ? { bank_name: checkBankName } : {}),
+      ...(splitMethod === "check" && checkPhotoFileId ? { check_photo_file_id: checkPhotoFileId } : {}),
+      ...(splitMethod === "check" && checkPhotoUrl ? { check_photo_signed_url: checkPhotoUrl } : {}),
       ...(splitMethod === "ach" && achRouting ? { ach_routing_number: achRouting } : {}),
       ...(splitMethod === "ach" && achAccount ? { ach_account_number: achAccount } : {}),
       ...(splitMethod === "ach" && achHolder ? { ach_account_holder_name: achHolder } : {}),
@@ -122,6 +170,9 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
     setSplitAmount("");
     setCheckNumber("");
     setCheckBankName("");
+    setCheckPhotoFileId(null);
+    setCheckPhotoUrl(null);
+    setCheckPhotoError(null);
     setAchRouting("");
     setAchAccount("");
     setAchHolder("");
@@ -510,22 +561,40 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
               {splits.map((split, i) => (
                 <div
                   key={i}
-                  className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl px-4 py-3"
+                  className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 gap-3"
                 >
-                  <div>
-                    <p className="font-semibold text-slate-900">{formatCurrency(split.amount)}</p>
-                    <p className="text-xs text-slate-500">
-                      {methodLabel(split.method)}
-                      {split.method === "check" && split.check_number ? ` · Check #${split.check_number}` : ""}
-                      {split.method === "check" && split.bank_name ? ` · ${split.bank_name}` : ""}
-                      {split.method === "ach" && split.ach_bank_name ? ` · ${split.ach_bank_name}` : ""}
-                      {split.method === "ach" && split.ach_account_number ? ` · acct ····${split.ach_account_number.slice(-4)}` : ""}
-                    </p>
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    {split.method === "check" && split.check_photo_signed_url && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <a
+                        href={split.check_photo_signed_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-shrink-0"
+                      >
+                        <img
+                          src={split.check_photo_signed_url}
+                          alt="Check"
+                          className="h-12 w-16 object-cover rounded border border-slate-300 hover:border-[#00929C]"
+                        />
+                      </a>
+                    )}
+                    <div className="min-w-0">
+                      <p className="font-semibold text-slate-900">{formatCurrency(split.amount)}</p>
+                      <p className="text-xs text-slate-500 truncate">
+                        {methodLabel(split.method)}
+                        {split.method === "check" && split.check_number ? ` · Check #${split.check_number}` : ""}
+                        {split.method === "check" && split.bank_name ? ` · ${split.bank_name}` : ""}
+                        {split.method === "check" && split.check_photo_file_id && !split.check_photo_signed_url ? " · 📷 photo on file" : ""}
+                        {split.method === "ach" && split.ach_bank_name ? ` · ${split.ach_bank_name}` : ""}
+                        {split.method === "ach" && split.ach_account_number ? ` · acct ····${split.ach_account_number.slice(-4)}` : ""}
+                      </p>
+                    </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => removeDepositSplit(i)}
-                    className="w-8 h-8 flex items-center justify-center rounded-lg text-red-400 hover:bg-red-50"
+                    className="w-8 h-8 flex items-center justify-center rounded-lg text-red-400 hover:bg-red-50 flex-shrink-0"
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -591,6 +660,87 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
                   onChange={(e) => setCheckBankName(e.target.value)}
                   placeholder="Bank name"
                 />
+
+                {/* Check photo capture — uploads to customer_files vault so the
+                    bookkeeper has the routing/account/check# even if the rep
+                    skipped the manual fields. */}
+                <div className="rounded-lg border-2 border-dashed border-slate-300 px-3 py-2.5">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold uppercase tracking-wide text-slate-700">Photo of Check</p>
+                      <p className="text-[11px] text-slate-500">Capture front of the check so the bookkeeper has routing + account on file.</p>
+                    </div>
+                    <span className={`text-[10px] font-bold rounded-full px-2 py-0.5 border whitespace-nowrap ${
+                      checkPhotoFileId
+                        ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                        : "bg-slate-100 text-slate-600 border-slate-300"
+                    }`}>
+                      {checkPhotoFileId ? "✓ Captured" : "Optional"}
+                    </span>
+                  </div>
+
+                  {checkPhotoUrl ? (
+                    <div className="mt-2 flex items-center gap-3">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={checkPhotoUrl}
+                        alt="Check"
+                        className="h-16 w-24 object-cover rounded border border-slate-200"
+                      />
+                      <div className="flex flex-col gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setCheckCameraOpen(true)}
+                          disabled={checkPhotoUploading}
+                          className="text-xs font-semibold text-[#00929C] hover:underline disabled:opacity-50"
+                        >
+                          Retake
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCheckPhotoFileId(null);
+                            setCheckPhotoUrl(null);
+                          }}
+                          className="text-xs font-semibold text-slate-500 hover:text-red-600"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setCheckCameraOpen(true)}
+                      disabled={checkPhotoUploading || !draft.customer?.id}
+                      className="mt-2 w-full inline-flex items-center justify-center px-3 py-1.5 rounded-lg border border-[#00929C] bg-[#00929C] text-white text-xs font-semibold hover:bg-[#007279] disabled:opacity-50"
+                    >
+                      <svg className="w-3.5 h-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                      {checkPhotoUploading ? "Uploading…" : "Take Photo of Check"}
+                    </button>
+                  )}
+
+                  {checkPhotoError && (
+                    <p className="mt-1 text-xs text-red-700">{checkPhotoError}</p>
+                  )}
+                  {!draft.customer?.id && (
+                    <p className="mt-1 text-xs text-amber-700">Save the customer at Step 2 first.</p>
+                  )}
+                </div>
+
+                {checkCameraOpen && (
+                  <CameraCaptureModal
+                    title="Photo of Check"
+                    filename={`check-${draft.customer?.id ?? "unknown"}-${Date.now()}.jpg`}
+                    onCapture={async (f) => {
+                      await uploadCheckPhoto(f);
+                    }}
+                    onClose={() => setCheckCameraOpen(false)}
+                  />
+                )}
               </div>
             )}
 

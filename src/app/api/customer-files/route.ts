@@ -11,6 +11,7 @@ const ALLOWED_CATEGORIES = new Set([
   "income_verification",
   "ach_voided_check",
   "wet_signature_contract",
+  "deposit_check_photo",
   "photo",
   "other",
 ]);

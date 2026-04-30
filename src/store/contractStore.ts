@@ -88,6 +88,10 @@ export interface DepositSplit {
   // Check-only fields
   check_number?: string;
   bank_name?: string;
+  /** customer_files row id for the check photo captured at the show floor */
+  check_photo_file_id?: string;
+  /** Cached signed URL so the rep can preview it inline without a refetch */
+  check_photo_signed_url?: string;
   // ACH-only fields (Plaid/Melio integration may replace manual entry later)
   ach_routing_number?: string;
   ach_account_number?: string;
