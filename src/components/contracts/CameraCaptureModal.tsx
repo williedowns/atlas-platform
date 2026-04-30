@@ -141,31 +141,37 @@ export default function CameraCaptureModal({ title = "Take Photo", onCapture, on
         </div>
 
         {/* Body */}
-        <div className="flex-1 bg-slate-900 flex items-center justify-center min-h-[280px] relative">
-          {/* Video element is rendered for every phase so videoRef.current
-              exists the moment getUserMedia resolves. Previously it was
-              gated on `phase === "live"` — but that branch wasn't mounted
-              yet when the stream came back, so srcObject silently no-op'd
-              and the user saw a blank slate-900 area on phones. */}
+        <div className="flex-1 bg-slate-900 flex items-center justify-center min-h-[280px] relative overflow-hidden">
+          {/* Video element stays visible (NOT display:none) for every phase.
+              iOS Safari pauses a stream the moment its <video> hits
+              display:none and does not auto-resume when the element is
+              shown again — that left phones with a black modal even after
+              getUserMedia returned a live stream. Other phases overlay on
+              top via absolute positioning instead of replacing the video. */}
           <video
             ref={videoRef}
             playsInline
             muted
             autoPlay
-            className={`w-full h-auto max-h-[60vh] object-contain ${phase === "live" ? "" : "hidden"}`}
+            onLoadedMetadata={() => videoRef.current?.play().catch(() => {/* iOS sometimes rejects autoplay; the explicit play retries here */})}
+            className="w-full h-auto max-h-[60vh] object-contain"
           />
           {phase === "requesting" && (
-            <p className="text-white text-sm">Requesting camera…</p>
+            <p className="absolute text-white text-sm">Requesting camera…</p>
           )}
           {phase === "preview" && previewDataUrl && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={previewDataUrl} alt="Captured" className="w-full h-auto max-h-[60vh] object-contain" />
+            <img
+              src={previewDataUrl}
+              alt="Captured"
+              className="absolute inset-0 w-full h-full object-contain bg-slate-900"
+            />
           )}
           {phase === "uploading" && (
-            <p className="text-white text-sm">Uploading…</p>
+            <p className="absolute text-white text-sm">Uploading…</p>
           )}
           {phase === "error" && (
-            <div className="px-6 text-center">
+            <div className="absolute inset-0 flex items-center justify-center px-6 text-center bg-slate-900">
               <p className="text-red-300 text-sm">{error ?? "Camera unavailable"}</p>
             </div>
           )}
