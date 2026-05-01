@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -92,7 +92,23 @@ export function ContractsList({
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterType>(initialFilter);
   const [dateFilter, setDateFilter] = useState<DateFilter>("all");
+  const [selectedShowId, setSelectedShowId] = useState<string>("all");
   const [cancelledExpanded, setCancelledExpanded] = useState(false);
+
+  const availableShows = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const c of contracts) {
+      if (c.show_id && c.show?.name) map.set(c.show_id, c.show.name);
+    }
+    return Array.from(map, ([id, name]) => ({ id, name })).sort((a, b) =>
+      a.name.localeCompare(b.name)
+    );
+  }, [contracts]);
+
+  const matchesShow = (c: ContractRow) => {
+    if (selectedShowId === "all") return true;
+    return c.show_id === selectedShowId;
+  };
 
   const matchesSearch = (c: ContractRow) => {
     if (!search) return true;
@@ -145,6 +161,7 @@ export function ContractsList({
   const filtered = contracts.filter((c) => {
     if (!matchesSearch(c)) return false;
     if (!matchesDate(c)) return false;
+    if (!matchesShow(c)) return false;
     if (filter === "contracts") return isConfirmedContract(c);
     if (filter === "contingent") return isContingentContract(c);
     if (filter === "quote") return isQuote(c);
@@ -155,10 +172,19 @@ export function ContractsList({
   });
 
   // For "all" filter, split into sections
-  const confirmedList = contracts.filter((c) => matchesSearch(c) && matchesDate(c) && isConfirmedContract(c));
-  const contingentList = contracts.filter((c) => matchesSearch(c) && matchesDate(c) && isContingentContract(c));
-  const quoteList = contracts.filter((c) => matchesSearch(c) && matchesDate(c) && isQuote(c));
-  const cancelledList = contracts.filter((c) => matchesSearch(c) && matchesDate(c) && c.status === "cancelled");
+  const confirmedList = contracts.filter((c) => matchesSearch(c) && matchesDate(c) && matchesShow(c) && isConfirmedContract(c));
+  const contingentList = contracts.filter((c) => matchesSearch(c) && matchesDate(c) && matchesShow(c) && isContingentContract(c));
+  const quoteList = contracts.filter((c) => matchesSearch(c) && matchesDate(c) && matchesShow(c) && isQuote(c));
+  const cancelledList = contracts.filter((c) => matchesSearch(c) && matchesDate(c) && matchesShow(c) && c.status === "cancelled");
+
+  // Sales = confirmed + contingent contracts; quotes/drafts/cancelled aren't real sales.
+  const selectedShowName = availableShows.find((s) => s.id === selectedShowId)?.name;
+  const showSalesContracts = [...confirmedList, ...contingentList];
+  const showSalesCount = showSalesContracts.length;
+  const showSalesTotal = showSalesContracts.reduce(
+    (sum, c) => sum + (Number(c.total) || 0),
+    0
+  );
 
   function ContractItem({ c }: { c: ContractRow }) {
     const href = isQuote(c) ? `/quotes/${c.id}` : `/contracts/${c.id}`;
@@ -223,7 +249,9 @@ export function ContractsList({
     );
   }
 
-  const showSections = filter === "all";
+  // When a specific show is selected, drop the section split — a single-show
+  // view is already focused enough that splitting by status feels noisy.
+  const showSections = filter === "all" && selectedShowId === "all";
 
   return (
     <div>
@@ -235,6 +263,26 @@ export function ContractsList({
           onChange={(e) => setSearch(e.target.value)}
         />
       </div>
+
+      {/* Show selector */}
+      {availableShows.length > 0 && (
+        <div className="flex items-center gap-2 px-4 py-3 bg-white border-b border-slate-100">
+          <label htmlFor="show-filter" className="text-xs text-slate-400 font-medium whitespace-nowrap">
+            Show:
+          </label>
+          <select
+            id="show-filter"
+            value={selectedShowId}
+            onChange={(e) => setSelectedShowId(e.target.value)}
+            className="flex-1 min-w-0 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#00929C]"
+          >
+            <option value="all">All Shows</option>
+            {availableShows.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* Status filter chips */}
       <div className="flex gap-2 px-4 py-3 overflow-x-auto bg-white border-b border-slate-100 scrollbar-hide">
@@ -274,6 +322,21 @@ export function ContractsList({
           </button>
         ))}
       </div>
+
+      {/* Show summary — count + total revenue when a specific show is selected */}
+      {selectedShowId !== "all" && selectedShowName && (
+        <div className="mx-4 mt-3 px-4 py-3 bg-[#00929C]/10 border border-[#00929C]/30 rounded-lg flex items-center justify-between">
+          <div>
+            <p className="text-xs text-slate-500 uppercase tracking-wide font-medium">{selectedShowName}</p>
+            <p className="text-sm text-slate-700 mt-0.5">
+              {showSalesCount} {showSalesCount === 1 ? "sale" : "sales"}
+            </p>
+          </div>
+          <p className="text-lg font-bold text-[#010F21]">
+            {formatCurrency(showSalesTotal)}
+          </p>
+        </div>
+      )}
 
       {/* 200-row limit warning */}
       {contracts.length >= 200 && (

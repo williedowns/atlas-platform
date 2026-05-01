@@ -55,6 +55,7 @@ export default async function ContractsPage({
       id, contract_number, status, is_contingent,
       total, subtotal, discount_total, tax_amount, deposit_paid, balance_due,
       payment_method, notes, line_items, created_at,
+      show_id,
       customer:customers(first_name, last_name, phone, email, address, city, state, zip),
       show:shows(name),
       location:locations(name)

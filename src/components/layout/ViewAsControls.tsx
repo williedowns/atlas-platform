@@ -129,8 +129,11 @@ export default function ViewAsControls({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ role, user_id: "" }),
       });
-      router.refresh();
-      if (typeof window !== "undefined") window.location.reload();
+      // Hard-navigate to /dashboard so the impersonated role's landing page
+      // takes over (dashboard then redirects to /bookkeeper or /field as
+      // needed). Avoids being stuck on an admin-guarded page that ignored
+      // the cookie.
+      if (typeof window !== "undefined") window.location.href = "/dashboard";
     } finally {
       setSubmitting(false);
     }
@@ -144,8 +147,7 @@ export default function ViewAsControls({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ user_id: user.id, role: "" }),
       });
-      router.refresh();
-      if (typeof window !== "undefined") window.location.reload();
+      if (typeof window !== "undefined") window.location.href = "/dashboard";
     } finally {
       setSubmitting(false);
     }

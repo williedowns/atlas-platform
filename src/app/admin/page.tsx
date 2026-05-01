@@ -9,6 +9,7 @@ import { SyncProductsButton } from "@/components/admin/SyncProductsButton";
 import { PingButton } from "@/components/admin/PingButton";
 import AppShell from "@/components/layout/AppShell";
 import { AppHeader } from "@/components/ui/AppHeader";
+import { getViewAsContext } from "@/lib/view-as";
 
 
 export default async function AdminPage() {
@@ -23,6 +24,12 @@ export default async function AdminPage() {
     .single();
 
   if (profile?.role !== "admin") redirect("/dashboard");
+
+  // View-as override — when admin is impersonating a non-admin role, bounce
+  // to /dashboard so they see the impersonated role's landing page.
+  const viewAs = await getViewAsContext();
+  const effectiveRole = viewAs.effectiveRole ?? profile?.role;
+  if (effectiveRole !== "admin") redirect("/dashboard");
 
   const [{ count: productCount }, { data: locations }, { count: userCount }, { data: qboToken }, { data: reorderProducts }, { data: availableUnits }, { count: pendingServiceRequests }] = await Promise.all([
     supabase.from("products").select("*", { count: "exact", head: true }),

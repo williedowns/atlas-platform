@@ -13,6 +13,7 @@ import { AppHeader } from "@/components/ui/AppHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { SectionCard } from "@/components/ui/SectionCard";
+import { getViewAsContext } from "@/lib/view-as";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -27,11 +28,17 @@ export default async function DashboardPage() {
 
   const orgPerms = (profile?.organization as any)?.role_permissions ?? null;
 
-  // Role-based routing
-  if (profile?.role === "bookkeeper") redirect("/bookkeeper");
-  if (profile?.role === "field_crew") redirect("/field");
+  // View-as override — admins can preview the dashboard as another role/user.
+  // For non-admins this is a no-op (helper enforces admin gate internally).
+  const viewAs = await getViewAsContext();
+  const effectiveRole = viewAs.effectiveRole ?? profile?.role;
+  const effectiveUserId = viewAs.effectiveUserId ?? user.id;
 
-  const isAdmin = profile?.role === "admin" || profile?.role === "manager";
+  // Role-based routing — respect the impersonated role so View-As actually switches landing pages.
+  if (effectiveRole === "bookkeeper") redirect("/bookkeeper");
+  if (effectiveRole === "field_crew") redirect("/field");
+
+  const isAdmin = !viewAs.isImpersonatingUser && (effectiveRole === "admin" || effectiveRole === "manager");
   const today = new Date().toISOString().split("T")[0];
   const yesterday = new Date(Date.now() - 86400000).toISOString().split("T")[0];
   const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split("T")[0];
@@ -46,7 +53,7 @@ export default async function DashboardPage() {
     .eq("is_contingent", false)
     .gt("deposit_paid", 0);
 
-  if (!isAdmin) todayStatsQuery.eq("sales_rep_id", user.id);
+  if (!isAdmin) todayStatsQuery.eq("sales_rep_id", effectiveUserId);
 
   // Yesterday's stats for trend comparison
   const yesterdayStatsQuery = supabase
@@ -57,7 +64,7 @@ export default async function DashboardPage() {
     .not("status", "in", '("quote","draft","cancelled")')
     .eq("is_contingent", false)
     .gt("deposit_paid", 0);
-  if (!isAdmin) yesterdayStatsQuery.eq("sales_rep_id", user.id);
+  if (!isAdmin) yesterdayStatsQuery.eq("sales_rep_id", effectiveUserId);
 
   const [{ data: todayStats }, { data: yesterdayStats }] = await Promise.all([
     todayStatsQuery,
@@ -93,7 +100,7 @@ export default async function DashboardPage() {
     .not("status", "in", '("quote","draft","cancelled")')
     .eq("is_contingent", false)
     .gt("deposit_paid", 0);
-  if (!isAdmin) trendStatsQuery.eq("sales_rep_id", user.id);
+  if (!isAdmin) trendStatsQuery.eq("sales_rep_id", effectiveUserId);
   const { data: trendRows } = await trendStatsQuery;
 
   // Bucket by day (inclusive of today)
@@ -153,7 +160,7 @@ export default async function DashboardPage() {
     .order("created_at", { ascending: false })
     .limit(10);
 
-  if (!isAdmin) confirmedQuery.eq("sales_rep_id", user.id);
+  if (!isAdmin) confirmedQuery.eq("sales_rep_id", effectiveUserId);
 
   // ── Recent contingent contracts ───────────────────────────────────────────
   const contingentQuery = supabase
@@ -164,7 +171,7 @@ export default async function DashboardPage() {
     .order("created_at", { ascending: false })
     .limit(5);
 
-  if (!isAdmin) contingentQuery.eq("sales_rep_id", user.id);
+  if (!isAdmin) contingentQuery.eq("sales_rep_id", effectiveUserId);
 
   // ── Recent quotes ─────────────────────────────────────────────────────────
   const quotesQuery = supabase
@@ -174,7 +181,7 @@ export default async function DashboardPage() {
     .order("created_at", { ascending: false })
     .limit(5);
 
-  if (!isAdmin) quotesQuery.eq("sales_rep_id", user.id);
+  if (!isAdmin) quotesQuery.eq("sales_rep_id", effectiveUserId);
 
   // ── Leads pipeline ────────────────────────────────────────────────────────
   const leadsQuery = supabase
@@ -184,7 +191,7 @@ export default async function DashboardPage() {
     .order("created_at", { ascending: false })
     .limit(30);
 
-  if (!isAdmin) leadsQuery.eq("assigned_to", user.id);
+  if (!isAdmin) leadsQuery.eq("assigned_to", effectiveUserId);
 
   // ── Monthly stats for goal progress ──────────────────────────────────────
   const monthStatsQuery = supabase
@@ -194,13 +201,13 @@ export default async function DashboardPage() {
     .not("status", "in", '("quote","draft","cancelled")')
     .eq("is_contingent", false)
     .gt("deposit_paid", 0);
-  if (!isAdmin) monthStatsQuery.eq("sales_rep_id", user.id);
+  if (!isAdmin) monthStatsQuery.eq("sales_rep_id", effectiveUserId);
 
   // ── Goal for current user this month ──────────────────────────────────────
   const goalQuery = supabase
     .from("sales_goals")
     .select("target_revenue, target_contracts")
-    .eq("rep_id", user.id)
+    .eq("rep_id", effectiveUserId)
     .eq("period_start", monthStart)
     .maybeSingle();
 
@@ -303,10 +310,18 @@ export default async function DashboardPage() {
   }
 
   return (
-    <AppShell role={profile?.role} userName={profile?.full_name} orgPerms={orgPerms}>
+    <AppShell
+      role={effectiveRole}
+      userName={profile?.full_name}
+      orgPerms={orgPerms}
+      realRole={profile?.role}
+      viewAsUser={viewAs.viewAsUser}
+      isImpersonatingRole={viewAs.isImpersonatingRole}
+      isImpersonatingUser={viewAs.isImpersonatingUser}
+    >
       <AppHeader
-        title={profile?.full_name ?? "Dashboard"}
-        subtitle={profile?.role?.replace("_", " ")}
+        title={viewAs.viewAsUser?.full_name ?? profile?.full_name ?? "Dashboard"}
+        subtitle={effectiveRole?.replace("_", " ")}
         status={activeShowChip}
         actions={
           <Link href="/contracts/new">

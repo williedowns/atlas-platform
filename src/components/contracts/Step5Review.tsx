@@ -39,22 +39,28 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
 
   const [savingQuote, setSavingQuote] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
+  const [quoteOfflineNotice, setQuoteOfflineNotice] = useState<string | null>(null);
 
   async function handleSaveQuote() {
     setSavingQuote(true);
     setQuoteError(null);
+    setQuoteOfflineNotice(null);
     try {
       const res = await fetch("/api/quotes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(draft),
       });
+      const body = await res.json().catch(() => null);
+      if (res.status === 202 && body?.queued) {
+        setQuoteOfflineNotice("Saved offline — this quote will sync to the server when you reconnect.");
+        setSavingQuote(false);
+        return;
+      }
       if (!res.ok) {
-        const body = await res.json().catch(() => null);
         throw new Error(body?.error ?? "Failed to save quote");
       }
-      const { quote_id } = await res.json();
-      router.push(`/quotes/${quote_id}`);
+      router.push(`/quotes/${body.quote_id}`);
     } catch (err: any) {
       setQuoteError(err.message ?? "Something went wrong");
       setSavingQuote(false);
@@ -943,6 +949,12 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
       {quoteError && (
         <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3">
           <p className="text-sm text-red-700">{quoteError}</p>
+        </div>
+      )}
+
+      {quoteOfflineNotice && (
+        <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3">
+          <p className="text-sm text-amber-800">{quoteOfflineNotice}</p>
         </div>
       )}
 

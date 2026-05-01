@@ -262,47 +262,17 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
     setShowDiscountForm(false);
   }
 
-  // Discount Calculator: given a target out-the-door price (what the customer
-  // pays including items tax, doc-fee tax, and CC surcharge), compute the
-  // discount that lands the actual total there.
+  // Discount Calculator: given a target out-the-door price (pre-tax — subtotal
+  // after discount, plus CC surcharge if enabled), compute the discount that
+  // lands the cart there. Tax (items tax + doc-fee tax) stacks on top of OTD.
   //
-  // Previous version treated `tax` as a constant pulled from draft.tax_amount,
-  // but that value is computed against the CURRENT subtotal-minus-old-discount.
-  // Applying a new discount shrinks subtotal-minus-discount → tax shrinks too →
-  // the constant was wrong → discount over-shoots → customer's actual total
-  // landed BELOW the price the rep promised. Robert hit this 04-30:
-  // target $16,999.99, formula gave $2,788.33 (correct: $2,582.49), actual
-  // total ~$230 below promised.
-  //
-  // Correct algebra (let S = subtotal, F = doc fee in S, I = items = S - F,
-  // r_t = tax_rate, r_s = surcharge_rate):
-  //   items_tax     = max(0, I - D) * r_t   (zero if tax_exempt)
-  //   doc_fee_tax   = F * r_t                (always charged — TX statute)
-  //   surcharge     = (S - D) * r_s          (post-discount base)
-  //   final = (S - D) + items_tax + doc_fee_tax + surcharge
-  //
-  // Algebraic simplification (non-exempt):
-  //   final = (S - D)(1 + r_t + r_s)
-  //   D     = S − final / (1 + r_t + r_s)
-  //
-  // Tax-exempt branch keeps the doc-fee tax:
-  //   final = (S - D)(1 + r_s) + F * r_t
-  //   D     = S − (final − F * r_t) / (1 + r_s)
+  //   S = current subtotal, D = discount, r_s = surcharge_rate
+  //   target = (S − D)(1 + r_s)
+  //   D      = S − target / (1 + r_s)
   function computeCalculatedDiscount(target: number): number | null {
     if (isNaN(target) || target <= 0) return null;
-    const r_t = draft.tax_rate ?? 0;
     const r_s = draft.surcharge_enabled ? (draft.surcharge_rate ?? 0) : 0;
-    const docFee = draft.doc_fee_waived ? 0 : (draft.doc_fee_amount ?? 0);
-
-    let desiredPostDiscountSubtotal: number;
-    if (draft.tax_exempt) {
-      const docFeeTax = docFee * r_t;
-      const denom = 1 + r_s;
-      desiredPostDiscountSubtotal = (target - docFeeTax) / denom;
-    } else {
-      const denom = 1 + r_t + r_s;
-      desiredPostDiscountSubtotal = target / denom;
-    }
+    const desiredPostDiscountSubtotal = target / (1 + r_s);
     const discountAmt = Math.round((draft.subtotal - desiredPostDiscountSubtotal) * 100) / 100;
     if (discountAmt <= 0 || discountAmt >= draft.subtotal) return null;
     return discountAmt;
@@ -707,7 +677,7 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
           <div className="border-t border-slate-200 pt-4">
             <h3 className="text-lg font-semibold text-slate-700 mb-1">Discount Calculator</h3>
             <p className="text-sm text-slate-500 mb-3">
-              Enter the out-the-door price you promised the customer. We'll work out the discount{surchargeNote}.
+              Enter the pre-tax out-the-door price you promised the customer. We'll work out the discount{surchargeNote}. Tax is added on top.
             </p>
             <Card className="mb-4">
               <CardContent className="p-4 space-y-3">

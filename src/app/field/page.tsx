@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import AppShell from "@/components/layout/AppShell";
 import { AppHeader } from "@/components/ui/AppHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { getViewAsContext } from "@/lib/view-as";
 
 const STATUS_LABEL: Record<string, string> = {
   scheduled: "Scheduled", in_progress: "In Progress", completed: "Completed", cancelled: "Cancelled",
@@ -37,15 +38,22 @@ export default async function FieldPage({
   if (!user) redirect("/login");
 
   const { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).single();
-  if (profile?.role !== "field_crew" && profile?.role !== "admin") redirect("/dashboard");
 
-  const firstName = profile?.full_name?.split(" ")[0] ?? "Crew";
+  // View-as override — admin can preview the field app as a specific crew member.
+  const viewAs = await getViewAsContext();
+  const effectiveRole = viewAs.effectiveRole ?? profile?.role;
+  const effectiveUserId = viewAs.effectiveUserId ?? user.id;
+
+  if (effectiveRole !== "field_crew" && effectiveRole !== "admin") redirect("/dashboard");
+
+  const displayName = viewAs.viewAsUser?.full_name ?? profile?.full_name;
+  const firstName = displayName?.split(" ")[0] ?? "Crew";
 
   // Fetch deliveries
   const { data: allOrders } = await supabase
     .from("delivery_work_orders")
     .select(`id, scheduled_date, status, notes, contract:contracts(id, contract_number, customer:customers(first_name, last_name))`)
-    .contains("assigned_crew_ids", [user.id])
+    .contains("assigned_crew_ids", [effectiveUserId])
     .order("scheduled_date", { ascending: true });
 
   const upcoming = allOrders?.filter(o => o.status !== "completed" && o.status !== "cancelled") ?? [];
@@ -55,12 +63,19 @@ export default async function FieldPage({
   const { data: serviceJobs } = await supabase
     .from("service_jobs")
     .select("id, title, job_type, status, scheduled_date, scheduled_time_start, customer:customers(first_name,last_name)")
-    .eq("assigned_tech_id", user.id)
+    .eq("assigned_tech_id", effectiveUserId)
     .not("status", "in", '("completed","cancelled")')
     .order("scheduled_date", { ascending: true });
 
   return (
-    <AppShell role={profile?.role} userName={profile?.full_name}>
+    <AppShell
+      role={effectiveRole}
+      userName={profile?.full_name}
+      realRole={profile?.role}
+      viewAsUser={viewAs.viewAsUser}
+      isImpersonatingRole={viewAs.isImpersonatingRole}
+      isImpersonatingUser={viewAs.isImpersonatingUser}
+    >
       <AppHeader
         title="Field App"
         subtitle={`Hi, ${firstName}`}

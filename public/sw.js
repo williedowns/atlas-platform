@@ -1,6 +1,15 @@
-const CACHE_NAME = "atlas-spas-v2";
+// Keep OFFLINE_DB / store / message types in sync with src/lib/offline-queue.ts
+const CACHE_NAME = "atlas-spas-v3";
 const OFFLINE_DB = "atlas-offline";
 const APP_SHELL = ["/", "/dashboard", "/contracts/new", "/login"];
+const QUEUEABLE_POST_PATHS = ["/api/contracts", "/api/payments", "/api/quotes"];
+const MSG_QUEUED = "QUEUE_REQUEST_QUEUED";
+const MSG_DRAINED = "QUEUE_REQUEST_DRAINED";
+
+async function broadcast(type) {
+  const clients = await self.clients.matchAll({ includeUncontrolled: true });
+  for (const c of clients) c.postMessage({ type });
+}
 
 // ─── Install ──────────────────────────────────────────────────────────────────
 self.addEventListener("install", (event) => {
@@ -52,18 +61,20 @@ async function queueRequest(request) {
     headers: Object.fromEntries(request.headers.entries()),
     timestamp: Date.now(),
   });
+  await new Promise((resolve) => { tx.oncomplete = resolve; });
+  broadcast(MSG_QUEUED);
 }
 
 async function replayQueue() {
   const db = await openOfflineDB();
-  const tx = db.transaction("requests", "readwrite");
-  const store = tx.objectStore("requests");
   const all = await new Promise((resolve) => {
-    const req = store.getAll();
+    const tx = db.transaction("requests", "readonly");
+    const req = tx.objectStore("requests").getAll();
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => resolve([]);
   });
 
+  let drained = 0;
   for (const item of all) {
     try {
       const res = await fetch(item.url, {
@@ -74,11 +85,13 @@ async function replayQueue() {
       if (res.ok) {
         const deleteTx = db.transaction("requests", "readwrite");
         deleteTx.objectStore("requests").delete(item.id);
+        drained += 1;
       }
     } catch {
       // Still offline — leave in queue
     }
   }
+  if (drained > 0) broadcast(MSG_DRAINED);
 }
 
 // ─── Fetch handler ────────────────────────────────────────────────────────────
@@ -108,7 +121,7 @@ self.addEventListener("fetch", (event) => {
   // Critical write APIs: queue if offline
   if (
     request.method === "POST" &&
-    (url.pathname.startsWith("/api/contracts") || url.pathname.startsWith("/api/payments"))
+    QUEUEABLE_POST_PATHS.some((p) => url.pathname.startsWith(p))
   ) {
     event.respondWith(
       fetch(request.clone()).catch(async () => {

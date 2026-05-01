@@ -13,6 +13,7 @@ import { SectionCard } from "@/components/ui/SectionCard";
 import { OutstandingByAgeChart } from "@/components/bookkeeper/OutstandingByAgeChart";
 import { lowDepositInfo, DEFAULT_LOW_DEPOSIT_THRESHOLD } from "@/lib/low-deposit";
 import { LowDepositBadge } from "@/components/contracts/LowDepositBadge";
+import { getViewAsContext } from "@/lib/view-as";
 
 export default async function BookkeeperPage() {
   const supabase = await createClient();
@@ -25,9 +26,13 @@ export default async function BookkeeperPage() {
     .eq("id", user.id)
     .single();
 
+  // View-as override — admins can preview the bookkeeper page as another role.
+  const viewAs = await getViewAsContext();
+  const effectiveRole = viewAs.effectiveRole ?? profile?.role;
+
   const { hasPermission } = await import("@/lib/permissions");
   const orgPerms = (profile?.organization as any)?.role_permissions;
-  if (!hasPermission(orgPerms, profile?.role, "bookkeeper")) redirect("/dashboard");
+  if (!hasPermission(orgPerms, effectiveRole, "bookkeeper")) redirect("/dashboard");
 
   // ── Fetch all active contracts with full financial + customer + line item data ──
   const { data: contractsRaw, error } = await supabase
@@ -204,7 +209,15 @@ export default async function BookkeeperPage() {
     .sort((a, b) => a.info.pct - b.info.pct); // lowest % first
 
   return (
-    <AppShell role={profile?.role} userName={profile?.full_name} orgPerms={orgPerms}>
+    <AppShell
+      role={effectiveRole}
+      userName={profile?.full_name}
+      orgPerms={orgPerms}
+      realRole={profile?.role}
+      viewAsUser={viewAs.viewAsUser}
+      isImpersonatingRole={viewAs.isImpersonatingRole}
+      isImpersonatingUser={viewAs.isImpersonatingUser}
+    >
       <AppHeader
         title="Bookkeeper"
         subtitle={`${contracts.length} active contracts`}

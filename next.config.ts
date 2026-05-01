@@ -24,6 +24,20 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+
+  // Service worker must never be edge-cached — clients need the latest fetch
+  // handler immediately so offline queueing rules stay current.
+  async headers() {
+    return [
+      {
+        source: "/sw.js",
+        headers: [
+          { key: "Content-Type", value: "application/javascript; charset=utf-8" },
+          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

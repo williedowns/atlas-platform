@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Figtree } from "next/font/google";
 import "./globals.css";
+import { ServiceWorkerRegistrar } from "@/components/ServiceWorkerRegistrar";
+import { OfflineIndicator } from "@/components/OfflineIndicator";
 
 const figtree = Figtree({ subsets: ["latin"], weight: ["400", "600", "700"] });
 
@@ -42,7 +44,9 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
       </head>
       <body className={`${figtree.className} bg-slate-50 antialiased`}>
+        <ServiceWorkerRegistrar />
         {children}
+        <OfflineIndicator />
       </body>
     </html>
   );
