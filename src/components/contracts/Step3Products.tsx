@@ -8,7 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { formatCurrency } from "@/lib/utils";
 import type { Product, DiscountType, ContractDiscount } from "@/types";
-import { isSpaProduct } from "@/lib/inventory-constants";
+import { isSpaProduct, isOptionAvailableForModel } from "@/lib/inventory-constants";
 import { InventoryUnitPicker } from "@/components/contracts/InventoryUnitPicker";
 
 interface Step3ProductsProps {
@@ -316,10 +316,21 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
     ? (LINE_OPTION_CATEGORIES[selectedLine] ?? OPTIONS_CATEGORIES)
     : OPTIONS_CATEGORIES;
 
+  // Most-recently-added spa drives per-model option filtering — sales rep picks
+  // the tub first, then add-ons; if nothing is in cart yet, fall back to all.
+  const lastSpaModelCode: string | null = (() => {
+    for (let i = draft.line_items.length - 1; i >= 0; i--) {
+      const li = draft.line_items[i];
+      const prod = products.find((p) => p.id === li.product_id);
+      if (prod && isSpaProduct(prod.category ?? "") && prod.model_code) return prod.model_code;
+    }
+    return null;
+  })();
+
   const optionProducts = products.filter((p) => {
     if (!relevantOptionCategories.includes(p.category ?? "")) return false;
-    if (p.category === "Other Options") return filterOtherOption(p.name, selectedLine);
-    return true;
+    if (p.category === "Other Options" && !filterOtherOption(p.name, selectedLine)) return false;
+    return isOptionAvailableForModel(p.name, lastSpaModelCode);
   });
   const groupedOptions = optionProducts.reduce<Record<string, Product[]>>((acc, p) => {
     const cat = p.category ?? "Other";
@@ -817,13 +828,19 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
         )}
       </div>
 
-      {/* Totals */}
+      {/* Totals — order/format mirrors Step5Review so the rep sees the same breakdown */}
       <Card className="border-[#00929C]/30">
         <CardContent className="p-5 space-y-3">
-          <div className="flex justify-between items-center">
-            <span className="text-base text-slate-600">Subtotal</span>
-            <span className="text-base font-semibold text-slate-900">{formatCurrency(draft.subtotal)}</span>
-          </div>
+          {(() => {
+            const docFee = draft.doc_fee_waived ? 0 : (draft.doc_fee_amount ?? 0);
+            const itemsSubtotal = Math.max(0, draft.subtotal - docFee);
+            return (
+              <div className="flex justify-between items-center">
+                <span className="text-base text-slate-600">Subtotal</span>
+                <span className="text-base font-semibold text-slate-900">{formatCurrency(itemsSubtotal)}</span>
+              </div>
+            );
+          })()}
           {draft.discount_total > 0 && (
             <div className="flex justify-between items-center">
               <span className="text-base text-slate-600">Discounts</span>
@@ -841,20 +858,44 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
               </div>
             ) : null;
           })()}
-          <div className="flex justify-between items-center">
-            <span className="text-base text-slate-600">Tax</span>
-            <span className="text-base font-semibold text-slate-900">
-              {taxCalculating ? (
-                <span className="flex items-center gap-2 text-slate-400">
-                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                  </svg>
-                  Calculating...
-                </span>
-              ) : formatCurrency(draft.tax_amount)}
-            </span>
-          </div>
+          {!draft.doc_fee_waived && (draft.doc_fee_amount ?? 0) > 0 && (
+            <div className="flex justify-between items-center">
+              <span className="text-base text-slate-600">Document Fee</span>
+              <span className="text-base font-semibold text-slate-900">{formatCurrency(draft.doc_fee_amount ?? 0)}</span>
+            </div>
+          )}
+          {((draft.tax_amount ?? 0) > 0 || draft.tax_exempt) && (
+            <div className="flex justify-between items-center">
+              <span className={`text-base ${draft.tax_exempt ? "text-emerald-700 font-medium" : "text-slate-600"}`}>
+                {draft.tax_exempt
+                  ? `Tax (${(draft.tax_rate * 100).toFixed(2)}%) — Exempt (Rx on file)`
+                  : `Tax (${(draft.tax_rate * 100).toFixed(2)}%)`}
+              </span>
+              <span className={`text-base font-semibold ${draft.tax_exempt ? "text-emerald-700" : "text-slate-900"}`}>
+                {taxCalculating ? (
+                  <span className="flex items-center gap-2 text-slate-400">
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Calculating...
+                  </span>
+                ) : formatCurrency(draft.tax_exempt ? 0 : (draft.tax_amount ?? 0))}
+              </span>
+            </div>
+          )}
+          {!draft.doc_fee_waived && (draft.doc_fee_tax_amount ?? 0) > 0 && (
+            <div className="flex justify-between items-center">
+              <span className="text-base text-slate-600">Doc Fee Tax ({(draft.tax_rate * 100).toFixed(2)}%)</span>
+              <span className="text-base font-semibold text-slate-900">{formatCurrency(draft.doc_fee_tax_amount ?? 0)}</span>
+            </div>
+          )}
+          {draft.surcharge_enabled && draft.surcharge_amount > 0 && (
+            <div className="flex justify-between items-center">
+              <span className="text-base text-slate-600">CC Surcharge ({(draft.surcharge_rate * 100).toFixed(1)}%)</span>
+              <span className="text-base font-semibold text-slate-900">{formatCurrency(draft.surcharge_amount)}</span>
+            </div>
+          )}
           <div className="border-t border-slate-200 pt-3 flex justify-between items-center">
             <span className="text-xl font-bold text-[#00929C]">Total</span>
             <span className="text-xl font-bold text-[#00929C]">{formatCurrency(draft.total)}</span>

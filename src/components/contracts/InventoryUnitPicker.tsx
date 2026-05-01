@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { getStatusColor, getUnitTypeLabel, getCabinetName, getModelDisplayName, SHELL_COLORS, CABINET_COLORS } from "@/lib/inventory-constants";
+import { getStatusColor, getUnitTypeLabel, getCabinetName, getModelDisplayName, getValidShellColors, getValidCabinets } from "@/lib/inventory-constants";
 
 interface InventoryUnit {
   id: string;
@@ -136,7 +136,7 @@ export function InventoryUnitPicker({
                 className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#00929C]/40"
               >
                 <option value="">— Select shell color —</option>
-                {SHELL_COLORS.filter((c) => c !== "N/A").map((c) => (
+                {getValidShellColors(productModelCode).filter((c) => c !== "N/A").map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>
@@ -149,7 +149,7 @@ export function InventoryUnitPicker({
                 className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#00929C]/40"
               >
                 <option value="">— Select cabinet color —</option>
-                {CABINET_COLORS.filter((c) => c.code !== "N/A").map((c) => (
+                {getValidCabinets(productModelCode).filter((c) => c.code !== "N/A").map((c) => (
                   <option key={c.code} value={c.code}>{c.name}</option>
                 ))}
               </select>

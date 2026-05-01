@@ -234,3 +234,155 @@ export function getUnitTypeLabel(unitType: string): string {
 export function getCabinetName(code: string): string {
   return CABINET_COLORS.find((c) => c.code === code)?.name ?? code;
 }
+
+// ── Per-model availability ──────────────────────────────────────────────────
+// Only show shell/cabinet/option choices that Master Spas actually offers for
+// the selected model. Source: masterspas.com (researched 2026-05-01).
+//
+// Naming aliases (Master Spas marketing → existing app constants):
+//   "Sterling Silver Marble" → "Sterling Silver"
+//   "Storm Cloud"            → "Storm"
+//   "Smoky Mountain"         → "Smoky"
+//   "Pebble Beach"           → "Pebble"
+//   "Dark Walnut"            → cabinet code DWAL2
+//   "Graphite" / "Graphite Grey" → cabinet codes GRAPH and GRAPH2 (both kept
+//      because Master Spas labels vary across pages and our seed data uses both)
+//   "Midnight"               → cabinet codes MID and MID2 (same reason)
+//
+// Models not in these maps fall back to ALL colors / ALL options (current
+// behavior) — incremental rollout, won't block sales of unmapped SKUs.
+
+const TWILIGHT_AND_LSX_LARGE_SHELLS = [
+  "Sterling Silver", "White", "Tuscan Sun", "Midnight Canyon", "Storm", "Smoky",
+] as const;
+
+const STANDARD_PREMIUM_CABINETS = ["DWAL2", "GRAPH", "GRAPH2", "MID", "MID2"] as const;
+
+const CLARITY_BALANCE_SMALL_SHELLS = [
+  "Sterling Silver", "White", "Tuscan Sun", "Midnight Canyon", "Storm",
+] as const;
+
+const CLARITY_BALANCE_9_SHELLS = ["Sterling Silver", "Tuscan Sun", "Midnight Canyon"] as const;
+
+const LSX_900_SHELLS = ["Sterling Silver", "Tuscan Sun", "Midnight Canyon"] as const;
+
+const LH_SHELLS = ["White", "Sterling Silver"] as const;
+
+const GETAWAY_SHELLS = ["Sea Salt", "Pebble"] as const;
+const GETAWAY_CABINETS = ["DWAL2", "GRAPH", "GRAPH2"] as const;
+
+const H2X_SHELLS = ["Sterling Silver", "White"] as const;
+const H2X_CABINETS = ["DWAL2", "GRAPH", "GRAPH2"] as const;
+
+/** model_code → list of valid shell color names (subset of SHELL_COLORS). */
+export const MODEL_VALID_SHELL_COLORS: Record<string, readonly string[]> = {
+  // Twilight Series — all 5 models share the same 6-color set
+  "TS 7.2":     TWILIGHT_AND_LSX_LARGE_SHELLS,
+  "TS 7.25":    TWILIGHT_AND_LSX_LARGE_SHELLS,
+  "TS 8.2":     TWILIGHT_AND_LSX_LARGE_SHELLS,
+  "TS 8.25":    TWILIGHT_AND_LSX_LARGE_SHELLS,
+  "TS 240X":    TWILIGHT_AND_LSX_LARGE_SHELLS,
+  // Clarity — Balance 6/6CS/7/8 share 5 shells (no Smoky)
+  "C Bal 6":    CLARITY_BALANCE_SMALL_SHELLS,
+  "C Bal 6 CS": CLARITY_BALANCE_SMALL_SHELLS,
+  "C Bal 7":    CLARITY_BALANCE_SMALL_SHELLS,
+  "C Bal 8":    CLARITY_BALANCE_SMALL_SHELLS,
+  // Clarity Balance 9 — only 3 shells published
+  "C Bal 9":    CLARITY_BALANCE_9_SHELLS,
+  // Clarity Precision 7 — full 6-shell set
+  "C Prec 7":   TWILIGHT_AND_LSX_LARGE_SHELLS,
+  // Healthy Living — 2 shells across the line
+  "LH L6":      LH_SHELLS,
+  "LH L7":      LH_SHELLS,
+  "LH S7":      LH_SHELLS,
+  // Getaway — Bar Harbor + Ocho Rios LE/SE/CS share 2 shells
+  "G BarH LE":  GETAWAY_SHELLS,
+  "G BarH SE":  GETAWAY_SHELLS,
+  "G Ocho CS":  GETAWAY_SHELLS,
+  "G Ocho SE":  GETAWAY_SHELLS,
+  // MP Legend Series (Master Spas LSX 700/800/850 — same 6 shells as Twilight)
+  "LSX 700":    TWILIGHT_AND_LSX_LARGE_SHELLS,
+  "LSX 800":    TWILIGHT_AND_LSX_LARGE_SHELLS,
+  "LSX 850":    TWILIGHT_AND_LSX_LARGE_SHELLS,
+  // LSX 900 — only 3 shells
+  "LSX 900":    LSX_900_SHELLS,
+  // H2X Swim Spas
+  "X T15D":     H2X_SHELLS,
+  "X T19D":     H2X_SHELLS,
+  "X T19D MAX": H2X_SHELLS,
+  "X T21D":     H2X_SHELLS,
+  "X Ch15D":    H2X_SHELLS,
+};
+
+/** model_code → list of valid cabinet codes (subset of CABINET_COLORS codes). */
+export const MODEL_VALID_CABINET_CODES: Record<string, readonly string[]> = {
+  // Twilight + Clarity + LH + Legend share the same standard premium cabinet set
+  "TS 7.2":     STANDARD_PREMIUM_CABINETS,
+  "TS 7.25":    STANDARD_PREMIUM_CABINETS,
+  "TS 8.2":     STANDARD_PREMIUM_CABINETS,
+  "TS 8.25":    STANDARD_PREMIUM_CABINETS,
+  "TS 240X":    STANDARD_PREMIUM_CABINETS,
+  "C Bal 6":    STANDARD_PREMIUM_CABINETS,
+  "C Bal 6 CS": STANDARD_PREMIUM_CABINETS,
+  "C Bal 7":    STANDARD_PREMIUM_CABINETS,
+  "C Bal 8":    STANDARD_PREMIUM_CABINETS,
+  "C Bal 9":    STANDARD_PREMIUM_CABINETS,
+  "C Prec 7":   STANDARD_PREMIUM_CABINETS,
+  "LH L6":      STANDARD_PREMIUM_CABINETS,
+  "LH L7":      STANDARD_PREMIUM_CABINETS,
+  "LH S7":      STANDARD_PREMIUM_CABINETS,
+  "LSX 700":    STANDARD_PREMIUM_CABINETS,
+  "LSX 800":    STANDARD_PREMIUM_CABINETS,
+  "LSX 850":    STANDARD_PREMIUM_CABINETS,
+  "LSX 900":    STANDARD_PREMIUM_CABINETS,
+  // Getaway — no Midnight cabinets
+  "G BarH LE":  GETAWAY_CABINETS,
+  "G BarH SE":  GETAWAY_CABINETS,
+  "G Ocho CS":  GETAWAY_CABINETS,
+  "G Ocho SE":  GETAWAY_CABINETS,
+  // H2X — Dark Walnut + Graphite Grey only
+  "X T15D":     H2X_CABINETS,
+  "X T19D":     H2X_CABINETS,
+  "X T19D MAX": H2X_CABINETS,
+  "X T21D":     H2X_CABINETS,
+  "X Ch15D":    H2X_CABINETS,
+};
+
+/**
+ * model_code → list of case-insensitive substring patterns matched against
+ * option product `name`. An option product is shown only if at least one
+ * pattern matches — UNLESS the model has no entry here, in which case the
+ * existing line-level filter is used (show-all fallback).
+ *
+ * Starts empty: option product names live in the live DB (imported from a
+ * Google Sheet), not in code. Populate per model as the catalog stabilizes.
+ */
+export const MODEL_VALID_OPTION_PATTERNS: Record<string, readonly string[]> = {
+  // Example shape (kept commented until DB option names are confirmed):
+  // "TS 240X": ["Cover Lift", "Spa Step", "Salt System", "Audio", "Ozonator"],
+};
+
+/** Returns valid shell color names for a model — falls back to all if unmapped. */
+export function getValidShellColors(modelCode?: string | null): readonly string[] {
+  if (!modelCode) return SHELL_COLORS;
+  return MODEL_VALID_SHELL_COLORS[modelCode.trim()] ?? SHELL_COLORS;
+}
+
+/** Returns valid cabinet entries for a model — falls back to all if unmapped. */
+export function getValidCabinets(modelCode?: string | null): { code: string; name: string }[] {
+  if (!modelCode) return CABINET_COLORS;
+  const codes = MODEL_VALID_CABINET_CODES[modelCode.trim()];
+  if (!codes) return CABINET_COLORS;
+  return CABINET_COLORS.filter((c) => codes.includes(c.code));
+}
+
+/** Returns true if an add-on option product is available for a model.
+ *  - No model selected → true (show all)
+ *  - Model has no entry in the option map → true (show all, line-level filter still applies upstream) */
+export function isOptionAvailableForModel(productName: string, modelCode?: string | null): boolean {
+  if (!modelCode) return true;
+  const patterns = MODEL_VALID_OPTION_PATTERNS[modelCode.trim()];
+  if (!patterns || patterns.length === 0) return true;
+  const lower = productName.toLowerCase();
+  return patterns.some((p) => lower.includes(p.toLowerCase()));
+}
