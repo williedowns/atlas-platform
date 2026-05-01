@@ -5,6 +5,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { formatCurrency } from "@/lib/utils";
 import { AutoRefresh } from "@/components/AutoRefresh";
+import { isMainProduct } from "@/lib/inventory-constants";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function compact(n: number): string {
@@ -48,6 +49,7 @@ export default async function FloorModePage({
     .from("contracts")
     .select(`
       id, contract_number, status, total, deposit_paid, is_contingent, created_at,
+      customer_id,
       customer:customers(first_name, last_name),
       sales_rep:profiles(id, full_name),
       line_items
@@ -61,11 +63,59 @@ export default async function FloorModePage({
   const contingent = rows.filter((c) => c.is_contingent);
   const quotes = rows.filter((c) => c.status === "quote");
 
+  // If a customer already has a non-quote contract on this show, treat their
+  // quote as converted — hide it from activity feed and pipeline count.
+  // Match by customer_id OR lowercased name, since rebuilding a contract from
+  // scratch (instead of converting the quote) creates a new customer row with
+  // the same name but a different id.
+  const customerKey = (c: any): string => {
+    const cust = Array.isArray(c.customer) ? c.customer[0] : c.customer;
+    const first = (cust?.first_name ?? "").trim().toLowerCase();
+    const last = (cust?.last_name ?? "").trim().toLowerCase();
+    return `${first}|${last}`;
+  };
+  const contractCustomerIds = new Set(
+    rows
+      .filter((c) => c.status !== "quote")
+      .map((c) => c.customer_id)
+      .filter(Boolean)
+  );
+  const contractCustomerNames = new Set(
+    rows.filter((c) => c.status !== "quote").map(customerKey).filter((k) => k !== "|")
+  );
+  const isConvertedQuote = (c: any) =>
+    c.status === "quote" &&
+    (contractCustomerIds.has(c.customer_id) || contractCustomerNames.has(customerKey(c)));
+  const visibleQuotes = quotes.filter((q) => !isConvertedQuote(q));
+
+  // Resolve product categories so we count only main units (hot tubs, swim
+  // spas, cold tubs, saunas, pools) — not chemicals, options, accessories.
+  const productIds = Array.from(
+    new Set(
+      confirmed
+        .flatMap((c) =>
+          (Array.isArray(c.line_items) ? c.line_items : []).map(
+            (li: any) => li?.product_id as string | undefined
+          )
+        )
+        .filter((pid): pid is string => Boolean(pid))
+    )
+  );
+  const { data: productRows } = productIds.length
+    ? await supabase.from("products").select("id, category").in("id", productIds)
+    : { data: [] as { id: string; category: string | null }[] };
+  const categoryById = new Map(
+    (productRows ?? []).map((p) => [p.id, p.category])
+  );
+
   const totalRevenue = confirmed.reduce((s, c) => s + (c.total ?? 0), 0);
   const totalDeposits = confirmed.reduce((s, c) => s + (c.deposit_paid ?? 0), 0);
   const totalUnits = confirmed.reduce((s, c) => {
     const items = Array.isArray(c.line_items) ? c.line_items : [];
-    return s + items.reduce((q: number, li: any) => q + (li?.quantity ?? 1), 0);
+    return s + items.reduce((q: number, li: any) => {
+      const cat = categoryById.get(li?.product_id);
+      return isMainProduct(cat) ? q + (li?.quantity ?? 1) : q;
+    }, 0);
   }, 0);
 
   // ── Rep leaderboard ────────────────────────────────────────────────────────
@@ -82,7 +132,9 @@ export default async function FloorModePage({
   const leaderboard = Array.from(repMap.values()).sort((a, b) => b.revenue - a.revenue).slice(0, 8);
 
   // ── Recent activity feed ───────────────────────────────────────────────────
-  const recentActivity = rows.slice(0, 10);
+  // Exclude quotes whose customer already has a contract on this show — the
+  // quote was converted, so showing both would double-list the customer.
+  const recentActivity = rows.filter((r) => !isConvertedQuote(r)).slice(0, 10);
 
   const parseLocalDate = (s: string) => {
     const [y, m, d] = s.split("-").map(Number);
@@ -157,10 +209,10 @@ export default async function FloorModePage({
         <div>
           <p className="text-white/40 text-xs uppercase tracking-widest">In Pipeline</p>
           <p className="text-6xl font-black text-amber-400 tabular-nums leading-tight mt-2">
-            {contingent.length + quotes.length}
+            {contingent.length + visibleQuotes.length}
           </p>
           <p className="text-white/40 text-xs mt-2">
-            {contingent.length} contingent · {quotes.length} quotes
+            {contingent.length} contingent · {visibleQuotes.length} quotes
           </p>
         </div>
       </div>
