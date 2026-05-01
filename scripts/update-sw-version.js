@@ -1,43 +1,55 @@
 #!/usr/bin/env node
 /**
  * update-sw-version.js
- * Runs after `next build` to stamp the service worker cache name with the
- * Next.js build ID, forcing browsers to download fresh assets on every deploy.
+ * Stamps public/sw.js CACHE_NAME with a unique-per-deploy ID so installed
+ * PWAs bust their service-worker cache on every push.
  *
- * Usage: node scripts/update-sw-version.js
- * Called automatically via package.json "postbuild" script.
+ * Runs as PREbuild — earlier was postbuild, but Vercel can snapshot /public
+ * before postbuild fires, so the modified sw.js wasn't reaching the CDN. By
+ * running before next build, the change is in place before any snapshot or
+ * Next.js processing happens.
+ *
+ * Version source priority:
+ *   1. VERCEL_GIT_COMMIT_SHA — set by Vercel on every deploy
+ *   2. `git rev-parse --short HEAD` — local dev / non-Vercel CI
+ *   3. `t{timestamp}` — fallback if git is unavailable
  */
 
 const fs = require("fs");
 const path = require("path");
+const { execSync } = require("child_process");
 
-const BUILD_ID_PATH = path.join(__dirname, "..", ".next", "BUILD_ID");
 const SW_PATH = path.join(__dirname, "..", "public", "sw.js");
 
-// Gracefully skip if we're running outside a Next.js build (e.g. dev)
-if (!fs.existsSync(BUILD_ID_PATH)) {
-  console.log("[update-sw-version] .next/BUILD_ID not found — skipping (dev environment?)");
-  process.exit(0);
-}
-
 if (!fs.existsSync(SW_PATH)) {
-  console.error("[update-sw-version] public/sw.js not found — cannot update cache version");
+  console.error("[update-sw-version] public/sw.js not found");
   process.exit(1);
 }
 
-const buildId = fs.readFileSync(BUILD_ID_PATH, "utf-8").trim();
+function resolveVersion() {
+  if (process.env.VERCEL_GIT_COMMIT_SHA) {
+    return process.env.VERCEL_GIT_COMMIT_SHA.slice(0, 12);
+  }
+  try {
+    return execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] })
+      .toString().trim();
+  } catch {
+    return `t${Date.now()}`;
+  }
+}
+
+const version = resolveVersion();
 const swContent = fs.readFileSync(SW_PATH, "utf-8");
 
-// Replace any line that starts with: const CACHE_NAME = "atlas-spas-...";
 const updated = swContent.replace(
   /^const CACHE_NAME = "atlas-spas-[^"]*";/m,
-  `const CACHE_NAME = "atlas-spas-${buildId}";`
+  `const CACHE_NAME = "atlas-spas-${version}";`
 );
 
 if (updated === swContent) {
-  console.warn("[update-sw-version] CACHE_NAME line not found in sw.js — check the pattern");
+  console.warn("[update-sw-version] CACHE_NAME line not matched — check the pattern");
   process.exit(0);
 }
 
 fs.writeFileSync(SW_PATH, updated, "utf-8");
-console.log(`[update-sw-version] ✓ CACHE_NAME updated to atlas-spas-${buildId}`);
+console.log(`[update-sw-version] ✓ CACHE_NAME → atlas-spas-${version}`);
