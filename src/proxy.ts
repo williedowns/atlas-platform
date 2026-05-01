@@ -39,7 +39,9 @@ export async function proxy(request: NextRequest) {
     request.nextUrl.pathname.startsWith("/portal") ||
     request.nextUrl.pathname.startsWith("/manufacturer") ||
     request.nextUrl.pathname.startsWith("/demo") ||
-    request.nextUrl.pathname.startsWith("/dealer/login");
+    request.nextUrl.pathname.startsWith("/dealer/login") ||
+    // Remote signing — token IS the auth, customer has no account
+    request.nextUrl.pathname.startsWith("/sign/");
 
   if (!user && !isPublicPath) {
     return NextResponse.redirect(new URL("/login", request.url));
