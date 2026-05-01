@@ -166,7 +166,7 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
   const [pendingRemoveItemIdx, setPendingRemoveItemIdx] = useState<number | null>(null);
   const [pendingRemoveDiscountIdx, setPendingRemoveDiscountIdx] = useState<number | null>(null);
 
-  const { addLineItem, addLineItemWithUnit, removeLineItem, addDiscount, removeDiscount, setTax, updateLineItemPrice, updateLineItemColors } = useContractStore();
+  const { addLineItem, addLineItemWithUnit, removeLineItem, addDiscount, removeDiscount, setTax, updateLineItemPrice, updateLineItemColors, setDocFeeWaived } = useContractStore();
   const draft = useContractStore((s) => s.draft);
 
   // Inventory unit picker state
@@ -858,10 +858,25 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
               </div>
             ) : null;
           })()}
-          {!draft.doc_fee_waived && (draft.doc_fee_amount ?? 0) > 0 && (
+          {(draft.doc_fee_amount ?? 0) > 0 && (
             <div className="flex justify-between items-center">
-              <span className="text-base text-slate-600">Document Fee</span>
-              <span className="text-base font-semibold text-slate-900">{formatCurrency(draft.doc_fee_amount ?? 0)}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-base text-slate-600">Document Fee</span>
+                <button
+                  type="button"
+                  onClick={() => setDocFeeWaived(!draft.doc_fee_waived)}
+                  className={`text-[11px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full border transition-colors ${
+                    draft.doc_fee_waived
+                      ? "bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200"
+                      : "bg-slate-100 text-slate-600 border-slate-300 hover:bg-slate-200"
+                  }`}
+                >
+                  {draft.doc_fee_waived ? "Waived · Restore" : "Waive"}
+                </button>
+              </div>
+              <span className={`text-base font-semibold ${draft.doc_fee_waived ? "line-through text-slate-400" : "text-slate-900"}`}>
+                {formatCurrency(draft.doc_fee_amount ?? 0)}
+              </span>
             </div>
           )}
           {((draft.tax_amount ?? 0) > 0 || draft.tax_exempt) && (
