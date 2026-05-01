@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { SendForSignatureButton } from "@/components/contracts/SendForSignatureButton";
 
 export default async function QuoteDetailPage({
   params,
@@ -83,6 +84,14 @@ export default async function QuoteDetailPage({
             Continue to Contract
           </Link>
         </div>
+
+        {/* ── Remote signing — when the customer has left and you want them
+             to sign + initial on their own phone instead of redoing the
+             in-person flow. */}
+        <SendForSignatureButton
+          contractId={quote.id}
+          hasCustomerEmail={!!quote.customer?.email}
+        />
 
         {/* ── Customer ───────────────────────────────────────── */}
         <Card>

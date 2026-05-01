@@ -42,7 +42,35 @@ export async function POST(req: Request) {
     consent_timestamp,
     acknowledgments,
     delivery_diagram,
+    idempotency_key,
   } = body;
+
+  // Idempotent replay: if the client sent a key it has used before for this
+  // sales rep, return the original contract instead of creating a duplicate.
+  // This is the recovery path after the 2026-05-01 incident — a network blip
+  // or iPad state loss must never produce two contract rows for one signature.
+  if (idempotency_key) {
+    const { data: existing } = await supabase
+      .from("contracts")
+      .select("id, contract_number")
+      .eq("sales_rep_id", user.id)
+      .eq("idempotency_key", idempotency_key)
+      .maybeSingle();
+    if (existing) {
+      logAction({
+        userId: user.id,
+        action: "contract.idempotent_replay",
+        entityType: "contract",
+        entityId: existing.id,
+        metadata: { idempotency_key, contract_number: existing.contract_number },
+        req,
+      });
+      return NextResponse.json(
+        { contract_id: existing.id, contract_number: existing.contract_number, replayed: true },
+        { status: 200 }
+      );
+    }
+  }
 
   // Capture legal metadata for signature defensibility
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() ?? req.headers.get('x-real-ip') ?? 'unknown';
@@ -85,6 +113,7 @@ export async function POST(req: Request) {
       status: "signed",
       customer_id: customerId,
       sales_rep_id: user.id,
+      idempotency_key: idempotency_key ?? null,
       show_id: (show_id && !show_id.startsWith("store-")) ? show_id : null,
       location_id: location_id ?? null,
       line_items,
@@ -130,7 +159,28 @@ export async function POST(req: Request) {
     .select()
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    // Race condition: two concurrent submissions raced past the dedup check
+    // and the partial unique index caught the second one. Look up the row
+    // that won and return it so the rep doesn't see an error.
+    const isUniqueViolation =
+      error.code === "23505" || /idempotency_key/i.test(error.message ?? "");
+    if (isUniqueViolation && idempotency_key) {
+      const { data: raceWinner } = await supabase
+        .from("contracts")
+        .select("id, contract_number")
+        .eq("sales_rep_id", user.id)
+        .eq("idempotency_key", idempotency_key)
+        .maybeSingle();
+      if (raceWinner) {
+        return NextResponse.json(
+          { contract_id: raceWinner.id, contract_number: raceWinner.contract_number, replayed: true },
+          { status: 200 }
+        );
+      }
+    }
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
 
   // Fire-and-forget audit log
   logAction({

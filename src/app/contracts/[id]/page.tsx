@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { ContingentToggle } from "@/components/contracts/ContingentToggle";
 import { CancelContractButton } from "@/components/contracts/CancelContractButton";
+import { SendForSignatureButton } from "@/components/contracts/SendForSignatureButton";
 import { TaxRefundButton } from "@/components/contracts/TaxRefundButton";
 import { CertViewButton } from "@/components/contracts/CertViewButton";
 import { StatusTimeline } from "@/components/contracts/StatusTimeline";
@@ -618,6 +619,12 @@ export default async function ContractDetailPage({
 
         {/* Actions */}
         <div className="space-y-3 pt-2">
+          {contract.status === "quote" && (
+            <SendForSignatureButton
+              contractId={contract.id}
+              hasCustomerEmail={!!(Array.isArray(contract.customer) ? contract.customer[0]?.email : contract.customer?.email)}
+            />
+          )}
           {contract.status === "ready_for_delivery" && (
             <DeliveryConfirmDialog
               contractId={contract.id}

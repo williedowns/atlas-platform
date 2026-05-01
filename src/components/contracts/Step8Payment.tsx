@@ -182,13 +182,72 @@ export default function Step8Payment() {
     }
   }
 
-  async function handleStart() {
-    const cId = contractId ?? draft.created_contract_id ?? "";
-    if (!cId) {
-      setErrorMessage("No contract ID found. Please restart the flow.");
-      setState("error");
-      return;
+  // Fire-and-forget client error logging. Mirrors Step7Sign so we have an
+  // audit trail of every Step-8 entry that started without a contract ID.
+  const reportClientError = (context: Record<string, unknown>) => {
+    try {
+      fetch("/api/client-errors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event: "contract.submission_failed",
+          context,
+        }),
+        keepalive: true,
+      }).catch(() => {/* non-fatal */});
+    } catch {
+      /* non-fatal */
     }
+  };
+
+  // Auto-recovery: when Step 8 is reached without a contract ID, query the
+  // server for a recent contract this rep created for this customer at this
+  // total. If we find one, the contract was saved server-side and we can
+  // safely proceed to deposit collection — no duplicate, no lost sale.
+  async function findRecentContract(): Promise<string | null> {
+    const email = draft.customer?.email?.trim();
+    if (!email) return null;
+    try {
+      const params = new URLSearchParams({
+        customer_email: email,
+        total: String(draft.total),
+        within_minutes: "120",
+      });
+      const res = await fetch(`/api/contracts/find-recent?${params.toString()}`);
+      if (!res.ok) return null;
+      const data = await res.json().catch(() => null);
+      return data?.contract_id ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function handleStart() {
+    let cId = contractId ?? draft.created_contract_id ?? "";
+
+    if (!cId) {
+      // Log the entry-without-id for diagnostics, then attempt auto-recovery.
+      reportClientError({
+        where: "step8.no_contract_id_on_start",
+        idempotency_key: draft.idempotency_key ?? null,
+        customer_email: draft.customer?.email ?? null,
+        total: draft.total,
+        online: typeof navigator !== "undefined" ? navigator.onLine : null,
+      });
+      setState("processing");
+      setErrorMessage(null);
+      const recovered = await findRecentContract();
+      if (recovered) {
+        cId = recovered;
+      } else {
+        setErrorMessage(
+          "No contract ID found. Your contract may have already saved — open the Contracts list before retrying so you don't double-submit."
+        );
+        setState("error");
+        return;
+      }
+    }
+
     setContractId(cId);
     await processCurrentSplit(cId);
   }

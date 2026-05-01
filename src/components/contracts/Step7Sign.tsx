@@ -39,7 +39,7 @@ interface Step7SignProps {
 type AckKey = AcknowledgmentClause["key"];
 
 export default function Step7Sign({ onNext }: Step7SignProps) {
-  const { draft, setCreatedContractId } = useContractStore();
+  const { draft, setCreatedContractId, setIdempotencyKey } = useContractStore();
   const sigCanvasRef = useRef<any>(null);
   // Per-clause initials pads — one mini SignatureCanvas per acknowledgment.
   // Customer hand-draws their initials in each box. The captured ink is
@@ -93,11 +93,42 @@ export default function Step7Sign({ onNext }: Step7SignProps) {
 
   const canSubmit = hasSigned && printedName.trim().length > 0 && hasConsented && allAcked && !isSubmitting;
 
+  // Fire-and-forget client error logging. Never blocks the contract flow —
+  // a logging outage must not stop the rep from finishing the sale.
+  const reportClientError = (context: Record<string, unknown>) => {
+    try {
+      fetch("/api/client-errors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event: "contract.submission_failed",
+          context,
+        }),
+        keepalive: true,
+      }).catch(() => {/* non-fatal */});
+    } catch {
+      /* non-fatal */
+    }
+  };
+
   const handleSubmit = async () => {
     if (!canSubmit) return;
 
     setIsSubmitting(true);
     setError(null);
+
+    // Generate (or reuse) the idempotency key BEFORE the network request.
+    // Stored in zustand persist, so a retry after iPad sleep / network blip
+    // / page reload re-sends the same key and the server returns the
+    // already-created contract instead of inserting a duplicate.
+    let idempotencyKey = draft.idempotency_key;
+    if (!idempotencyKey) {
+      idempotencyKey =
+        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+      setIdempotencyKey(idempotencyKey);
+    }
 
     try {
       // Get signature as data URL
@@ -135,6 +166,7 @@ export default function Step7Sign({ onNext }: Step7SignProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...draft,
+          idempotency_key: idempotencyKey,
           customer_signature_url: signatureUrl,
           signed_name: printedName.trim(),
           signed_at: nowIso,
@@ -153,39 +185,75 @@ export default function Step7Sign({ onNext }: Step7SignProps) {
       });
 
       if (!contractResponse.ok) {
-        const body = await contractResponse.json().catch(() => null);
+        const errBody = await contractResponse.text().catch(() => "");
+        reportClientError({
+          where: "step7.fetch_not_ok",
+          status: contractResponse.status,
+          body_snippet: errBody.slice(0, 500),
+          idempotency_key: idempotencyKey,
+          customer_email: draft.customer?.email ?? null,
+          total: draft.total,
+        });
+        let parsedErr: { error?: string } | null = null;
+        try { parsedErr = errBody ? JSON.parse(errBody) : null; } catch { /* keep raw */ }
         throw new Error(
-          body?.error ?? `Contract creation failed (${contractResponse.status})`
+          parsedErr?.error ?? `Contract creation failed (${contractResponse.status})`
         );
       }
 
       // Parse response — API returns { contract_id, contract_number }
-      const contractData = await contractResponse.json().catch(() => null);
+      const rawBody = await contractResponse.text().catch(() => "");
+      let contractData: { contract_id?: string; id?: string; contract_number?: string } | null = null;
+      try { contractData = rawBody ? JSON.parse(rawBody) : null; } catch { /* malformed */ }
       const createdId = contractData?.contract_id ?? contractData?.id;
-      if (createdId) {
-        setCreatedContractId(createdId);
-        // Fire-and-forget welcome email
-        fetch(`/api/contracts/${createdId}/welcome-email`, { method: "POST" })
+      // Guard: if the API responded ok but didn't return a contract ID, do NOT
+      // advance to Step 8 — Step 8 needs the ID to charge the deposit. The
+      // contract row may already be saved server-side, so the rep should check
+      // the Contracts list before resubmitting to avoid a duplicate.
+      if (!createdId) {
+        reportClientError({
+          where: "step7.no_contract_id_in_ok_response",
+          status: contractResponse.status,
+          body_snippet: rawBody.slice(0, 500),
+          idempotency_key: idempotencyKey,
+          customer_email: draft.customer?.email ?? null,
+          total: draft.total,
+        });
+        throw new Error(
+          "Submission completed but no contract ID was returned. Check Contracts list before retrying — the contract may already be saved."
+        );
+      }
+      setCreatedContractId(createdId);
+      fetch(`/api/contracts/${createdId}/welcome-email`, { method: "POST" })
+        .catch(() => {/* non-fatal */});
+      const hasInHouse = (draft.financing ?? []).some((f) => f?.type === "in_house");
+      if (hasInHouse) {
+        fetch(`/api/contracts/${createdId}/inhouse-application`, { method: "POST" })
           .catch(() => {/* non-fatal */});
-        // If In-House Financing is on the contract, fire-and-forget the
-        // application packet to Robert Kennedy. The endpoint short-circuits
-        // when no in-house entry exists, so it's safe to always invoke.
-        const hasInHouse = (draft.financing ?? []).some((f) => f?.type === "in_house");
-        if (hasInHouse) {
-          fetch(`/api/contracts/${createdId}/inhouse-application`, { method: "POST" })
-            .catch(() => {/* non-fatal */});
-        }
-        // If contract is contingent on HOA, fire-and-forget the Fair Housing
-        // packet to the customer. Endpoint short-circuits when needs_hoa is false.
-        if (draft.needs_hoa) {
-          fetch(`/api/contracts/${createdId}/hoa-packet`, { method: "POST" })
-            .catch(() => {/* non-fatal */});
-        }
+      }
+      if (draft.needs_hoa) {
+        fetch(`/api/contracts/${createdId}/hoa-packet`, { method: "POST" })
+          .catch(() => {/* non-fatal */});
       }
 
       onNext();
     } catch (err: any) {
-      setError(err.message ?? "Something went wrong. Please try again.");
+      const message = err?.message ?? "Something went wrong. Please try again.";
+      // Always console.error so a rep can read the iPad debug log via Safari
+      // remote inspector if they need to. Server-side audit happened above
+      // for the specific failure cases that detect status / no-id; this
+      // catches network errors, signature capture failures, etc.
+      // eslint-disable-next-line no-console
+      console.error("[Step7Sign] submit failed", err);
+      reportClientError({
+        where: "step7.catch",
+        message,
+        idempotency_key: idempotencyKey,
+        customer_email: draft.customer?.email ?? null,
+        total: draft.total,
+        online: typeof navigator !== "undefined" ? navigator.onLine : null,
+      });
+      setError(message);
     } finally {
       setIsSubmitting(false);
     }

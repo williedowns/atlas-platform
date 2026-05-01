@@ -80,6 +80,13 @@ export interface ContractDraft {
 
   // Set after contract is created at sign step
   created_contract_id?: string;
+
+  // Idempotency key generated client-side at first Step 7 submit. Persisted
+  // alongside the rest of the draft so a retry (network blip, page reload,
+  // iPad sleep) re-uses the same key — server then dedupes via the
+  // `(sales_rep_id, idempotency_key)` partial unique index instead of
+  // creating a duplicate contract row.
+  idempotency_key?: string;
 }
 
 export interface DepositSplit {
@@ -134,6 +141,7 @@ interface ContractStore {
   setPermitJurisdiction: (permit_jurisdiction: string) => void;
   setDeliveryDiagram: (diagram: ContractDraft["delivery_diagram"]) => void;
   setCreatedContractId: (id: string) => void;
+  setIdempotencyKey: (key: string) => void;
   computeTotals: () => void;
   resetDraft: () => void;
 }
@@ -394,6 +402,9 @@ export const useContractStore = create<ContractStore>()(
 
       setCreatedContractId: (id) =>
         set((state) => ({ draft: { ...state.draft, created_contract_id: id } })),
+
+      setIdempotencyKey: (key) =>
+        set((state) => ({ draft: { ...state.draft, idempotency_key: key } })),
 
       computeTotals: () =>
         set((state) => ({
