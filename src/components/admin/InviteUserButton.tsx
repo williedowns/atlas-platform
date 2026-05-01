@@ -12,11 +12,20 @@ const ROLES = [
   { value: "admin", label: "Admin" },
 ] as const;
 
-export function InviteUserButton({ onInvited }: { onInvited?: () => void }) {
+type Location = { id: string; name: string };
+
+export function InviteUserButton({
+  onInvited,
+  locations = [],
+}: {
+  onInvited?: () => void;
+  locations?: Location[];
+}) {
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [fullName, setFullName] = useState("");
   const [role, setRole] = useState("sales_rep");
+  const [locationId, setLocationId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -32,7 +41,12 @@ export function InviteUserButton({ onInvited }: { onInvited?: () => void }) {
     const res = await fetch("/api/admin/send-invite", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, full_name: fullName, role }),
+      body: JSON.stringify({
+        email,
+        full_name: fullName,
+        role,
+        assigned_location_id: locationId || null,
+      }),
     });
 
     const data = await res.json();
@@ -51,6 +65,7 @@ export function InviteUserButton({ onInvited }: { onInvited?: () => void }) {
       setEmail("");
       setFullName("");
       setRole("sales_rep");
+      setLocationId("");
     }, 1500);
   }
 
@@ -139,6 +154,27 @@ export function InviteUserButton({ onInvited }: { onInvited?: () => void }) {
                     ))}
                   </div>
                 </div>
+
+                {locations.length > 0 && (
+                  <div className="flex flex-col gap-1.5">
+                    <label htmlFor="invite-location" className="text-sm font-medium text-slate-700">
+                      Home Location <span className="text-slate-400 font-normal">(optional)</span>
+                    </label>
+                    <select
+                      id="invite-location"
+                      value={locationId}
+                      onChange={(e) => setLocationId(e.target.value)}
+                      className="flex h-12 w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#00929C] focus:border-transparent touch-manipulation"
+                    >
+                      <option value="">None — assign later</option>
+                      {locations.map((l) => (
+                        <option key={l.id} value={l.id}>
+                          {l.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 {error && !loginLink && (
                   <div className="space-y-2">

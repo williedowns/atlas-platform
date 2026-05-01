@@ -42,10 +42,10 @@ export default async function AdminUsersPage() {
 
   if (profile?.role !== "admin") redirect("/dashboard");
 
-  const { data: profiles } = await supabase
-    .from("profiles")
-    .select("*")
-    .order("full_name");
+  const [{ data: profiles }, { data: locations }] = await Promise.all([
+    supabase.from("profiles").select("*").order("full_name"),
+    supabase.from("locations").select("id, name").eq("active", true).order("name"),
+  ]);
 
   return (
     <div className="min-h-screen bg-slate-50 pb-10">
@@ -61,7 +61,7 @@ export default async function AdminUsersPage() {
             <h1 className="text-lg font-bold">Users</h1>
             <p className="text-white/60 text-xs">{profiles?.length ?? 0} team members</p>
           </div>
-          <InviteUserButton />
+          <InviteUserButton locations={locations ?? []} />
         </div>
       </header>
 

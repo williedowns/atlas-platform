@@ -26,7 +26,7 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json();
-  const { email, full_name, role } = body;
+  const { email, full_name, role, assigned_location_id } = body;
 
   if (!email || !role) {
     return NextResponse.json({ error: "email and role are required" }, { status: 400 });
@@ -67,6 +67,7 @@ export async function POST(req: Request) {
         full_name: full_name ?? "",
         role,
         organization_id: profile.organization_id,
+        assigned_location_id: assigned_location_id ?? null,
       },
       { onConflict: "id" }
     );
