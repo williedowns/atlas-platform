@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import CameraCaptureModal from "@/components/contracts/CameraCaptureModal";
 
 interface CustomerFile {
   id: string;
@@ -29,7 +28,6 @@ export default function RequiredDLUploader({ customerId, contractId, category, l
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [cameraOpen, setCameraOpen] = useState(false);
 
   async function refresh() {
     if (!customerId) return;
@@ -106,14 +104,10 @@ export default function RequiredDLUploader({ customerId, contractId, category, l
                 View
               </a>
             )}
-            <button
-              type="button"
-              onClick={() => setCameraOpen(true)}
-              disabled={uploading}
-              className="text-xs font-semibold text-slate-500 hover:text-[#00929C] disabled:opacity-50"
-            >
+            <label className="text-xs font-semibold text-slate-500 hover:text-[#00929C] cursor-pointer">
               Retake
-            </button>
+              <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFile} disabled={uploading} />
+            </label>
             <label className="text-xs font-semibold text-slate-500 hover:text-[#00929C] cursor-pointer">
               Replace file
               <input type="file" accept="image/*,application/pdf" className="hidden" onChange={handleFile} disabled={uploading} />
@@ -122,18 +116,14 @@ export default function RequiredDLUploader({ customerId, contractId, category, l
         </div>
       ) : (
         <div className="mt-1.5 grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={() => setCameraOpen(true)}
-            disabled={uploading}
-            className="inline-flex items-center justify-center px-3 py-1.5 rounded-lg border border-[#00929C] bg-[#00929C] text-white text-xs font-semibold hover:bg-[#007279] disabled:opacity-50"
-          >
+          <label className={`inline-flex items-center justify-center px-3 py-1.5 rounded-lg border border-[#00929C] bg-[#00929C] text-white text-xs font-semibold hover:bg-[#007279] cursor-pointer ${uploading ? "opacity-50 pointer-events-none" : ""}`}>
             <svg className="w-3.5 h-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
             </svg>
-            Take Photo
-          </button>
+            {uploading ? "Uploading…" : "Take Photo"}
+            <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFile} disabled={uploading} />
+          </label>
           <label className="inline-flex items-center justify-center px-3 py-1.5 rounded-lg border border-amber-400 bg-white text-amber-800 text-xs font-semibold hover:bg-amber-50 cursor-pointer">
             {uploading ? "Uploading…" : "Choose File"}
             <input type="file" accept="image/*,application/pdf" className="hidden" onChange={handleFile} disabled={uploading} />
@@ -142,17 +132,6 @@ export default function RequiredDLUploader({ customerId, contractId, category, l
       )}
 
       {error && <p className="text-xs text-red-700 mt-1">{error}</p>}
-
-      {cameraOpen && (
-        <CameraCaptureModal
-          title={`Take Photo — ${label}`}
-          filename={`dl-${category}-${Date.now()}.jpg`}
-          onCapture={async (f) => {
-            await uploadFile(f);
-          }}
-          onClose={() => setCameraOpen(false)}
-        />
-      )}
     </div>
   );
 }

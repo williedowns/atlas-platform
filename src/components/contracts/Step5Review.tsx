@@ -9,7 +9,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import CustomerFileVault from "@/components/contracts/CustomerFileVault";
-import CameraCaptureModal from "@/components/contracts/CameraCaptureModal";
 import {
   formatCurrency,
   formatDate,
@@ -75,7 +74,7 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
   const [checkBankName, setCheckBankName] = useState("");
   const [checkPhotoFileId, setCheckPhotoFileId] = useState<string | null>(null);
   const [checkPhotoUrl, setCheckPhotoUrl] = useState<string | null>(null);
-  const [checkCameraOpen, setCheckCameraOpen] = useState(false);
+  const [checkPhotoIsPdf, setCheckPhotoIsPdf] = useState(false);
   const [checkPhotoUploading, setCheckPhotoUploading] = useState(false);
   const [checkPhotoError, setCheckPhotoError] = useState<string | null>(null);
   // ACH-only fields (collected here for Robert/Lori; Plaid integration will replace manual entry later)
@@ -134,6 +133,7 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
     }
     setCheckPhotoUploading(true);
     setCheckPhotoError(null);
+    setCheckPhotoIsPdf(file.type === "application/pdf" || /\.pdf$/i.test(file.name));
     try {
       const fd = new FormData();
       fd.append("file", file);
@@ -162,6 +162,13 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
     }
   }
 
+  async function handleCheckFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    e.target.value = ""; // reset so picking the same file twice still fires onChange
+    if (!f) return;
+    await uploadCheckPhoto(f);
+  }
+
   function handleAddSplit() {
     if (!canAddSplit) return;
     const split: DepositSplit = {
@@ -182,6 +189,7 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
     setCheckBankName("");
     setCheckPhotoFileId(null);
     setCheckPhotoUrl(null);
+    setCheckPhotoIsPdf(false);
     setCheckPhotoError(null);
     setAchRouting("");
     setAchAccount("");
@@ -713,26 +721,40 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
 
                   {checkPhotoUrl ? (
                     <div className="mt-2 flex items-center gap-3">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={checkPhotoUrl}
-                        alt="Check"
-                        className="h-16 w-24 object-cover rounded border border-slate-200"
-                      />
-                      <div className="flex flex-col gap-1">
-                        <button
-                          type="button"
-                          onClick={() => setCheckCameraOpen(true)}
-                          disabled={checkPhotoUploading}
-                          className="text-xs font-semibold text-[#00929C] hover:underline disabled:opacity-50"
+                      {checkPhotoIsPdf ? (
+                        <a
+                          href={checkPhotoUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="h-16 w-24 rounded border border-slate-200 bg-slate-50 flex items-center justify-center text-[10px] font-bold text-slate-600 hover:bg-slate-100"
                         >
-                          Retake
-                        </button>
+                          PDF
+                        </a>
+                      ) : (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={checkPhotoUrl}
+                          alt="Check"
+                          className="h-16 w-24 object-cover rounded border border-slate-200"
+                        />
+                      )}
+                      <div className="flex flex-col gap-1">
+                        <label className="text-xs font-semibold text-[#00929C] hover:underline cursor-pointer">
+                          {checkPhotoUploading ? "Uploading…" : "Retake / Replace"}
+                          <input
+                            type="file"
+                            accept="image/*,application/pdf"
+                            className="hidden"
+                            onChange={handleCheckFile}
+                            disabled={checkPhotoUploading}
+                          />
+                        </label>
                         <button
                           type="button"
                           onClick={() => {
                             setCheckPhotoFileId(null);
                             setCheckPhotoUrl(null);
+                            setCheckPhotoIsPdf(false);
                           }}
                           className="text-xs font-semibold text-slate-500 hover:text-red-600"
                         >
@@ -741,18 +763,36 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
                       </div>
                     </div>
                   ) : (
-                    <button
-                      type="button"
-                      onClick={() => setCheckCameraOpen(true)}
-                      disabled={checkPhotoUploading || !draft.customer?.id}
-                      className="mt-2 w-full inline-flex items-center justify-center px-3 py-1.5 rounded-lg border border-[#00929C] bg-[#00929C] text-white text-xs font-semibold hover:bg-[#007279] disabled:opacity-50"
-                    >
-                      <svg className="w-3.5 h-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                      </svg>
-                      {checkPhotoUploading ? "Uploading…" : "Take Photo of Check"}
-                    </button>
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      <label className={`inline-flex items-center justify-center px-3 py-1.5 rounded-lg border border-[#00929C] bg-[#00929C] text-white text-xs font-semibold hover:bg-[#007279] cursor-pointer ${(checkPhotoUploading || !draft.customer?.id) ? "opacity-50 pointer-events-none" : ""}`}>
+                        <svg className="w-3.5 h-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        {checkPhotoUploading ? "Uploading…" : "Take Photo"}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          className="hidden"
+                          onChange={handleCheckFile}
+                          disabled={checkPhotoUploading || !draft.customer?.id}
+                        />
+                      </label>
+                      <label className={`inline-flex items-center justify-center px-3 py-1.5 rounded-lg border border-[#00929C] bg-white text-[#00929C] text-xs font-semibold hover:bg-[#00929C]/5 cursor-pointer ${(checkPhotoUploading || !draft.customer?.id) ? "opacity-50 pointer-events-none" : ""}`}>
+                        <svg className="w-3.5 h-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                        Upload File
+                        <input
+                          type="file"
+                          accept="image/*,application/pdf"
+                          className="hidden"
+                          onChange={handleCheckFile}
+                          disabled={checkPhotoUploading || !draft.customer?.id}
+                        />
+                      </label>
+                    </div>
                   )}
 
                   {checkPhotoError && (
@@ -762,17 +802,6 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
                     <p className="mt-1 text-xs text-amber-700">Save the customer at Step 2 first.</p>
                   )}
                 </div>
-
-                {checkCameraOpen && (
-                  <CameraCaptureModal
-                    title="Photo of Check"
-                    filename={`check-${draft.customer?.id ?? "unknown"}-${Date.now()}.jpg`}
-                    onCapture={async (f) => {
-                      await uploadCheckPhoto(f);
-                    }}
-                    onClose={() => setCheckCameraOpen(false)}
-                  />
-                )}
               </div>
             )}
 
