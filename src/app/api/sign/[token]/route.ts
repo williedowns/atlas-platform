@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { logAction } from "@/lib/audit";
 
 // Public endpoint — accepts a signature submission from a customer who
@@ -22,7 +22,7 @@ interface SignSubmitBody {
 }
 
 async function uploadDataUrl(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  supabase: ReturnType<typeof createAdminClient>,
   dataUrl: string,
   path: string
 ): Promise<string | null> {
@@ -44,7 +44,11 @@ export async function POST(
   { params }: { params: Promise<{ token: string }> }
 ) {
   const { token } = await params;
-  const supabase = await createClient();
+  // Service-role client — customer is anonymous and RLS would block both the
+  // contract lookup and the status update. The signing_token in the URL is
+  // the auth; we validate it (exists, not expired, status='quote') in code
+  // before letting the update through.
+  const supabase = createAdminClient();
 
   const body = (await req.json().catch(() => null)) as SignSubmitBody | null;
   if (!body) {

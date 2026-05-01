@@ -1,6 +1,11 @@
 export const dynamic = "force-dynamic";
 
-import { createClient } from "@/lib/supabase/server";
+// Public page — uses the service-role admin client because the customer
+// has no auth session. The token in the URL is the auth: we look up the
+// contract by signing_token and only render when the row exists, is in
+// 'quote' status, and is not expired. RLS would otherwise block the
+// SELECT for anonymous viewers.
+import { createAdminClient } from "@/lib/supabase/admin";
 import RemoteSignForm from "@/components/contracts/RemoteSignForm";
 
 export default async function RemoteSignPage({
@@ -9,7 +14,7 @@ export default async function RemoteSignPage({
   params: Promise<{ token: string }>;
 }) {
   const { token } = await params;
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   const { data: contract } = await supabase
     .from("contracts")
