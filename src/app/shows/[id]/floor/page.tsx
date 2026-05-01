@@ -84,12 +84,17 @@ export default async function FloorModePage({
   // ── Recent activity feed ───────────────────────────────────────────────────
   const recentActivity = rows.slice(0, 10);
 
-  const startDate = new Date(show.start_date);
-  const endDate = new Date(show.end_date);
+  const parseLocalDate = (s: string) => {
+    const [y, m, d] = s.split("-").map(Number);
+    return new Date(y, m - 1, d);
+  };
+  const startDate = parseLocalDate(show.start_date);
+  const endDate = parseLocalDate(show.end_date);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
   const totalDays = Math.round((endDate.getTime() - startDate.getTime()) / 86400000) + 1;
-  const now = new Date();
   const todayISO = new Date().toISOString().split("T")[0];
-  const dayNum = Math.min(totalDays, Math.max(1, Math.round((now.getTime() - startDate.getTime()) / 86400000) + 1));
+  const dayNum = Math.min(totalDays, Math.max(1, Math.round((today.getTime() - startDate.getTime()) / 86400000) + 1));
 
   return (
     <div className="min-h-screen bg-[#010F21] text-white">
