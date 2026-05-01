@@ -122,7 +122,7 @@ export default async function FloorModePage({
           </div>
           <div className="text-right" suppressHydrationWarning>
             <p className="text-white/40 text-[10px] uppercase tracking-widest">Now</p>
-            <p className="text-3xl font-black leading-tight tabular-nums">{formatTime(now)}</p>
+            <p className="text-3xl font-black leading-tight tabular-nums">{formatTime(new Date())}</p>
           </div>
           <Link
             href={`/shows/${id}`}
