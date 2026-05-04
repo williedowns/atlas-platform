@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useCallback } from "react";
+import React, { useState, useRef, useCallback, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { useContractStore } from "@/store/contractStore";
 import { Button } from "@/components/ui/button";
@@ -39,42 +39,78 @@ interface Step7SignProps {
 type AckKey = AcknowledgmentClause["key"];
 
 export default function Step7Sign({ onNext }: Step7SignProps) {
-  const { draft, setCreatedContractId, setIdempotencyKey } = useContractStore();
+  const {
+    draft,
+    setCreatedContractId,
+    setIdempotencyKey,
+    setSignatureDataUrl,
+    setSignedName,
+    setElectronicConsent,
+    setInitialUrl,
+  } = useContractStore();
   const sigCanvasRef = useRef<any>(null);
   // Per-clause initials pads — one mini SignatureCanvas per acknowledgment.
   // Customer hand-draws their initials in each box. The captured ink is
   // stored as a data URL in `initialsUrls` and embedded into the generated
   // PDF so the printed contract shows the actual handwritten initials, not
-  // a typed approximation.
+  // a typed approximation. Mirrored to zustand on every onEnd so a reload
+  // (iPad sleep, accidental tab switch) restores them on remount.
   const initialsRefs = useRef<Record<AckKey, any>>({
     sales_final: null,
     cancellation_forfeit: null,
     rx_30_day: null,
   });
 
-  const [printedName, setPrintedName] = useState("");
-  const [hasSigned, setHasSigned] = useState(false);
-  const [hasConsented, setHasConsented] = useState(false);
+  // Hydrate from persisted draft so a reload mid-signing brings everything
+  // back instead of forcing a redo. Local state is the source of truth for
+  // the canvas (because the canvas itself is a DOM element), but each change
+  // is mirrored to the store via the setters below.
+  const [printedName, setPrintedName] = useState(draft.signed_name ?? "");
+  const [hasSigned, setHasSigned] = useState(!!draft.signature_data_url);
+  const [hasConsented, setHasConsented] = useState(!!draft.electronic_consent);
   const [initialsUrls, setInitialsUrls] = useState<Record<AckKey, string | null>>({
-    sales_final: null,
-    cancellation_forfeit: null,
-    rx_30_day: null,
+    sales_final: draft.initials_urls?.sales_final ?? null,
+    cancellation_forfeit: draft.initials_urls?.cancellation_forfeit ?? null,
+    rx_30_day: draft.initials_urls?.rx_30_day ?? null,
   });
   const allAcked = REQUIRED_ACKNOWLEDGMENTS.every((a) => !!initialsUrls[a.key]);
   const missingAcks = REQUIRED_ACKNOWLEDGMENTS.filter((a) => !initialsUrls[a.key]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Re-paint persisted signature & initials onto their canvases after the
+  // dynamic SignatureCanvas import resolves. Without this a reload would show
+  // hasSigned=true but an empty canvas, leading to a "Could not capture
+  // signature" error on submit.
+  useEffect(() => {
+    if (draft.signature_data_url && sigCanvasRef.current?.fromDataURL) {
+      try { sigCanvasRef.current.fromDataURL(draft.signature_data_url); } catch { /* canvas not ready yet */ }
+    }
+    REQUIRED_ACKNOWLEDGMENTS.forEach((a) => {
+      const url = draft.initials_urls?.[a.key];
+      const ref = initialsRefs.current[a.key];
+      if (url && ref?.fromDataURL) {
+        try { ref.fromDataURL(url); } catch { /* canvas not ready yet */ }
+      }
+    });
+    // Run once on mount — values come from persisted store. Re-running on
+    // store changes would clobber active drawing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleInitialsEnd = useCallback((key: AckKey) => () => {
     const ref = initialsRefs.current[key];
     if (ref && !ref.isEmpty()) {
-      setInitialsUrls((prev) => ({ ...prev, [key]: ref.toDataURL("image/png") }));
+      const url = ref.toDataURL("image/png");
+      setInitialsUrls((prev) => ({ ...prev, [key]: url }));
+      setInitialUrl(key, url);
     }
-  }, []);
+  }, [setInitialUrl]);
 
   const handleInitialsClear = (key: AckKey) => () => {
     initialsRefs.current[key]?.clear();
     setInitialsUrls((prev) => ({ ...prev, [key]: null }));
+    setInitialUrl(key, null);
   };
 
   const depositAmount = draft.deposit_amount;
@@ -83,12 +119,18 @@ export default function Step7Sign({ onNext }: Step7SignProps) {
   const handleSignEnd = useCallback(() => {
     if (sigCanvasRef.current && !sigCanvasRef.current.isEmpty()) {
       setHasSigned(true);
+      try {
+        setSignatureDataUrl(sigCanvasRef.current.toDataURL("image/png"));
+      } catch {
+        /* canvas not ready — handleSubmit re-captures from the live canvas */
+      }
     }
-  }, []);
+  }, [setSignatureDataUrl]);
 
   const handleClear = () => {
     sigCanvasRef.current?.clear();
     setHasSigned(false);
+    setSignatureDataUrl(undefined);
   };
 
   const canSubmit = hasSigned && printedName.trim().length > 0 && hasConsented && allAcked && !isSubmitting;
@@ -409,7 +451,10 @@ export default function Step7Sign({ onNext }: Step7SignProps) {
             <input
               type="checkbox"
               checked={hasConsented}
-              onChange={(e) => setHasConsented(e.target.checked)}
+              onChange={(e) => {
+                setHasConsented(e.target.checked);
+                setElectronicConsent(e.target.checked);
+              }}
               className="mt-0.5 h-5 w-5 rounded border-slate-300 text-[#00929C] accent-[#00929C] cursor-pointer flex-shrink-0"
             />
             <span className="text-sm font-medium text-slate-800">
@@ -460,7 +505,10 @@ export default function Step7Sign({ onNext }: Step7SignProps) {
             label="Print Name"
             type="text"
             value={printedName}
-            onChange={(e) => setPrintedName(e.target.value)}
+            onChange={(e) => {
+              setPrintedName(e.target.value);
+              setSignedName(e.target.value);
+            }}
             placeholder="Customer full name"
           />
         </CardContent>

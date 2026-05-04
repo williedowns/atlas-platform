@@ -65,10 +65,13 @@ export const MODEL_CODE_DISPLAY_NAMES: Record<string, string> = {
   "TS 8.25":    "Twilight Series 8.25",
   "TS 240X":    "Twilight Series 240X",
   // LH / Healthy Living
+  "LH 5":       "Healthy Living 5",
   "LH 6":       "Healthy Living 6",
   "LH 7":       "Healthy Living 7",
+  "LH L5":      "Healthy Living L5",
   "LH L6":      "Healthy Living L6",
   "LH L7":      "Healthy Living L7",
+  "LH S6":      "Healthy Living S6",
   "LH S7":      "Healthy Living S7",
   // Getaway Series
   "G BarH LE":  "Getaway Bar Harbor LE",
@@ -292,8 +295,10 @@ export const MODEL_VALID_SHELL_COLORS: Record<string, readonly string[]> = {
   // Clarity Precision 7 — full 6-shell set
   "C Prec 7":   TWILIGHT_AND_LSX_LARGE_SHELLS,
   // Healthy Living — 2 shells across the line
+  "LH L5":      LH_SHELLS,
   "LH L6":      LH_SHELLS,
   "LH L7":      LH_SHELLS,
+  "LH S6":      LH_SHELLS,
   "LH S7":      LH_SHELLS,
   // Getaway — Bar Harbor + Ocho Rios LE/SE/CS share 2 shells
   "G BarH LE":  GETAWAY_SHELLS,
@@ -328,8 +333,10 @@ export const MODEL_VALID_CABINET_CODES: Record<string, readonly string[]> = {
   "C Bal 8":    STANDARD_PREMIUM_CABINETS,
   "C Bal 9":    STANDARD_PREMIUM_CABINETS,
   "C Prec 7":   STANDARD_PREMIUM_CABINETS,
+  "LH L5":      STANDARD_PREMIUM_CABINETS,
   "LH L6":      STANDARD_PREMIUM_CABINETS,
   "LH L7":      STANDARD_PREMIUM_CABINETS,
+  "LH S6":      STANDARD_PREMIUM_CABINETS,
   "LH S7":      STANDARD_PREMIUM_CABINETS,
   "LSX 700":    STANDARD_PREMIUM_CABINETS,
   "LSX 800":    STANDARD_PREMIUM_CABINETS,

@@ -44,23 +44,41 @@ export async function GET(req: Request) {
   // product_id link would be silently excluded before the category fallback could catch them.
   // Instead both productId and category are handled in the post-fetch filter below.
 
-  const { data, error } = await query.limit(500);
+  // Limit raised to 2000: at 500 rows ordered by created_at desc, units for an
+  // older model could fall off the page BEFORE the post-fetch filter ran,
+  // making them invisible to the rep ("inventory won't pull up" — May 2026
+  // show floor). Filters below stay in the API layer because legacy units
+  // have no product_id link and we still want to match them by model_code.
+  const { data, error } = await query.limit(2000);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // Post-fetch filter: exact product match when available, then model_code, then category
+  // Post-fetch filter: try product_id first, then model_code (works for both
+  // linked and legacy units), then category. The previous version dropped
+  // any unit whose product_id linked to a DIFFERENT product UUID even when
+  // model_code matched — common when the products table has near-duplicate
+  // rows (e.g. "TS 6.2" vs "TS 6.25") and only one is selected.
   let rows = data ?? [];
   if (productId || modelCode || category) {
     rows = rows.filter((u: any) => {
-      if (u.product?.id) {
-        // Unit has a product FK linked — require exact product match
-        return productId ? u.product.id === productId : u.product.category === category;
-      }
-      // Legacy unit with no product_id: try exact model_code match first ("TS 8.25" etc.)
+      // 1. Exact product_id match — best signal when available.
+      if (productId && u.product?.id === productId) return true;
+      // 2. model_code match — works for legacy units (no product_id) AND
+      //    units linked to a near-duplicate product.
       if (modelCode) {
-        return (u as any).model_code === modelCode;
+        if (u.model_code === modelCode) return true;
+        if (u.product?.model_code === modelCode) return true;
       }
-      // Final fallback: category (only when no model_code provided)
-      return category ? getCategoryForModelCode((u as any).model_code) === category : true;
+      // 3. If a productId was requested but neither check above matched,
+      //    don't fall through to category — the rep picked a specific
+      //    product and we shouldn't pollute the picker with siblings.
+      if (productId) return false;
+      // 4. Category-only browse (no productId, no modelCode).
+      if (category) {
+        if (u.product?.category === category) return true;
+        if (getCategoryForModelCode(u.model_code) === category) return true;
+        return false;
+      }
+      return true;
     });
   }
 

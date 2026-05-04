@@ -23,8 +23,15 @@ const US_STATES = [
 const customerSchema = z.object({
   first_name: z.string().min(1, "First name is required"),
   last_name: z.string().min(1, "Last name is required"),
+  // Co-buyer (married-couple purchases) — both optional, but if either
+  // last name OR first name is filled the other isn't required. Atlas's
+  // historical data is full of "Last, His/Hers" pairs.
+  co_buyer_first_name: z.string().optional(),
+  co_buyer_last_name: z.string().optional(),
   email: z.string().email("Valid email is required"),
   phone: z.string().min(1, "Phone is required"),
+  // Optional second contact (co-buyer phone, work number).
+  secondary_phone: z.string().optional(),
   address: z.string(),
   city: z.string(),
   state: z.string(),
@@ -34,8 +41,11 @@ const customerSchema = z.object({
 type CustomerFormValues = {
   first_name: string;
   last_name: string;
+  co_buyer_first_name?: string;
+  co_buyer_last_name?: string;
   email: string;
   phone: string;
+  secondary_phone?: string;
   address: string;
   city: string;
   state: string;
@@ -71,7 +81,7 @@ export default function Step2Customer({ onNext }: Step2CustomerProps) {
       .from("customers")
       .select("*")
       .or(
-        `first_name.ilike.${pattern},last_name.ilike.${pattern},email.ilike.${pattern},phone.ilike.${pattern}`
+        `first_name.ilike.${pattern},last_name.ilike.${pattern},co_buyer_first_name.ilike.${pattern},co_buyer_last_name.ilike.${pattern},email.ilike.${pattern},phone.ilike.${pattern},secondary_phone.ilike.${pattern}`
       )
       .limit(20);
 
@@ -100,8 +110,11 @@ export default function Step2Customer({ onNext }: Step2CustomerProps) {
     defaultValues: {
       first_name: "",
       last_name: "",
+      co_buyer_first_name: "",
+      co_buyer_last_name: "",
       email: "",
       phone: "",
+      secondary_phone: "",
       address: "",
       city: "",
       state: "",
@@ -119,8 +132,11 @@ export default function Step2Customer({ onNext }: Step2CustomerProps) {
       .insert({
         first_name: values.first_name,
         last_name: values.last_name,
+        co_buyer_first_name: values.co_buyer_first_name?.trim() || null,
+        co_buyer_last_name: values.co_buyer_last_name?.trim() || null,
         email: values.email,
         phone: values.phone,
+        secondary_phone: values.secondary_phone?.trim() || null,
         address: values.address || "",
         city: values.city || "",
         state: values.state || "",
@@ -248,6 +264,14 @@ export default function Step2Customer({ onNext }: Step2CustomerProps) {
                 <CardContent className="p-5">
                   <h3 className="text-lg font-semibold text-slate-900">
                     {customer.first_name} {customer.last_name}
+                    {customer.co_buyer_first_name || customer.co_buyer_last_name ? (
+                      <span className="text-slate-500 font-normal">
+                        {" & "}
+                        {[customer.co_buyer_first_name, customer.co_buyer_last_name]
+                          .filter(Boolean)
+                          .join(" ")}
+                      </span>
+                    ) : null}
                   </h3>
                   <div className="flex flex-wrap gap-x-6 gap-y-1 mt-1.5">
                     {customer.email && (
@@ -255,6 +279,9 @@ export default function Step2Customer({ onNext }: Step2CustomerProps) {
                     )}
                     {customer.phone && (
                       <p className="text-sm text-slate-500">{customer.phone}</p>
+                    )}
+                    {customer.secondary_phone && (
+                      <p className="text-sm text-slate-500">{customer.secondary_phone}</p>
                     )}
                   </div>
                   {(customer.city || customer.state) && (
@@ -294,6 +321,21 @@ export default function Step2Customer({ onNext }: Step2CustomerProps) {
 
           <div className="grid grid-cols-2 gap-4">
             <Input
+              label="Co-Buyer First Name"
+              placeholder="Jane (optional)"
+              error={errors.co_buyer_first_name?.message}
+              {...register("co_buyer_first_name")}
+            />
+            <Input
+              label="Co-Buyer Last Name"
+              placeholder="Smith (optional)"
+              error={errors.co_buyer_last_name?.message}
+              {...register("co_buyer_last_name")}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Input
               label="Email *"
               type="email"
               placeholder="john@example.com"
@@ -308,6 +350,14 @@ export default function Step2Customer({ onNext }: Step2CustomerProps) {
               {...register("phone")}
             />
           </div>
+
+          <Input
+            label="Secondary Phone"
+            type="tel"
+            placeholder="(555) 987-6543 (optional — co-buyer or work)"
+            error={errors.secondary_phone?.message}
+            {...register("secondary_phone")}
+          />
 
           <Input
             label="Address"

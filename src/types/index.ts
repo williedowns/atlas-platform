@@ -138,8 +138,14 @@ export interface Customer {
   qbo_customer_id?: string;
   first_name: string;
   last_name: string;
+  // Optional co-buyer (married-couple purchases). Both names print on the
+  // contract when present.
+  co_buyer_first_name?: string | null;
+  co_buyer_last_name?: string | null;
   email: string;
   phone: string;
+  // Optional second contact number — co-buyer phone, work number, etc.
+  secondary_phone?: string | null;
   address: string;
   city: string;
   state: string;

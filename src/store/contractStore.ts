@@ -87,6 +87,24 @@ export interface ContractDraft {
   // `(sales_rep_id, idempotency_key)` partial unique index instead of
   // creating a duplicate contract row.
   idempotency_key?: string;
+
+  // Wizard step the rep was on when last interacted. Persisted so a page
+  // reload (iPad sleep, app backgrounded long enough for iOS to unload the
+  // PWA, accidental navigation) brings them back to where they left off
+  // instead of dumping them on Step 1 with their work apparently lost.
+  wizard_step?: number;
+
+  // Step 7 partial-sign state — persisted so a mid-signature reload
+  // doesn't force the customer to redo everything. Captured incrementally
+  // from local form state in Step7Sign on every change.
+  signature_data_url?: string;
+  signed_name?: string;
+  electronic_consent?: boolean;
+  initials_urls?: {
+    sales_final?: string | null;
+    cancellation_forfeit?: string | null;
+    rx_30_day?: string | null;
+  };
 }
 
 export interface DepositSplit {
@@ -142,8 +160,14 @@ interface ContractStore {
   setDeliveryDiagram: (diagram: ContractDraft["delivery_diagram"]) => void;
   setCreatedContractId: (id: string) => void;
   setIdempotencyKey: (key: string) => void;
+  setWizardStep: (step: number) => void;
+  setSignatureDataUrl: (url: string | undefined) => void;
+  setSignedName: (name: string) => void;
+  setElectronicConsent: (consent: boolean) => void;
+  setInitialUrl: (key: "sales_final" | "cancellation_forfeit" | "rx_30_day", url: string | null) => void;
   computeTotals: () => void;
   resetDraft: () => void;
+  hasDraftProgress: () => boolean;
 }
 
 const initialDraft: ContractDraft = {
@@ -406,12 +430,51 @@ export const useContractStore = create<ContractStore>()(
       setIdempotencyKey: (key) =>
         set((state) => ({ draft: { ...state.draft, idempotency_key: key } })),
 
+      setWizardStep: (wizard_step) =>
+        set((state) => ({ draft: { ...state.draft, wizard_step } })),
+
+      setSignatureDataUrl: (signature_data_url) =>
+        set((state) => ({ draft: { ...state.draft, signature_data_url } })),
+
+      setSignedName: (signed_name) =>
+        set((state) => ({ draft: { ...state.draft, signed_name } })),
+
+      setElectronicConsent: (electronic_consent) =>
+        set((state) => ({ draft: { ...state.draft, electronic_consent } })),
+
+      setInitialUrl: (key, url) =>
+        set((state) => ({
+          draft: {
+            ...state.draft,
+            initials_urls: {
+              ...(state.draft.initials_urls ?? {}),
+              [key]: url,
+            },
+          },
+        })),
+
       computeTotals: () =>
         set((state) => ({
           draft: { ...state.draft, ...computeTotalsFromDraft(state.draft) },
         })),
 
       resetDraft: () => set({ draft: initialDraft }),
+
+      // True if the draft has any sales-rep work to lose: customer locked in,
+      // any line items selected, deposit / financing started, or signing in
+      // progress. Used by /contracts/new to decide whether to auto-resume vs
+      // show a Resume / Start Over prompt instead of silently wiping work.
+      hasDraftProgress: () => {
+        const d = get().draft;
+        return Boolean(
+          d.customer ||
+            (d.line_items && d.line_items.length > 0) ||
+            (d.deposit_splits && d.deposit_splits.length > 0) ||
+            (d.financing && d.financing.length > 0) ||
+            d.signature_data_url ||
+            d.signed_name
+        );
+      },
     }),
     {
       name: "atlas-contract-draft-v5",

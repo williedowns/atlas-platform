@@ -260,6 +260,14 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
                 <span className="text-slate-500">Name</span>
                 <p className="font-medium">
                   {draft.customer.first_name} {draft.customer.last_name}
+                  {draft.customer.co_buyer_first_name || draft.customer.co_buyer_last_name ? (
+                    <>
+                      {" & "}
+                      {[draft.customer.co_buyer_first_name, draft.customer.co_buyer_last_name]
+                        .filter(Boolean)
+                        .join(" ")}
+                    </>
+                  ) : null}
                 </p>
               </div>
               <div>
@@ -268,7 +276,10 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
               </div>
               <div>
                 <span className="text-slate-500">Phone</span>
-                <p className="font-medium">{draft.customer.phone}</p>
+                <p className="font-medium">
+                  {draft.customer.phone}
+                  {draft.customer.secondary_phone ? ` · ${draft.customer.secondary_phone}` : ""}
+                </p>
               </div>
               <div>
                 <span className="text-slate-500">Address</span>

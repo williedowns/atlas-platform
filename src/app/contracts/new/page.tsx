@@ -33,18 +33,53 @@ function NewContractContent() {
   const searchParams = useSearchParams();
   const fromQuoteId = searchParams.get("from");
 
-  const { resetDraft } = useContractStore();
+  const { resetDraft, setWizardStep } = useContractStore();
+  const persistedStep = useContractStore((s) => s.draft.wizard_step);
+  const customerOnDraft = useContractStore((s) => s.draft.customer);
+  const lineItemsOnDraft = useContractStore((s) => s.draft.line_items);
+  const hasDraftProgress = useContractStore((s) => s.hasDraftProgress);
   const [step, setStep] = useState(1);
   const [loadingQuote, setLoadingQuote] = useState(!!fromQuoteId);
+  // Resume prompt: shown on mount when there's persisted in-progress work AND
+  // we're not loading from a saved quote. Replaces the previous behavior of
+  // unconditionally wiping the draft, which destroyed any work that survived
+  // a page reload (iPad sleep mid-show, accidental tab close, app
+  // backgrounded long enough for iOS to evict the PWA WebView).
+  const [showResumePrompt, setShowResumePrompt] = useState(false);
 
   useEffect(() => {
     if (fromQuoteId) {
       loadFromQuote(fromQuoteId);
-    } else {
-      resetDraft();
+      return;
     }
+    if (hasDraftProgress()) {
+      // Don't touch persisted state — let the rep choose Resume or Start Over.
+      setShowResumePrompt(true);
+    }
+    // No progress on draft → default empty state is fine, nothing to reset.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Persist the wizard step so a reload returns to the same step.
+  useEffect(() => {
+    setWizardStep(step);
+  }, [step, setWizardStep]);
+
+  function handleResume() {
+    // Snap to the last step the rep was on. Customer with no line items is
+    // still mid-step-2 — clamp to a sane value if persistedStep is missing.
+    const target = persistedStep && persistedStep >= 1 && persistedStep <= 8
+      ? persistedStep
+      : (lineItemsOnDraft && lineItemsOnDraft.length > 0 ? 3 : (customerOnDraft ? 3 : 2));
+    setStep(target);
+    setShowResumePrompt(false);
+  }
+
+  function handleStartOver() {
+    resetDraft();
+    setStep(1);
+    setShowResumePrompt(false);
+  }
 
   async function loadFromQuote(quoteId: string) {
     const supabase = createClient();
@@ -127,6 +162,37 @@ function NewContractContent() {
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
           </svg>
           <p className="text-slate-500">Loading quote…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (showResumePrompt) {
+    const customerName = customerOnDraft
+      ? `${customerOnDraft.first_name ?? ""} ${customerOnDraft.last_name ?? ""}`.trim()
+      : null;
+    const itemCount = lineItemsOnDraft?.length ?? 0;
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-lg p-6 space-y-5">
+          <div>
+            <p className="text-[10px] uppercase tracking-widest text-[#00929C] font-bold">In progress</p>
+            <h1 className="text-2xl font-black text-slate-900 mt-1">Resume contract?</h1>
+            <p className="text-sm text-slate-500 mt-2">
+              You have an in-progress contract saved on this iPad
+              {customerName ? ` for ${customerName}` : ""}
+              {itemCount > 0 ? ` (${itemCount} item${itemCount === 1 ? "" : "s"})` : ""}.
+              Pick up where you left off, or start a fresh contract.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Button onClick={handleResume} variant="default" size="xl" className="w-full">
+              Resume in-progress
+            </Button>
+            <Button onClick={handleStartOver} variant="outline" size="xl" className="w-full">
+              Start a new contract
+            </Button>
+          </div>
         </div>
       </div>
     );

@@ -124,10 +124,14 @@ export async function GET(
   y += 5;
 
   // Customer block
+  const primaryName = `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim();
+  const coBuyerName = `${c.co_buyer_first_name ?? ""} ${c.co_buyer_last_name ?? ""}`.trim();
+  const buyerHeader = coBuyerName ? `${primaryName} & ${coBuyerName}` : primaryName;
+  const phones = [c.phone, c.secondary_phone].filter((p) => p && String(p).trim()).join(" · ");
   const customerLines = [
-    [`${c.first_name ?? ""} ${c.last_name ?? ""}`.trim(), { bold: true, size: 11 }],
+    [buyerHeader, { bold: true, size: 11 }],
     [c.email ?? "", { size: 9, color: SLATE_500 }],
-    [c.phone ?? "", { size: 9, color: SLATE_500 }],
+    [phones, { size: 9, color: SLATE_500 }],
     [c.address ?? "", { size: 9, color: SLATE_500 }],
     [c.city ? `${c.city}, ${c.state ?? ""} ${c.zip ?? ""}`.trim() : "", { size: 9, color: SLATE_500 }],
   ].filter(([t]) => t) as Array<[string, { bold?: boolean; size?: number; color?: [number, number, number] }]>;
