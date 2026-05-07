@@ -15,6 +15,7 @@ import { StatusTimeline } from "@/components/contracts/StatusTimeline";
 import { DeliveryConfirmDialog } from "@/components/contracts/DeliveryConfirmDialog";
 import CustomerFileVault from "@/components/contracts/CustomerFileVault";
 import ContingencyTracker from "@/components/contracts/ContingencyTracker";
+import DeliveryTimeframeEditor from "@/components/contracts/DeliveryTimeframeEditor";
 import ScheduleDeliveryButton from "@/components/contracts/ScheduleDeliveryButton";
 import FinancingDetailsCard from "@/components/contracts/FinancingDetailsCard";
 import { LowDepositBadge } from "@/components/contracts/LowDepositBadge";
@@ -97,6 +98,19 @@ export default async function ContractDetailPage({
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
+
+  // Resolve who last edited the delivery timeframe (for the audit-style line
+  // on the editor card). Skipped if no edit has happened yet.
+  let timeframeEditorName: string | null = null;
+  if (contract.delivery_timeframe_updated_by) {
+    const { data: editor } = await supabase
+      .from("profiles")
+      .select("full_name")
+      .eq("id", contract.delivery_timeframe_updated_by)
+      .maybeSingle();
+    timeframeEditorName = editor?.full_name ?? null;
+  }
+  const canEditTimeframe = ["admin", "manager"].includes(profile?.role ?? "");
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let auditLogs: any[] = [];
@@ -476,6 +490,18 @@ export default async function ContractDetailPage({
           permitJurisdiction={contract.permit_jurisdiction ?? null}
           needsHoa={!!contract.needs_hoa}
           hoaStatus={contract.hoa_status ?? null}
+        />
+
+        {/* Delivery timeframe — admin/manager can edit; sales_rep sees read-only.
+            Customer portal swaps from showing this to the firm scheduled date
+            once delivery_work_orders.scheduled_date is set. */}
+        <DeliveryTimeframeEditor
+          contractId={contract.id}
+          currentValue={contract.delivery_timeframe ?? null}
+          updatedAt={contract.delivery_timeframe_updated_at ?? null}
+          updatedByName={timeframeEditorName}
+          canEdit={canEditTimeframe}
+          firmScheduledDate={deliveryRow?.scheduled_date ?? null}
         />
 
         {/* Customer file vault — DL, proof of homeownership, ACH, permits, etc. */}

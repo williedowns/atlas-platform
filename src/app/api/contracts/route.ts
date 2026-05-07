@@ -42,6 +42,7 @@ export async function POST(req: Request) {
     consent_timestamp,
     acknowledgments,
     delivery_diagram,
+    delivery_timeframe,
     idempotency_key,
   } = body;
 
@@ -144,6 +145,9 @@ export async function POST(req: Request) {
       permit_status: needs_permit ? "pending" : null,
       hoa_status: needs_hoa ? "pending" : null,
       delivery_diagram: delivery_diagram ?? null,
+      delivery_timeframe: delivery_timeframe?.trim() || null,
+      delivery_timeframe_updated_at: delivery_timeframe?.trim() ? new Date().toISOString() : null,
+      delivery_timeframe_updated_by: delivery_timeframe?.trim() ? user.id : null,
       signature_metadata: {
         ip_address: ip,
         user_agent: userAgent,

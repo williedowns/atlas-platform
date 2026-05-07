@@ -19,6 +19,7 @@ export type AuditAction =
   | "cert.marked_received"
   | "contract.refund_marked"
   | "contract.tax_refund_issued"
+  | "contract.delivery_timeframe_updated"
   | "lead.created"
   | "lead.status_changed";
 

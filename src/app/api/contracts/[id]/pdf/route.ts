@@ -342,6 +342,26 @@ export async function GET(
   doc.text(formatCurrency(balanceDue), totalsRight - 1, y + 1.5, { align: "right" });
   y += 12;
 
+  // ─── Estimated Delivery Timeframe ────────────────────────────────────────
+  // Sales-rep estimated window (e.g. "2-4 weeks", "Mid-June"). Customer-
+  // facing — also shown on the customer portal until a firm delivery date
+  // is scheduled. Editable by admin/manager from the contract detail page.
+  const deliveryTimeframe = (contract.delivery_timeframe ?? "").toString().trim();
+  if (deliveryTimeframe.length > 0) {
+    if (y > 250) { doc.addPage(); y = M; }
+    doc.setFillColor(232, 245, 247); // soft teal tint
+    doc.setDrawColor(...TEAL);
+    doc.setLineWidth(0.3);
+    doc.roundedRect(totalsLeft - 2, y - 4, totalsRight - totalsLeft + 4, 9, 1.5, 1.5, "FD");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(...TEAL);
+    doc.text("Estimated Delivery", totalsLeft, y + 1.5);
+    doc.setFont("helvetica", "bold");
+    doc.text(deliveryTimeframe, totalsRight - 1, y + 1.5, { align: "right" });
+    y += 12;
+  }
+
   // ─── External notes (customer-facing) ────────────────────────────────────
   const externalNotes = (contract.external_notes ?? "").toString().trim();
   if (externalNotes.length > 0) {

@@ -32,6 +32,7 @@ const ACTION_LABELS: Record<AuditAction, { label: string; variant: "default" | "
   "cert.marked_received":      { label: "Cert Received",          variant: "success" },
   "contract.refund_marked":    { label: "Refund Marked",          variant: "warning" },
   "contract.tax_refund_issued":{ label: "Tax Refund Issued",      variant: "warning" },
+  "contract.delivery_timeframe_updated": { label: "Delivery Timeframe", variant: "secondary" },
   "lead.created":              { label: "Lead Created",           variant: "accent" },
   "lead.status_changed":       { label: "Lead Status",            variant: "secondary" },
 };

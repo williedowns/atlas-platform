@@ -78,6 +78,12 @@ export interface ContractDraft {
     fields: Record<string, string>;
   }>;
 
+  // Sales-rep estimated delivery window — freeform text like "2-4 weeks",
+  // "Mid-June". Customer-visible in portal + printed on contract PDF.
+  // Set in Step 6 of the wizard; editable by admin/manager from the
+  // contract detail page after creation.
+  delivery_timeframe?: string;
+
   // Set after contract is created at sign step
   created_contract_id?: string;
 
@@ -158,6 +164,7 @@ interface ContractStore {
   setNeedsHoa: (needs_hoa: boolean) => void;
   setPermitJurisdiction: (permit_jurisdiction: string) => void;
   setDeliveryDiagram: (diagram: ContractDraft["delivery_diagram"]) => void;
+  setDeliveryTimeframe: (timeframe: string | undefined) => void;
   setCreatedContractId: (id: string) => void;
   setIdempotencyKey: (key: string) => void;
   setWizardStep: (step: number) => void;
@@ -423,6 +430,9 @@ export const useContractStore = create<ContractStore>()(
 
       setDeliveryDiagram: (delivery_diagram) =>
         set((state) => ({ draft: { ...state.draft, delivery_diagram } })),
+
+      setDeliveryTimeframe: (delivery_timeframe) =>
+        set((state) => ({ draft: { ...state.draft, delivery_timeframe } })),
 
       setCreatedContractId: (id) =>
         set((state) => ({ draft: { ...state.draft, created_contract_id: id } })),

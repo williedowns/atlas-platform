@@ -48,6 +48,7 @@ export default async function PortalContractPage({ params }: { params: Promise<{
         id, contract_number, status, total, subtotal, tax_amount,
         deposit_paid, balance_due, payment_method, created_at,
         line_items, contract_pdf_url,
+        delivery_timeframe, delivery_timeframe_updated_at,
         tax_exempt_cert_received, tax_exempt_cert_received_at,
         customer:customers(first_name, last_name, email, phone),
         show:shows(name),
@@ -67,6 +68,7 @@ export default async function PortalContractPage({ params }: { params: Promise<{
         id, contract_number, status, total, subtotal, tax_amount,
         deposit_paid, balance_due, payment_method, created_at,
         line_items, contract_pdf_url,
+        delivery_timeframe, delivery_timeframe_updated_at,
         tax_exempt_cert_received, tax_exempt_cert_received_at,
         customer:customers(first_name, last_name, email, phone),
         show:shows(name),
@@ -77,6 +79,16 @@ export default async function PortalContractPage({ params }: { params: Promise<{
       .single();
     contract = data;
   }
+
+  // Pull the latest delivery work order — its scheduled_date supersedes the
+  // sales-rep timeframe estimate once a firm delivery slot is booked.
+  const { data: deliveryWO } = await supabase
+    .from("delivery_work_orders")
+    .select("scheduled_date, scheduled_window")
+    .eq("contract_id", id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
   if (!contract) redirect("/portal/dashboard");
 
@@ -101,6 +113,44 @@ export default async function PortalContractPage({ params }: { params: Promise<{
       </header>
 
       <main className="px-4 py-6 max-w-2xl mx-auto space-y-4">
+
+        {/* Expected Delivery — prominent card directly under header.
+            Shows firm scheduled date if a delivery_work_order has one set,
+            otherwise the rep's estimated timeframe. Hidden entirely when
+            neither is available. */}
+        {(deliveryWO?.scheduled_date || c.delivery_timeframe) && (
+          <div className="bg-gradient-to-br from-[#00929C] to-[#007a82] text-white rounded-2xl p-5 shadow-md">
+            <p className="text-[10px] uppercase tracking-widest font-bold text-white/70">
+              {deliveryWO?.scheduled_date ? "Scheduled Delivery" : "Expected Delivery"}
+            </p>
+            {deliveryWO?.scheduled_date ? (
+              <>
+                <p className="text-2xl font-black mt-1">
+                  {formatDate(deliveryWO.scheduled_date)}
+                </p>
+                {deliveryWO.scheduled_window && (
+                  <p className="text-sm text-white/90 mt-0.5">
+                    Arrival window: {deliveryWO.scheduled_window}
+                  </p>
+                )}
+                <p className="text-xs text-white/70 mt-2">
+                  We'll be in touch the day before to confirm.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-2xl font-black mt-1">{c.delivery_timeframe}</p>
+                <p className="text-xs text-white/70 mt-2">
+                  This is your sales rep's current estimate. We'll update it here if anything changes
+                  {c.delivery_timeframe_updated_at
+                    ? ` — last updated ${formatDate(c.delivery_timeframe_updated_at)}`
+                    : ""}
+                  .
+                </p>
+              </>
+            )}
+          </div>
+        )}
 
         {/* Order Status Timeline */}
         <div className="bg-white rounded-2xl border border-slate-200 p-5">
