@@ -111,6 +111,16 @@ export interface ContractDraft {
     cancellation_forfeit?: string | null;
     rx_30_day?: string | null;
   };
+
+  // Texas tax-exemption certificate captured at the show floor when the
+  // rep flips tax_exempt to true in Step 5. Stored as a data URL because
+  // the contract row doesn't exist yet — actual upload to Supabase Storage
+  // happens in Step 7's handleSubmit AFTER the contract is created (using
+  // the existing /api/portal/upload-cert endpoint with the new contract ID).
+  // Cleared by resetDraft so a future contract on the same iPad starts clean.
+  tax_exempt_cert_data_url?: string;
+  tax_exempt_cert_filename?: string;
+  tax_exempt_cert_mime?: string;
 }
 
 export interface DepositSplit {
@@ -172,6 +182,7 @@ interface ContractStore {
   setSignedName: (name: string) => void;
   setElectronicConsent: (consent: boolean) => void;
   setInitialUrl: (key: "sales_final" | "cancellation_forfeit" | "rx_30_day", url: string | null) => void;
+  setTaxExemptCert: (cert: { dataUrl: string; filename: string; mime: string } | null) => void;
   computeTotals: () => void;
   resetDraft: () => void;
   hasDraftProgress: () => boolean;
@@ -460,6 +471,16 @@ export const useContractStore = create<ContractStore>()(
               ...(state.draft.initials_urls ?? {}),
               [key]: url,
             },
+          },
+        })),
+
+      setTaxExemptCert: (cert) =>
+        set((state) => ({
+          draft: {
+            ...state.draft,
+            tax_exempt_cert_data_url: cert?.dataUrl,
+            tax_exempt_cert_filename: cert?.filename,
+            tax_exempt_cert_mime: cert?.mime,
           },
         })),
 

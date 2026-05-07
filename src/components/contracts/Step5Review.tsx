@@ -28,9 +28,92 @@ interface Step5ReviewProps {
   onNext: () => void;
 }
 
+// Resize an image File to a max dimension and re-encode as a JPEG data URL.
+// Keeps the staged tax-cert under localStorage limits (zustand persist) when
+// the rep snaps a 4032x3024 iPhone photo. Falls back to the original via
+// FileReader if anything throws (canvas blocked, weird MIME, etc).
+function downscaleImageToDataUrl(file: File, maxDim: number, quality: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onload = () => {
+      img.onload = () => {
+        const ratio = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const w = Math.round(img.width * ratio);
+        const h = Math.round(img.height * ratio);
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          // Fallback to the original encoding so we still capture something
+          resolve(reader.result as string);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, w, h);
+        try {
+          resolve(canvas.toDataURL("image/jpeg", quality));
+        } catch {
+          resolve(reader.result as string);
+        }
+      };
+      img.onerror = () => reject(new Error("Could not load image"));
+      img.src = reader.result as string;
+    };
+    reader.onerror = () => reject(new Error("Could not read file"));
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function Step5Review({ onNext }: Step5ReviewProps) {
   const router = useRouter();
-  const { draft, addDepositSplit, removeDepositSplit, updateLineItemSerial, setNotes, setExternalNotes, setNeedsPermit, setNeedsHoa, setPermitJurisdiction, setTaxExempt, setDocFeeWaived } = useContractStore();
+  const { draft, addDepositSplit, removeDepositSplit, updateLineItemSerial, setNotes, setExternalNotes, setNeedsPermit, setNeedsHoa, setPermitJurisdiction, setTaxExempt, setDocFeeWaived, setTaxExemptCert } = useContractStore();
+  const [certError, setCertError] = useState<string | null>(null);
+
+  // Capture or pick the customer's Texas tax-exemption certificate. The
+  // contract row doesn't exist yet at Step 5, so we stage the file as a
+  // data URL in the persisted draft. Step 7's submit handler does the real
+  // upload to /api/portal/upload-cert once the contract has been created.
+  // Image is downscaled to keep the data URL well under localStorage limits.
+  async function handleCertFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCertError(null);
+    // Hard cap at 10MB. PDFs up to that size pass through; images get downscaled.
+    if (file.size > 10 * 1024 * 1024) {
+      setCertError("File too large — max 10MB.");
+      return;
+    }
+    try {
+      const isImage = file.type.startsWith("image/");
+      let dataUrl: string;
+      if (isImage) {
+        dataUrl = await downscaleImageToDataUrl(file, 1600, 0.85);
+      } else {
+        dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = () => reject(new Error("Could not read file"));
+          reader.readAsDataURL(file);
+        });
+      }
+      setTaxExemptCert({
+        dataUrl,
+        filename: file.name || (isImage ? "tax-cert.jpg" : "tax-cert.pdf"),
+        mime: file.type || (isImage ? "image/jpeg" : "application/pdf"),
+      });
+    } catch (err: any) {
+      setCertError(err?.message ?? "Could not read file. Please try again.");
+    } finally {
+      // Reset the input so picking the same file again still fires onChange
+      e.target.value = "";
+    }
+  }
+
+  function handleClearCert() {
+    setTaxExemptCert(null);
+    setCertError(null);
+  }
 
   const contractNumber = useMemo(() => generateContractNumber(), []);
   const today = useMemo(() => formatDate(new Date()), []);
@@ -397,7 +480,7 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
         if (!isTexas) return null;
         return (
           <Card className={`border-2 transition-all ${draft.tax_exempt ? "border-emerald-400 bg-emerald-50" : "border-slate-200"}`}>
-            <CardContent className="p-4">
+            <CardContent className="p-4 space-y-3">
               <button
                 type="button"
                 onClick={() => setTaxExempt(!draft.tax_exempt)}
@@ -417,6 +500,101 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
                   </p>
                 </div>
               </button>
+
+              {/* Cert capture — only when toggle is ON. File is staged in
+                  the persisted draft and uploaded to /api/portal/upload-cert
+                  in Step 7 after the contract row is created. */}
+              {draft.tax_exempt && (
+                <div className="rounded-xl bg-white border border-emerald-200 p-3">
+                  {draft.tax_exempt_cert_data_url ? (
+                    <div className="flex items-center gap-3">
+                      {draft.tax_exempt_cert_mime?.startsWith("image/") ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={draft.tax_exempt_cert_data_url}
+                          alt="Tax exemption certificate"
+                          className="h-16 w-24 object-cover rounded border border-slate-200"
+                        />
+                      ) : (
+                        <div className="h-16 w-24 rounded border border-slate-200 bg-slate-50 flex items-center justify-center text-[10px] font-bold text-slate-600">
+                          PDF
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-emerald-800 truncate">
+                          ✓ Certificate attached
+                        </p>
+                        {draft.tax_exempt_cert_filename && (
+                          <p className="text-[11px] text-slate-500 truncate">
+                            {draft.tax_exempt_cert_filename}
+                          </p>
+                        )}
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          Will upload when contract is signed.
+                        </p>
+                      </div>
+                      <div className="flex flex-col gap-1 flex-shrink-0">
+                        <label className="text-xs font-semibold text-[#00929C] hover:underline cursor-pointer">
+                          Replace
+                          <input
+                            type="file"
+                            accept="image/*,application/pdf"
+                            className="hidden"
+                            onChange={handleCertFile}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={handleClearCert}
+                          className="text-xs font-semibold text-slate-500 hover:text-red-600 text-left"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-xs font-semibold text-slate-700 mb-2">
+                        Attach certificate (Form 01-339)
+                      </p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <label className="inline-flex items-center justify-center px-3 py-2 rounded-lg border border-emerald-500 bg-emerald-500 text-white text-xs font-semibold hover:bg-emerald-600 cursor-pointer touch-manipulation">
+                          <svg className="w-3.5 h-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                          </svg>
+                          Take Photo
+                          <input
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            className="hidden"
+                            onChange={handleCertFile}
+                          />
+                        </label>
+                        <label className="inline-flex items-center justify-center px-3 py-2 rounded-lg border border-emerald-500 bg-white text-emerald-600 text-xs font-semibold hover:bg-emerald-50 cursor-pointer touch-manipulation">
+                          <svg className="w-3.5 h-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                          </svg>
+                          Upload File
+                          <input
+                            type="file"
+                            accept="image/*,application/pdf"
+                            className="hidden"
+                            onChange={handleCertFile}
+                          />
+                        </label>
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-2">
+                        Image or PDF · max 10MB · uploaded with the signed contract.
+                      </p>
+                    </>
+                  )}
+                  {certError && (
+                    <p className="mt-2 text-xs text-red-700">{certError}</p>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
         );

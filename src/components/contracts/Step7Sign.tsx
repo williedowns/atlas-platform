@@ -278,6 +278,27 @@ export default function Step7Sign({ onNext }: Step7SignProps) {
           .catch(() => {/* non-fatal */});
       }
 
+      // Tax-exemption certificate captured at Step 5 — convert the staged
+      // data URL back into a File and POST to the existing portal upload
+      // endpoint (which accepts staff uploads on behalf of customers).
+      // Fire-and-forget: a failure here must not block the contract flow.
+      if (draft.tax_exempt_cert_data_url) {
+        (async () => {
+          try {
+            const blob = await fetch(draft.tax_exempt_cert_data_url!).then((r) => r.blob());
+            const file = new File(
+              [blob],
+              draft.tax_exempt_cert_filename ?? "tax-cert.jpg",
+              { type: draft.tax_exempt_cert_mime ?? blob.type ?? "image/jpeg" }
+            );
+            const fd = new FormData();
+            fd.append("file", file);
+            fd.append("contractId", createdId);
+            await fetch("/api/portal/upload-cert", { method: "POST", body: fd });
+          } catch {/* non-fatal — bookkeeper can chase via the portal later */}
+        })();
+      }
+
       onNext();
     } catch (err: any) {
       const message = err?.message ?? "Something went wrong. Please try again.";
