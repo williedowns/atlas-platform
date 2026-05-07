@@ -14,6 +14,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { getViewAsContext } from "@/lib/view-as";
+import { todayStartUTC, daysAgoStartUTC, monthStartUTC, todayDateStringInTZ } from "@/lib/dates";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -39,16 +40,25 @@ export default async function DashboardPage() {
   if (effectiveRole === "field_crew") redirect("/field");
 
   const isAdmin = !viewAs.isImpersonatingUser && (effectiveRole === "admin" || effectiveRole === "manager");
-  const today = new Date().toISOString().split("T")[0];
-  const yesterday = new Date(Date.now() - 86400000).toISOString().split("T")[0];
-  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split("T")[0];
+  // All day boundaries computed in Atlas's local tz (America/Chicago) and
+  // expressed as UTC instants. UTC-day math previously kept late-evening
+  // Central contracts in "today's revenue" until UTC rolled over the next
+  // morning Central — Willie reported the same contract showing for days.
+  const todayStart = todayStartUTC().toISOString();
+  const yesterdayStart = daysAgoStartUTC(1).toISOString();
+  const monthStart = monthStartUTC().toISOString();
+  // YYYY-MM-DD date strings in Central Time, used for date-typed columns
+  // (shows.start_date, sales_goals.period_start) where a UTC ISO would
+  // shift the matching window by 5–6 hours.
+  const today = todayDateStringInTZ();
+  const monthStartDate = today.slice(0, 7) + "-01";
 
   // ── Today's stats ─────────────────────────────────────────────────────────
   // Admin/manager: company-wide. Sales reps: their own contracts only.
   const todayStatsQuery = supabase
     .from("contracts")
     .select("total, deposit_paid, status, is_contingent, sales_rep_id")
-    .gte("created_at", `${today}T00:00:00`)
+    .gte("created_at", todayStart)
     .not("status", "in", '("quote","draft","cancelled")')
     .eq("is_contingent", false)
     .gt("deposit_paid", 0);
@@ -59,8 +69,8 @@ export default async function DashboardPage() {
   const yesterdayStatsQuery = supabase
     .from("contracts")
     .select("total, deposit_paid")
-    .gte("created_at", `${yesterday}T00:00:00`)
-    .lt("created_at", `${today}T00:00:00`)
+    .gte("created_at", yesterdayStart)
+    .lt("created_at", todayStart)
     .not("status", "in", '("quote","draft","cancelled")')
     .eq("is_contingent", false)
     .gt("deposit_paid", 0);
@@ -92,27 +102,37 @@ export default async function DashboardPage() {
   const cntDelta = pctDelta(todayCount, yCount);
 
   // ── 30-day revenue trend for chart ──────────────────────────────────────────
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString().split("T")[0];
+  const thirtyDaysAgoStart = daysAgoStartUTC(30).toISOString();
   const trendStatsQuery = supabase
     .from("contracts")
     .select("total, created_at")
-    .gte("created_at", `${thirtyDaysAgo}T00:00:00`)
+    .gte("created_at", thirtyDaysAgoStart)
     .not("status", "in", '("quote","draft","cancelled")')
     .eq("is_contingent", false)
     .gt("deposit_paid", 0);
   if (!isAdmin) trendStatsQuery.eq("sales_rep_id", effectiveUserId);
   const { data: trendRows } = await trendStatsQuery;
 
-  // Bucket by day (inclusive of today)
+  // Bucket by day (inclusive of today). Days are computed in Central Time so
+  // a contract signed at 9 PM CDT lands on its local-day bucket, not the next
+  // UTC day.
   const trendMap = new Map<string, { revenue: number; contracts: number }>();
   for (let i = 30; i >= 0; i--) {
-    const d = new Date(Date.now() - i * 86400000).toISOString().split("T")[0];
-    trendMap.set(d, { revenue: 0, contracts: 0 });
+    const start = daysAgoStartUTC(i);
+    const localDay = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Chicago",
+      year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(start);
+    trendMap.set(localDay, { revenue: 0, contracts: 0 });
   }
   for (const row of trendRows ?? []) {
-    const d = row.created_at?.split("T")[0];
-    if (!d || !trendMap.has(d)) continue;
-    const bucket = trendMap.get(d)!;
+    if (!row.created_at) continue;
+    const localDay = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Chicago",
+      year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(new Date(row.created_at));
+    if (!trendMap.has(localDay)) continue;
+    const bucket = trendMap.get(localDay)!;
     bucket.revenue += row.total ?? 0;
     bucket.contracts += 1;
   }
@@ -197,18 +217,21 @@ export default async function DashboardPage() {
   const monthStatsQuery = supabase
     .from("contracts")
     .select("total, deposit_paid")
-    .gte("created_at", `${monthStart}T00:00:00`)
+    .gte("created_at", monthStart)
     .not("status", "in", '("quote","draft","cancelled")')
     .eq("is_contingent", false)
     .gt("deposit_paid", 0);
   if (!isAdmin) monthStatsQuery.eq("sales_rep_id", effectiveUserId);
 
   // ── Goal for current user this month ──────────────────────────────────────
+  // sales_goals.period_start is a date column — pass the local-tz "first
+  // of the month" string so a goal entered on the 1st of the month is found
+  // even when UTC has already rolled past midnight Central.
   const goalQuery = supabase
     .from("sales_goals")
     .select("target_revenue, target_contracts")
     .eq("rep_id", effectiveUserId)
-    .eq("period_start", monthStart)
+    .eq("period_start", monthStartDate)
     .maybeSingle();
 
   // ── Reorder alerts (admin/manager only) ──────────────────────────────────
@@ -408,7 +431,14 @@ export default async function DashboardPage() {
           />
           <KpiCard
             label={isAdmin ? "Contingent Today" : "My Contingent"}
-            value={contingentContracts?.filter(c => c.created_at?.startsWith(today)).length ?? 0}
+            value={contingentContracts?.filter((c) => {
+              if (!c.created_at) return false;
+              const localDay = new Intl.DateTimeFormat("en-CA", {
+                timeZone: "America/Chicago",
+                year: "numeric", month: "2-digit", day: "2-digit",
+              }).format(new Date(c.created_at));
+              return localDay === today;
+            }).length ?? 0}
             sublabel="Pending conditions"
             accentColor="#d97706"
           />
