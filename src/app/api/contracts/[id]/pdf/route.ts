@@ -496,26 +496,46 @@ export async function GET(
   })();
   const ackedAt = acks.acknowledged_at ? formatDate(acks.acknowledged_at) : "";
 
+  // Initials box geometry — declared up here so the body text knows where
+  // to stop wrapping. RIGHT_GAP is the breathing room between the wrapped
+  // body text and the box border (was 4mm — too tight, paragraphs were
+  // colliding with the box on dense acknowledgments).
+  const ackBoxW = 32;
+  const ackBoxLeft = W - M - ackBoxW;
+  const ackRightGap = 6;
+  const ackBodyMaxW = ackBoxLeft - M - ackRightGap;
+
   for (const a of REQUIRED_ACKNOWLEDGMENTS) {
     const inkUrl = (acks as Record<string, unknown>)[`${a.key}_initials_url`] as string | undefined;
     const isChecked = !isQuote && !!acks[a.key];
-    const lines = doc.splitTextToSize(a.text, W - M * 2 - 36);
+    // Wrap the label too — "Texas Prescription — 30-Day Deadline" is wide
+    // enough at 8.5pt bold that some renderers nudged it past the box edge.
+    const labelLines = doc.splitTextToSize(a.label, ackBodyMaxW);
+    const textLines = doc.splitTextToSize(a.text, ackBodyMaxW);
+    const labelH = labelLines.length * 3.6;
+    const textH = textLines.length * 3.4;
     // Block height needs to comfortably hold 18mm-tall ink so initials
-    // render at a real legible size, never as a thumbnail.
-    const blockH = Math.max(20, lines.length * 3.6 + 6);
+    // render at a real legible size, never as a thumbnail. The +8 covers
+    // top padding (3.5) + label-to-text gap (~2) + bottom padding (~2.5).
+    const blockH = Math.max(22, labelH + textH + 8);
     if (y + blockH > 275) { doc.addPage(); y = M; }
 
-    // Label + body (left side)
+    // Label (wrapped, navy bold)
     doc.setFont("helvetica", "bold");
     doc.setFontSize(8.5);
     doc.setTextColor(...NAVY);
-    doc.text(a.label, M, y + 3.5);
+    let ly = y + 3.5;
+    for (const ln of labelLines) {
+      doc.text(ln, M, ly);
+      ly += 3.6;
+    }
 
+    // Body (wrapped, slate normal)
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7.5);
     doc.setTextColor(...SLATE_900);
-    let ly = y + 7;
-    for (const ln of lines) {
+    ly += 1; // small breathing room between label and body
+    for (const ln of textLines) {
       doc.text(ln, M, ly);
       ly += 3.4;
     }
@@ -523,9 +543,9 @@ export async function GET(
     // Initials box (right side) — embed the actual hand-drawn ink when
     // present, fall back to the typed initials for legacy data, leave
     // empty for quotes so the rep can hand-collect on print.
-    const boxW = 32;
+    const boxW = ackBoxW;
     const boxH = blockH;
-    const boxLeft = W - M - boxW;
+    const boxLeft = ackBoxLeft;
     doc.setDrawColor(...SLATE_500);
     doc.setLineWidth(0.4);
     doc.rect(boxLeft, y, boxW, boxH);
