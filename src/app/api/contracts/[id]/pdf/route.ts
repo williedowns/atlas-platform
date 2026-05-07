@@ -61,42 +61,45 @@ export async function GET(
   const M = 16;  // outer margin
   let y = 0;
 
-  // ─── Header band ─────────────────────────────────────────────────────────
-  // Navy strip with logo on left + doc metadata on right
-  const headerH = 34;
-  doc.setFillColor(...NAVY);
-  doc.rect(0, 0, W, headerH, "F");
+  // ─── Header (printer-friendly) ───────────────────────────────────────────
+  // Plain white background with the logo on the left and doc metadata on
+  // the right, separated from the body by a single thin teal accent line.
+  // The previous design used a full-bleed navy fill — pretty on screen but
+  // burned through ink on every print.
+  const headerH = 30;
 
-  // Logo (PNG) — left side, vertically centered
+  // Logo (PNG) — left side
   if (logoDataUrl) {
     // Logo is 480x187 → preserve aspect at ~22mm tall, ~56mm wide
-    try { doc.addImage(logoDataUrl, "PNG", M, 7, 56, 22); } catch {/* fallback below */}
+    try { doc.addImage(logoDataUrl, "PNG", M, 5, 56, 22); } catch {/* fallback below */}
   }
   // Fallback wordmark if logo embed failed
   if (!logoDataUrl) {
-    doc.setTextColor(255, 255, 255);
+    doc.setTextColor(...NAVY);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(22);
-    doc.text("ATLAS SPAS", M, 18);
+    doc.text("ATLAS SPAS", M, 16);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
-    doc.text("& Swim Spas", M, 25);
+    doc.setTextColor(...SLATE_500);
+    doc.text("& Swim Spas", M, 23);
   }
 
-  // Doc title + meta on right
-  doc.setTextColor(255, 255, 255);
+  // Doc title + meta on right — dark text on white
+  doc.setTextColor(...NAVY);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(15);
-  doc.text(docTitle, W - M, 16, { align: "right" });
+  doc.text(docTitle, W - M, 14, { align: "right" });
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
-  doc.setTextColor(180, 200, 220);
-  doc.text(contract.contract_number, W - M, 22, { align: "right" });
-  doc.text(formatDate(contract.created_at), W - M, 27, { align: "right" });
+  doc.setTextColor(...SLATE_500);
+  doc.text(contract.contract_number, W - M, 20, { align: "right" });
+  doc.text(formatDate(contract.created_at), W - M, 25, { align: "right" });
 
-  // Teal accent line under the header
-  doc.setFillColor(...TEAL);
-  doc.rect(0, headerH, W, 1.2, "F");
+  // Single thin teal divider — preserves the brand cue without ink-heavy fills
+  doc.setDrawColor(...TEAL);
+  doc.setLineWidth(0.6);
+  doc.line(M, headerH, W - M, headerH);
 
   y = headerH + 10;
 
