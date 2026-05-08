@@ -905,16 +905,15 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
               <span className="text-base font-semibold text-slate-900">{formatCurrency(draft.doc_fee_tax_amount ?? 0)}</span>
             </div>
           )}
-          {draft.surcharge_enabled && draft.surcharge_amount > 0 && (
-            <div className="flex justify-between items-center">
-              <span className="text-base text-slate-600">CC Surcharge ({(draft.surcharge_rate * 100).toFixed(1)}%)</span>
-              <span className="text-base font-semibold text-slate-900">{formatCurrency(draft.surcharge_amount)}</span>
-            </div>
-          )}
           <div className="border-t border-slate-200 pt-3 flex justify-between items-center">
             <span className="text-xl font-bold text-[#00929C]">Total</span>
             <span className="text-xl font-bold text-[#00929C]">{formatCurrency(draft.total)}</span>
           </div>
+          {draft.surcharge_enabled && draft.surcharge_amount > 0 && (
+            <p className="text-xs text-slate-500 pt-1 leading-relaxed">
+              A {(draft.surcharge_rate * 100).toFixed(1)}% surcharge applies to any portion paid by credit card and is added at the time of payment.
+            </p>
+          )}
         </CardContent>
       </Card>
 

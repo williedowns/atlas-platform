@@ -164,7 +164,8 @@ export default function Step8Payment() {
 
     if (!res.ok) {
       setState("error");
-      setErrorMessage(data?.error ?? "Payment failed. Please try again.");
+      const detail = data?.details ? ` — ${data.details}` : "";
+      setErrorMessage((data?.error ?? "Payment failed. Please try again.") + detail);
       return;
     }
 

@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createECheck } from "@/lib/payments/intuit";
 import { logAction } from "@/lib/audit";
 
 export async function POST(req: Request) {
   const supabase = await createClient();
+  // Service-role client for payments status updates — see charge/route.ts for rationale.
+  const adminSupabase = createAdminClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -60,15 +63,15 @@ export async function POST(req: Request) {
       description: `Atlas Spas - ${contract.contract_number}`,
     });
   } catch (err) {
-    await supabase
+    await adminSupabase
       .from("payments")
-      .update({ status: "failed", error: String(err) } as Record<string, unknown>)
+      .update({ status: "failed" })
       .eq("id", payment.id);
     return NextResponse.json({ error: "ACH submission failed", details: String(err) }, { status: 402 });
   }
 
   if (echeckResult.status === "DECLINED") {
-    await supabase
+    await adminSupabase
       .from("payments")
       .update({ status: "failed" })
       .eq("id", payment.id);
@@ -76,7 +79,7 @@ export async function POST(req: Request) {
   }
 
   // Update payment with eCheck ID (reuse intuit_charge_id column)
-  await supabase
+  await adminSupabase
     .from("payments")
     .update({
       intuit_charge_id: echeckResult.id,

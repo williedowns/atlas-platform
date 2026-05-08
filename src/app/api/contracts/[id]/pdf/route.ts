@@ -299,10 +299,6 @@ export async function GET(
       totalsRow(`Doc Fee Tax (${((contract.tax_rate ?? 0) * 100).toFixed(2)}%)`, formatCurrency(docFeeTax));
     }
   }
-  if ((contract.surcharge_amount ?? 0) > 0) {
-    totalsRow("CC Surcharge", formatCurrency(contract.surcharge_amount));
-  }
-
   // Total divider (sits above the TOTAL row, not through it)
   doc.setDrawColor(...NAVY);
   doc.setLineWidth(0.5);

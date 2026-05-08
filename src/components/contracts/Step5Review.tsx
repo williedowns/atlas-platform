@@ -689,22 +689,16 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
               </div>
             )}
 
-            {draft.surcharge_enabled && draft.surcharge_amount > 0 && (
-              <div className="flex justify-between">
-                <span className="text-slate-600">
-                  CC Surcharge ({(draft.surcharge_rate * 100).toFixed(1)}%)
-                </span>
-                <span className="font-medium">
-                  {formatCurrency(draft.surcharge_amount)}
-                </span>
-              </div>
-            )}
-
             <div className="border-t border-slate-200 pt-3 mt-3">
               <div className="flex justify-between text-lg font-bold text-[#00929C]">
                 <span>Total</span>
                 <span>{formatCurrency(draft.total)}</span>
               </div>
+              {draft.surcharge_enabled && draft.surcharge_amount > 0 && (
+                <p className="text-xs text-slate-500 pt-2 leading-relaxed">
+                  A {(draft.surcharge_rate * 100).toFixed(1)}% surcharge applies to any portion paid by credit card and is added at the time of payment.
+                </p>
+              )}
             </div>
 
             {remaining > 0 && (

@@ -235,7 +235,11 @@ function computeTotalsFromDraft(draft: ContractDraft): Partial<ContractDraft> {
     ? Math.round(docFeeAmount * (draft.tax_rate ?? 0) * 100) / 100
     : 0;
   const totalTax = effectiveItemsTax + doc_fee_tax_amount;
-  const total = Math.max(0, subtotal - discount_total + totalTax + surcharge_amount);
+  // Surcharge is a per-payment fee charged at CC swipe, NOT a contract obligation.
+  // If the balance is paid by check/ACH/financing, the customer never pays it.
+  // Keep surcharge_amount in the return for Step 8 to display the live preview,
+  // but exclude it from the contract's total/balance-due math.
+  const total = Math.max(0, subtotal - discount_total + totalTax);
   const splitsArr = Array.isArray(draft.deposit_splits) ? draft.deposit_splits : [];
   const deposit_amount = splitsArr.reduce((sum, s) => sum + s.amount, 0);
 

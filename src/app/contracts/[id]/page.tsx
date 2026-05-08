@@ -400,16 +400,15 @@ export default async function ContractDetailPage({
                   <span className="text-xs uppercase tracking-wide font-semibold text-amber-700">Waived</span>
                 </div>
               )}
-              {contract.surcharge_amount > 0 && (
-                <div className="flex justify-between text-slate-600">
-                  <span>CC Surcharge</span>
-                  <span>{formatCurrency(contract.surcharge_amount)}</span>
-                </div>
-              )}
               <div className="flex justify-between font-bold text-lg pt-2 border-t border-slate-200 text-slate-900">
                 <span>Total</span>
                 <span>{formatCurrency(contract.total)}</span>
               </div>
+              {contract.surcharge_amount > 0 && (
+                <p className="text-xs text-slate-500 pt-1 leading-relaxed">
+                  A 3.5% surcharge applies to any portion paid by credit card and is added at the time of payment.
+                </p>
+              )}
               {financingArr.filter((f: { financed_amount?: number }) => (f.financed_amount ?? 0) > 0).map((f: { financed_amount: number; financer_name?: string }, i: number) => (
                 <div key={i} className="flex justify-between text-blue-700 pt-1">
                   <span>Financing ({f.financer_name ?? "In-House"})</span>

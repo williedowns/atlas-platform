@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createCharge, createToken } from "@/lib/payments/intuit";
 import { createQBODeposit } from "@/lib/qbo/client";
 import { calculateTax } from "@/lib/avalara/client";
@@ -40,6 +41,11 @@ export async function POST(req: Request) {
   }
 
   const supabase = await createClient();
+  // Service-role client for payments status updates — the payments table has
+  // an INSERT policy but no UPDATE policy, so flips like processing→completed
+  // and processing→failed are silently denied under user RLS. The server
+  // owns those state transitions, not the user, so admin client is correct.
+  const adminSupabase = createAdminClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -121,16 +127,16 @@ export async function POST(req: Request) {
           postalCode: card_postal_code ? String(card_postal_code) : undefined,
         });
       } catch (err) {
-        await supabase
+        await adminSupabase
           .from("payments")
-          .update({ status: "failed", error: String(err) } as Record<string, unknown>)
+          .update({ status: "failed" })
           .eq("id", payment!.id);
         return NextResponse.json({ error: "Card tokenization failed", details: String(err) }, { status: 402 });
       }
     }
 
     if (!resolvedToken) {
-      await supabase.from("payments").update({ status: "failed" }).eq("id", payment!.id);
+      await adminSupabase.from("payments").update({ status: "failed" }).eq("id", payment!.id);
       return NextResponse.json({ error: "No card token available" }, { status: 400 });
     }
 
@@ -153,15 +159,15 @@ export async function POST(req: Request) {
         context: { mobile: true, isEcommerce: false },
       });
     } catch (err) {
-      await supabase
+      await adminSupabase
         .from("payments")
-        .update({ status: "failed", error: String(err) } as Record<string, unknown>)
+        .update({ status: "failed" })
         .eq("id", payment!.id);
       return NextResponse.json({ error: "Payment failed", details: String(err) }, { status: 402 });
     }
 
     if (chargeResult.status !== "CAPTURED") {
-      await supabase
+      await adminSupabase
         .from("payments")
         .update({ status: "failed" })
         .eq("id", payment!.id);
@@ -169,7 +175,7 @@ export async function POST(req: Request) {
     }
 
     // Update payment to completed
-    await supabase
+    await adminSupabase
       .from("payments")
       .update({
         status: "completed",
