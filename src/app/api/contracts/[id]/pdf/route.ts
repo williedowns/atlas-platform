@@ -283,6 +283,13 @@ export async function GET(
     totalsRow("Discount", `-${formatCurrency(discountTotal)}`, { color: RED });
   }
 
+  // Show the running total after discounts so the customer can see what
+  // they're actually paying for the goods before tax + doc fee stack on top.
+  if (discountTotal > 0) {
+    const afterDiscount = Math.max(0, itemsSubtotal - discountTotal);
+    totalsRow("Subtotal after discount", formatCurrency(afterDiscount), { bold: true });
+  }
+
   // contract.tax_amount is the items-only tax that /api/tax returned at the
   // POS — it's already $0 for tax_exempt customers. doc_fee_tax_amount is
   // persisted separately because it's always charged regardless of

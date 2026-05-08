@@ -847,6 +847,17 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
               <span className="text-base font-semibold text-red-600">-{formatCurrency(draft.discount_total)}</span>
             </div>
           )}
+          {draft.discount_total > 0 && (() => {
+            const docFee = draft.doc_fee_waived ? 0 : (draft.doc_fee_amount ?? 0);
+            const itemsSubtotal = Math.max(0, draft.subtotal - docFee);
+            const afterDiscount = Math.max(0, itemsSubtotal - draft.discount_total);
+            return (
+              <div className="flex justify-between items-center pt-1 border-t border-slate-100">
+                <span className="text-base font-semibold text-slate-700">Subtotal after discount</span>
+                <span className="text-base font-bold text-slate-900">{formatCurrency(afterDiscount)}</span>
+              </div>
+            );
+          })()}
           {(() => {
             const waivedValue = draft.line_items
               .filter((i) => i.waived)

@@ -348,6 +348,17 @@ export default async function ContractDetailPage({
                   <span>−{formatCurrency(contract.discount_total)}</span>
                 </div>
               )}
+              {contract.discount_total > 0 && (() => {
+                const docFeeAmt = contract.doc_fee_waived ? 0 : Number(contract.doc_fee_amount ?? 0);
+                const itemsSub = Math.max(0, Number(contract.subtotal ?? 0) - docFeeAmt);
+                const afterDiscount = Math.max(0, itemsSub - Number(contract.discount_total ?? 0));
+                return (
+                  <div className="flex justify-between font-semibold text-slate-700 pt-1 border-t border-slate-100">
+                    <span>Subtotal after discount</span>
+                    <span>{formatCurrency(afterDiscount)}</span>
+                  </div>
+                );
+              })()}
               {/* Items tax. When tax-exempt the row still renders with $0
                   in the value column so the totals breakdown stays
                   consistent — the exempt-status hint moves into the label. */}
@@ -443,20 +454,30 @@ export default async function ContractDetailPage({
             </CardHeader>
             <CardContent className="p-0">
               <ul className="divide-y divide-slate-100">
-                {payments.map((p) => (
-                  <li key={p.id} className="px-4 py-3 flex justify-between items-center">
-                    <div>
-                      <p className="font-medium capitalize">{p.method?.replace(/_/g, " ")}</p>
-                      <p className="text-xs text-slate-400">{p.processed_at ? formatDate(p.processed_at) : "Pending"}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-semibold">{formatCurrency(p.amount)}</p>
-                      <Badge variant={p.status === "completed" ? "success" : "warning"} className="text-xs">
-                        {p.status}
-                      </Badge>
-                    </div>
-                  </li>
-                ))}
+                {payments.map((p) => {
+                  const surcharge = Number(p.surcharge_amount ?? 0);
+                  const amount = Number(p.amount ?? 0);
+                  const totalCharged = amount + surcharge;
+                  return (
+                    <li key={p.id} className="px-4 py-3 flex justify-between items-center">
+                      <div>
+                        <p className="font-medium capitalize">{p.method?.replace(/_/g, " ")}</p>
+                        <p className="text-xs text-slate-400">{p.processed_at ? formatDate(p.processed_at) : "Pending"}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-semibold">{formatCurrency(totalCharged)}</p>
+                        {surcharge > 0 && (
+                          <p className="text-xs text-slate-500">
+                            {formatCurrency(amount)} deposit + {formatCurrency(surcharge)} CC fee
+                          </p>
+                        )}
+                        <Badge variant={p.status === "completed" ? "success" : "warning"} className="text-xs">
+                          {p.status}
+                        </Badge>
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
             </CardContent>
           </Card>
