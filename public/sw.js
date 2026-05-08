@@ -135,12 +135,32 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Navigation: network-first, fall back to cached shell
+  // Navigation: network-first, fall back to cached shell.
+  //
+  // iOS Safari refuses to render a Response from a service worker if the
+  // underlying fetch followed any redirects (response.redirected === true)
+  // and throws "Response served by service worker has redirections".
+  // This kills the app for anyone whose fetch went through a 30x — for
+  // example a logged-out customer hitting /contracts/new and getting
+  // bounced to /login. Rebuild the response without redirect metadata so
+  // Safari will accept it.
   if (request.mode === "navigate") {
     event.respondWith(
-      fetch(request).catch(() =>
-        caches.match("/").then((cached) => cached || fetch(request))
-      )
+      (async () => {
+        try {
+          const response = await fetch(request);
+          if (!response.redirected) return response;
+          const body = await response.blob();
+          return new Response(body, {
+            status: response.status,
+            statusText: response.statusText,
+            headers: response.headers,
+          });
+        } catch {
+          const cached = await caches.match("/");
+          return cached || fetch(request);
+        }
+      })()
     );
     return;
   }
