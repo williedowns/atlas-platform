@@ -9,8 +9,11 @@ function getBaseUrl() {
 }
 
 export async function getQBOAccessToken(): Promise<string> {
-  const { createClient } = await import("@/lib/supabase/server");
-  const supabase = await createClient();
+  // Service-role: qbo_tokens has admin-only RLS (migration 013). Any server
+  // route that needs to call QBO/Intuit Payments — including non-admin users
+  // charging a card — must read the token via service-role.
+  const { createAdminClient } = await import("@/lib/supabase/admin");
+  const supabase = createAdminClient();
 
   const { data: row } = await supabase
     .from("qbo_tokens")
@@ -40,8 +43,9 @@ export async function getQBOAccessToken(): Promise<string> {
 }
 
 export async function getQBORealmId(): Promise<string> {
-  const { createClient } = await import("@/lib/supabase/server");
-  const supabase = await createClient();
+  // Service-role: same RLS reason as getQBOAccessToken — see comment above.
+  const { createAdminClient } = await import("@/lib/supabase/admin");
+  const supabase = createAdminClient();
   const { data: row } = await supabase.from("qbo_tokens").select("realm_id").eq("id", 1).single();
   if (!row?.realm_id) throw new Error("QuickBooks not connected");
   return row.realm_id;
