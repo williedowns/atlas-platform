@@ -224,7 +224,7 @@ export default async function PortalContractPage({ params }: { params: Promise<{
             <div className="flex justify-between text-sm text-emerald-600"><span>Deposit Paid</span><span>-{formatCurrency(c.deposit_paid)}</span></div>
             {ccPayments.map((p, i) => (
               <div key={i} className="flex justify-between text-xs text-slate-500 pl-3">
-                <span>Charged to {p.card_brand ?? "Card"} ····{p.card_last4}</span>
+                <span>Paid by {p.card_brand ?? "Card"} ending in {p.card_last4}</span>
                 <span>{formatCurrency(p.amount)}</span>
               </div>
             ))}

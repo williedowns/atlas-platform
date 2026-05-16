@@ -349,7 +349,7 @@ export async function GET(
   // the deposit total so the printed agreement matches the receipt.
   for (const p of ccPayments) {
     const brand = (p.card_brand ?? "Card").toString();
-    totalsRow(`  Charged to ${brand} ····${p.card_last4}`, formatCurrency(Number(p.amount ?? 0)), { color: SLATE_500, size: 9 });
+    totalsRow(`  Paid by ${brand} ending in ${p.card_last4}`, formatCurrency(Number(p.amount ?? 0)), { color: SLATE_500, size: 9 });
   }
 
   // Balance Due banner
