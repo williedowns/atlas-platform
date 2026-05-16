@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import Link from "next/link";
 import CertUpload from "./CertUpload";
 
@@ -89,6 +90,23 @@ export default async function PortalContractPage({ params }: { params: Promise<{
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
+
+  // Completed CC charges for this contract — RLS on `payments` is staff-only,
+  // so use the admin client. Ownership of the contract was already verified
+  // above before we reach this point. We only surface brand + last4, which
+  // are the same details printed on a paper card receipt.
+  let ccPayments: Array<{ amount: number; card_brand: string | null; card_last4: string | null }> = [];
+  if (contract) {
+    const admin = createAdminClient();
+    const { data } = await admin
+      .from("payments")
+      .select("amount, card_brand, card_last4")
+      .eq("contract_id", id)
+      .eq("status", "completed")
+      .not("card_last4", "is", null)
+      .order("created_at");
+    ccPayments = data ?? [];
+  }
 
   if (!contract) redirect("/portal/dashboard");
 
@@ -204,6 +222,12 @@ export default async function PortalContractPage({ params }: { params: Promise<{
             {c.tax_amount > 0 && <div className="flex justify-between text-sm"><span className="text-slate-500">Tax</span><span>{formatCurrency(c.tax_amount)}</span></div>}
             <div className="flex justify-between font-bold text-[#00929C] text-base border-t border-slate-100 pt-2 mt-1"><span>Total</span><span>{formatCurrency(c.total)}</span></div>
             <div className="flex justify-between text-sm text-emerald-600"><span>Deposit Paid</span><span>-{formatCurrency(c.deposit_paid)}</span></div>
+            {ccPayments.map((p, i) => (
+              <div key={i} className="flex justify-between text-xs text-slate-500 pl-3">
+                <span>Charged to {p.card_brand ?? "Card"} ····{p.card_last4}</span>
+                <span>{formatCurrency(p.amount)}</span>
+              </div>
+            ))}
             {c.balance_due > 0 && <div className="flex justify-between text-sm font-semibold text-amber-600"><span>Balance Due at Delivery</span><span>{formatCurrency(c.balance_due)}</span></div>}
           </div>
         </div>

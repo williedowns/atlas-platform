@@ -51,6 +51,17 @@ export async function GET(
 
   if (!contract) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+  // Completed CC charges — surfaced under "Deposit Paid" so the printed
+  // agreement shows which card was actually run (e.g. "Visa ····4242").
+  const { data: ccPaymentsData } = await supabase
+    .from("payments")
+    .select("amount, card_brand, card_last4")
+    .eq("contract_id", id)
+    .eq("status", "completed")
+    .not("card_last4", "is", null)
+    .order("created_at");
+  const ccPayments: Array<{ amount: number; card_brand: string | null; card_last4: string | null }> = ccPaymentsData ?? [];
+
   const isQuote = contract.status === "quote";
   const docTitle = isQuote ? "QUOTE" : "SALES AGREEMENT";
   const logoDataUrl = await getLogoDataUrl();
@@ -332,6 +343,13 @@ export async function GET(
     totalsRow("Deposit Paid", `-${formatCurrency(depositPaid)}`, { color: EMERALD });
   } else if (depositAmount > 0 && isQuote) {
     totalsRow("Estimated Deposit", `-${formatCurrency(depositAmount)}`, { color: SLATE_500 });
+  }
+
+  // Card payment detail rows — show each charged card as a sub-line under
+  // the deposit total so the printed agreement matches the receipt.
+  for (const p of ccPayments) {
+    const brand = (p.card_brand ?? "Card").toString();
+    totalsRow(`  Charged to ${brand} ····${p.card_last4}`, formatCurrency(Number(p.amount ?? 0)), { color: SLATE_500, size: 9 });
   }
 
   // Balance Due banner
