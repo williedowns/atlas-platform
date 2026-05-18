@@ -63,6 +63,10 @@ export async function POST(req: Request) {
     card_exp_year,
     card_cvc,
     card_postal_code,
+    // Card-on-file (COF) — opt-in at deposit, then reused for the balance
+    save_card_for_balance,   // boolean — customer authorized future reuse
+    consent_amount,          // number — balance shown on consent disclosure
+    use_saved_card,          // boolean — charge against contract.saved_card_token
   } = await req.json();
 
   // Fetch contract
@@ -114,9 +118,33 @@ export async function POST(req: Request) {
     : undefined;
 
   if (method === "credit_card" || method === "debit_card" || method === "financing") {
-    // Tokenize raw card fields if no pre-existing token provided
+    // Saved-card (card-on-file) path — bill the card the customer authorized
+    // at deposit time. Skips tokenization. Rejects expired or missing cards.
+    let savedCardId: string | null = null;
+    if (use_saved_card) {
+      const sct = (contract as { saved_card_token?: string | null }).saved_card_token;
+      const expMonth = (contract as { saved_card_exp_month?: number | null }).saved_card_exp_month;
+      const expYear = (contract as { saved_card_exp_year?: number | null }).saved_card_exp_year;
+      if (!sct) {
+        await adminSupabase.from("payments").update({ status: "failed" }).eq("id", payment!.id);
+        return NextResponse.json({ error: "No saved card on file for this contract" }, { status: 400 });
+      }
+      // Card-expiry check — Intuit will decline anyway, but failing fast here
+      // gives a cleaner error and avoids a network round-trip.
+      if (expMonth && expYear) {
+        const now = new Date();
+        const lastValidMonth = new Date(expYear, expMonth, 0); // 0th day of next month = last day of expiry month
+        if (lastValidMonth.getTime() < now.getTime()) {
+          await adminSupabase.from("payments").update({ status: "failed" }).eq("id", payment!.id);
+          return NextResponse.json({ error: "Saved card has expired. Collect a new card." }, { status: 400 });
+        }
+      }
+      savedCardId = sct;
+    }
+
+    // Tokenize raw card fields if no pre-existing token provided (and not using saved card)
     let resolvedToken = card_token ?? card_present_token;
-    if (!resolvedToken && card_number) {
+    if (!savedCardId && !resolvedToken && card_number) {
       try {
         resolvedToken = await createToken({
           number: String(card_number).replace(/[\s\-]/g, ""),
@@ -135,7 +163,7 @@ export async function POST(req: Request) {
       }
     }
 
-    if (!resolvedToken) {
+    if (!savedCardId && !resolvedToken) {
       await adminSupabase.from("payments").update({ status: "failed" }).eq("id", payment!.id);
       return NextResponse.json({ error: "No card token available" }, { status: 400 });
     }
@@ -144,7 +172,7 @@ export async function POST(req: Request) {
     let chargeResult;
     try {
       const chargeDescription = [
-        `Deposit — ${contract.contract_number}`,
+        savedCardId ? `Balance — ${contract.contract_number}` : `Deposit — ${contract.contract_number}`,
         customerFullName,
         locationName,
         lineItemsSummary,
@@ -152,7 +180,7 @@ export async function POST(req: Request) {
 
       chargeResult = await createCharge({
         amount: totalCharge,
-        card_token: resolvedToken,
+        ...(savedCardId ? { saved_card_id: savedCardId } : { card_token: resolvedToken }),
         description: chargeDescription,
         customerName: customerFullName,
         capture: true,
@@ -209,13 +237,41 @@ export async function POST(req: Request) {
     // The financing entry's funded_amount is updated separately via the
     // "Log draw" UI on FinancingDetailsCard (PATCH /api/contracts/[id]/financing/[idx]).
     const newDepositPaid = (contract.deposit_paid ?? 0) + Number(amount);
+
+    // Card-on-file persistence. Two cases write to saved_card_*:
+    //   1. Deposit charge with save_card_for_balance=true and customer consent
+    //      — store the reusable card.id + consent audit trail.
+    //   2. Saved-card balance charge — refresh brand/last4/expiry from the
+    //      latest response so the UI stays current and the next charge sees
+    //      up-to-date expiry data.
+    const cofUpdate: Record<string, unknown> = {};
+    if (save_card_for_balance && !savedCardId && chargeResult.card?.id) {
+      cofUpdate.saved_card_token = chargeResult.card.id;
+      cofUpdate.saved_card_brand = cardBrand;
+      cofUpdate.saved_card_last4 = cardLast4;
+      cofUpdate.saved_card_exp_month = chargeResult.card.expMonth ? Number(chargeResult.card.expMonth) : null;
+      cofUpdate.saved_card_exp_year = chargeResult.card.expYear ? Number(chargeResult.card.expYear) : null;
+      cofUpdate.saved_card_consent_at = new Date().toISOString();
+      cofUpdate.saved_card_consent_ip = ip;
+      cofUpdate.saved_card_consent_amount = typeof consent_amount === "number" ? consent_amount : null;
+    } else if (savedCardId && chargeResult.card?.id) {
+      // Refresh denormalized fields after a successful saved-card charge.
+      cofUpdate.saved_card_brand = cardBrand ?? (contract as { saved_card_brand?: string }).saved_card_brand;
+      cofUpdate.saved_card_last4 = cardLast4 ?? (contract as { saved_card_last4?: string }).saved_card_last4;
+      if (chargeResult.card.expMonth) cofUpdate.saved_card_exp_month = Number(chargeResult.card.expMonth);
+      if (chargeResult.card.expYear) cofUpdate.saved_card_exp_year = Number(chargeResult.card.expYear);
+    }
+
     await supabase
       .from("contracts")
       .update({
-        status: "deposit_collected",
+        // Saved-card charges are for the BALANCE, not deposit — so don't flip
+        // status to deposit_collected. The status should already be past that.
+        ...(savedCardId ? {} : { status: "deposit_collected" }),
         deposit_paid: newDepositPaid,
         balance_due: Math.max(0, contract.total - financedAtSale - newDepositPaid),
         intuit_payment_id: chargeResult.id,
+        ...cofUpdate,
       })
       .eq("id", contract_id);
 
@@ -275,7 +331,7 @@ export async function POST(req: Request) {
     // Fire-and-forget audit log
     logAction({
       userId: user.id,
-      action: "payment.collected",
+      action: savedCardId ? "payment.charged_with_saved_card" : "payment.collected",
       entityType: "payment",
       entityId: payment!.id,
       metadata: {
@@ -283,9 +339,31 @@ export async function POST(req: Request) {
         amount,
         method,
         charge_id: chargeResult.id,
+        ...(savedCardId ? { saved_card_id: savedCardId } : {}),
       },
       req,
     });
+
+    // Separate audit event when the customer authorized COF reuse on this
+    // deposit — gives chargeback-dispute investigators a clean "consent
+    // captured at <ts> from <ip>" entry to point at.
+    if (save_card_for_balance && !savedCardId && chargeResult.card?.id) {
+      logAction({
+        userId: user.id,
+        action: "payment.card_saved",
+        entityType: "contract",
+        entityId: contract_id,
+        metadata: {
+          payment_id: payment!.id,
+          charge_id: chargeResult.id,
+          card_brand: cardBrand,
+          card_last4: cardLast4,
+          consent_amount: consent_amount ?? null,
+          consent_ip: ip,
+        },
+        req,
+      });
+    }
 
     return NextResponse.json({
       success: true,

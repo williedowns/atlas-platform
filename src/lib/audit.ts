@@ -12,6 +12,8 @@ export type AuditAction =
   | "contract.remote_signed"
   | "payment.collected"
   | "payment.manual_recorded"
+  | "payment.card_saved"
+  | "payment.charged_with_saved_card"
   | "inventory.transferred"
   | "user.invited"
   | "customer.created"

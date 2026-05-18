@@ -25,6 +25,8 @@ const ACTION_LABELS: Record<AuditAction, { label: string; variant: "default" | "
   "contract.remote_signed":    { label: "Remotely Signed",        variant: "success" },
   "payment.collected":         { label: "Payment Collected",      variant: "success" },
   "payment.manual_recorded":   { label: "Manual Payment",         variant: "warning" },
+  "payment.card_saved":        { label: "Card Saved (COF)",       variant: "accent" },
+  "payment.charged_with_saved_card": { label: "Charged Saved Card", variant: "success" },
   "inventory.transferred":     { label: "Inventory Transfer",     variant: "accent" },
   "user.invited":              { label: "User Invited",           variant: "secondary" },
   "customer.created":          { label: "Customer Created",       variant: "accent" },

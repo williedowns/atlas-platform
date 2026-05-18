@@ -347,6 +347,17 @@ export interface Contract {
   payment_method?: PaymentMethod;
   intuit_payment_id?: string;
 
+  // Card-on-file (consent-gated) — populated when customer authorizes
+  // reusing the deposit card to charge the balance at delivery.
+  saved_card_token?: string;
+  saved_card_brand?: string;
+  saved_card_last4?: string;
+  saved_card_exp_month?: number;
+  saved_card_exp_year?: number;
+  saved_card_consent_at?: string;
+  saved_card_consent_ip?: string;
+  saved_card_consent_amount?: number;
+
   // QBO
   qbo_estimate_id?: string;
   qbo_deposit_invoice_id?: string;

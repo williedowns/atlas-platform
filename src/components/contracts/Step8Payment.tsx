@@ -21,6 +21,19 @@ const METHOD_LABEL: Record<string, string> = {
   financing: "Financing (GreenSky / WF)",
 };
 
+// Quick BIN-based brand detection for the consent disclosure text. Final
+// brand on the saved card comes from Intuit's response — this is just so
+// the customer sees an accurate "MasterCard ····8553" while reading consent
+// instead of a generic "card".
+function detectBrand(digits: string): string {
+  const d = digits.replace(/\D/g, "");
+  if (/^4/.test(d)) return "Visa";
+  if (/^(5[1-5]|2[2-7])/.test(d)) return "MasterCard";
+  if (/^3[47]/.test(d)) return "American Express";
+  if (/^6/.test(d)) return "Discover";
+  return "Card";
+}
+
 export default function Step8Payment() {
   const router = useRouter();
   const { draft, resetDraft } = useContractStore();
@@ -46,6 +59,11 @@ export default function Step8Payment() {
   const [cardExpiry, setCardExpiry] = useState("");
   const [cardCvc, setCardCvc] = useState("");
   const [cardZip, setCardZip] = useState("");
+
+  // ── Card-on-file consent (per-split) ──────────────────────
+  // Unchecked by default per Visa/MC network rules — pre-checked boxes do not
+  // constitute valid affirmative consent for storing a payment credential.
+  const [saveCardForBalance, setSaveCardForBalance] = useState(false);
 
   // ── ACH fields ────────────────────────────────────────────
   const [routingNumber, setRoutingNumber] = useState("");
@@ -100,6 +118,10 @@ export default function Step8Payment() {
     if (isCard) {
       const [expMonth, expYear] = cardExpiry.split("/");
       endpoint = "/api/payments/charge";
+      // COF consent only applies to non-financing card swipes — a financing
+      // card is the LENDER'S card, not the customer's, so it can't be reused
+      // for the balance.
+      const offerCof = currentSplit.method === "credit_card" || currentSplit.method === "debit_card";
       body = {
         contract_id: cId,
         amount: currentSplit.amount,
@@ -110,6 +132,12 @@ export default function Step8Payment() {
         card_exp_year: 2000 + Number(expYear),
         card_cvc: cardCvc,
         card_postal_code: cardZip || undefined,
+        ...(offerCof && saveCardForBalance
+          ? {
+              save_card_for_balance: true,
+              consent_amount: remainingBalance,
+            }
+          : {}),
       };
     } else if (isAch) {
       endpoint = "/api/payments/echeck";
@@ -178,6 +206,7 @@ export default function Step8Payment() {
       // Reset card/ACH fields for next split
       setCardNumber(""); setCardExpiry(""); setCardCvc(""); setCardZip("");
       setRoutingNumber(""); setAccountNumber(""); setAccountName("");
+      setSaveCardForBalance(false);
       setCurrentSplitIdx(currentSplitIdx + 1);
       setState("pending");
     }
@@ -452,6 +481,58 @@ export default function Step8Payment() {
                   value={cardZip}
                   onChange={(e) => setCardZip(e.target.value.replace(/\D/g, "").slice(0, 5))}
                 />
+
+                {/* ── Card-on-file consent ───────────────────────────────
+                    Shown only on customer cards (credit/debit), and only
+                    once enough digits have been entered to render the
+                    last 4 + brand in the disclosure. Unchecked by default
+                    — Visa/MC require affirmative opt-in. */}
+                {(currentSplit?.method === "credit_card" || currentSplit?.method === "debit_card") &&
+                  cardNumber.replace(/\s/g, "").length >= 13 &&
+                  remainingBalance > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setSaveCardForBalance((v) => !v)}
+                      className={`w-full text-left rounded-xl border-2 transition-all p-4 ${
+                        saveCardForBalance
+                          ? "border-[#00929C] bg-[#00929C]/8"
+                          : "border-slate-200 bg-white hover:border-[#00929C]/40"
+                      }`}
+                    >
+                      <div className="flex gap-3">
+                        <div
+                          className={`flex-shrink-0 w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all ${
+                            saveCardForBalance
+                              ? "bg-[#00929C] border-[#00929C]"
+                              : "bg-white border-slate-400"
+                          }`}
+                        >
+                          {saveCardForBalance && (
+                            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                            </svg>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-slate-900 text-base leading-tight">
+                            Save card to charge the balance at delivery
+                          </p>
+                          <p className="text-xs text-slate-600 mt-2 leading-relaxed">
+                            I authorize Atlas Spas &amp; Swim Spas to charge the remaining balance of{" "}
+                            <span className="font-semibold text-slate-900">{formatCurrency(remainingBalance)}</span>{" "}
+                            to my{" "}
+                            <span className="font-semibold text-slate-900">
+                              {detectBrand(cardNumber)} ····{cardNumber.replace(/\s/g, "").slice(-4)}
+                            </span>{" "}
+                            at the time of delivery. I understand the final amount may vary slightly based on
+                            delivery-day adjustments and that I will receive a receipt by email when the balance is
+                            charged. This authorization remains in effect until the balance is paid or the order is
+                            cancelled.
+                          </p>
+                        </div>
+                      </div>
+                    </button>
+                  )}
               </div>
             )}
 

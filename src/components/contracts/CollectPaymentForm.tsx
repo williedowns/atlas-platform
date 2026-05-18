@@ -19,6 +19,14 @@ const PAYMENT_METHODS = [
 
 type PaymentState = "idle" | "processing" | "success" | "error";
 
+interface SavedCard {
+  brand: string;
+  last4: string;
+  expMonth: number | null;
+  expYear: number | null;
+  consentAt: string | null;
+}
+
 interface CollectPaymentFormProps {
   contractId: string;
   contractNumber: string;
@@ -28,6 +36,15 @@ interface CollectPaymentFormProps {
   balanceDue: number;
   surchargeEnabled: boolean;
   surchargeRate: number;
+  savedCard: SavedCard | null;
+}
+
+// True when the saved-card expiry is in the past. Cards expire at the END of
+// the named month, so "09/2026" is valid through 2026-09-30 23:59.
+function isCardExpired(expMonth: number | null, expYear: number | null): boolean {
+  if (!expMonth || !expYear) return false;
+  const lastValid = new Date(expYear, expMonth, 0); // 0th day of next month = last day of expiry month
+  return lastValid.getTime() < Date.now();
 }
 
 export function CollectPaymentForm({
@@ -39,8 +56,16 @@ export function CollectPaymentForm({
   balanceDue,
   surchargeEnabled,
   surchargeRate,
+  savedCard,
 }: CollectPaymentFormProps) {
   const router = useRouter();
+
+  // Saved-card path takes priority — when present and not expired, this is
+  // the recommended one-tap flow for the rep. They can still switch off it
+  // via the method buttons if the customer wants to use a different card.
+  const savedCardExpired = savedCard ? isCardExpired(savedCard.expMonth, savedCard.expYear) : false;
+  const offerSavedCard = !!savedCard && !savedCardExpired;
+  const [useSavedCard, setUseSavedCard] = useState(offerSavedCard);
 
   // ── Payment method ────────────────────────────────────────
   const [method, setMethod] = useState<string>("credit_card");
@@ -71,8 +96,10 @@ export function CollectPaymentForm({
 
   const amount = Math.min(Math.max(0, parseFloat(amountInput) || 0), balanceDue);
   const isFinancing = method === "financing";
+  // Surcharge applies for credit card swipes — including the saved-card path
+  // since the saved card is always a credit card under Intuit's COF flow.
   const surchargeAmount =
-    method === "credit_card" && surchargeEnabled && !isFinancing
+    (useSavedCard || (method === "credit_card" && !isFinancing)) && surchargeEnabled
       ? Math.round(amount * surchargeRate * 100) / 100
       : 0;
   const totalToCharge = amount + surchargeAmount;
@@ -116,7 +143,7 @@ export function CollectPaymentForm({
   const canSubmit =
     amount > 0 &&
     state !== "processing" &&
-    (isCard ? cardReady : isAch ? achReady : true);
+    (useSavedCard ? true : isCard ? cardReady : isAch ? achReady : true);
 
   // ── Submit ────────────────────────────────────────────────
   const handleSubmit = async () => {
@@ -127,7 +154,18 @@ export function CollectPaymentForm({
     let endpoint = "/api/payments/record-manual";
     let body: Record<string, unknown> = { contract_id: contractId, amount, method };
 
-    if (isCard) {
+    if (useSavedCard) {
+      // Charge the card the customer authorized at deposit. No card form
+      // values needed — the server resolves the card via contract.saved_card_token.
+      endpoint = "/api/payments/charge";
+      body = {
+        contract_id: contractId,
+        amount,
+        surcharge_amount: surchargeAmount,
+        method: "credit_card",
+        use_saved_card: true,
+      };
+    } else if (isCard) {
       endpoint = "/api/payments/charge";
       const [expMonth, expYear] = cardExpiry.split("/");
       body = {
@@ -177,7 +215,7 @@ export function CollectPaymentForm({
       return;
     }
 
-    setAmountCollected(isCard ? totalToCharge : amount);
+    setAmountCollected(useSavedCard || isCard ? totalToCharge : amount);
     setNewBalance(Math.max(0, balanceDue - amount));
     if (isAch) setSuccessNote("ACH payments typically settle within 1-2 business days.");
     setState("success");
@@ -280,38 +318,110 @@ export function CollectPaymentForm({
         </CardContent>
       </Card>
 
-      {/* Payment Method */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-lg">Payment Method</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 gap-3">
-            {PAYMENT_METHODS.map((m) => (
+      {/* Saved card (card-on-file) — shown when the customer authorized
+          reuse at deposit time. Tap to charge instantly; tap "Use a
+          different payment method" to fall back to the regular flow. */}
+      {savedCard && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">Saved Card</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <button
+              type="button"
+              disabled={savedCardExpired}
+              onClick={() => setUseSavedCard(true)}
+              className={`w-full text-left rounded-xl border-2 transition-all p-4 ${
+                savedCardExpired
+                  ? "border-slate-200 bg-slate-50 opacity-60 cursor-not-allowed"
+                  : useSavedCard
+                  ? "border-[#00929C] bg-[#00929C]/8"
+                  : "border-slate-200 bg-white hover:border-[#00929C]/40"
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <div
+                  className={`flex-shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center ${
+                    useSavedCard && !savedCardExpired
+                      ? "bg-[#00929C] border-[#00929C]"
+                      : "bg-white border-slate-400"
+                  }`}
+                >
+                  {useSavedCard && !savedCardExpired && (
+                    <div className="w-2.5 h-2.5 rounded-full bg-white" />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-slate-900 text-base">
+                    Charge {savedCard.brand} ····{savedCard.last4}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {savedCardExpired
+                      ? "Card expired — collect a new card below."
+                      : `Saved at deposit${
+                          savedCard.consentAt
+                            ? ` on ${new Date(savedCard.consentAt).toLocaleDateString("en-US", {
+                                month: "short",
+                                day: "numeric",
+                                year: "numeric",
+                              })}`
+                            : ""
+                        }${
+                          savedCard.expMonth && savedCard.expYear
+                            ? ` · Expires ${String(savedCard.expMonth).padStart(2, "0")}/${savedCard.expYear}`
+                            : ""
+                        }`}
+                  </p>
+                </div>
+              </div>
+            </button>
+            {useSavedCard && !savedCardExpired && (
               <button
-                key={m.value}
                 type="button"
-                onClick={() => {
-                  setMethod(m.value);
-                  setCardNumber(""); setCardExpiry(""); setCardCvc(""); setCardZip("");
-                  setRoutingNumber(""); setAccountNumber(""); setAccountName("");
-                  setCheckNumber(""); setBankName("");
-                }}
-                className={`h-14 rounded-full text-base font-semibold transition-all touch-manipulation ${
-                  method === m.value
-                    ? "bg-[#00929C] text-white shadow-md"
-                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                }`}
+                onClick={() => setUseSavedCard(false)}
+                className="text-xs text-slate-500 hover:text-[#00929C] underline"
               >
-                {m.label}
+                Use a different payment method
               </button>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Payment Method (hidden when paying with saved card) */}
+      {!useSavedCard && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">Payment Method</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-3">
+              {PAYMENT_METHODS.map((m) => (
+                <button
+                  key={m.value}
+                  type="button"
+                  onClick={() => {
+                    setMethod(m.value);
+                    setCardNumber(""); setCardExpiry(""); setCardCvc(""); setCardZip("");
+                    setRoutingNumber(""); setAccountNumber(""); setAccountName("");
+                    setCheckNumber(""); setBankName("");
+                  }}
+                  className={`h-14 rounded-full text-base font-semibold transition-all touch-manipulation ${
+                    method === m.value
+                      ? "bg-[#00929C] text-white shadow-md"
+                      : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                  }`}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* ── Credit / Debit Card Fields ── */}
-      {isCard && (
+      {!useSavedCard && isCard && (
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-lg">{isFinancing ? "Financing Card Details" : "Card Details"}</CardTitle>
@@ -367,7 +477,7 @@ export function CollectPaymentForm({
       )}
 
       {/* ── ACH / eCheck Fields ── */}
-      {isAch && (
+      {!useSavedCard && isAch && (
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-lg">Bank Account Details</CardTitle>
@@ -424,7 +534,7 @@ export function CollectPaymentForm({
       )}
 
       {/* ── Check Fields (only when method = check) ── */}
-      {isCheck && (
+      {!useSavedCard && isCheck && (
         <Card>
           <CardContent className="py-5 space-y-4">
             <Input
@@ -465,6 +575,8 @@ export function CollectPaymentForm({
       >
         {state === "processing"
           ? "Processing…"
+          : useSavedCard
+          ? `Charge ${formatCurrency(totalToCharge)} to ${savedCard?.brand ?? "Card"} ····${savedCard?.last4 ?? ""}`
           : isCard
           ? `Charge ${formatCurrency(totalToCharge)}`
           : isAch

@@ -39,6 +39,10 @@ export interface ChargeParams {
   card_token?: string;
   // Card present (reader)
   card_present_token?: string;
+  // Saved-card id from a prior charge (card.id) — used for card-on-file
+  // charges where the customer authorized reuse at deposit. Bypasses the
+  // single-use token flow.
+  saved_card_id?: string;
   description?: string;
   customerName?: string;  // shows in Intuit merchant portal transaction list
   capture?: boolean; // true = charge immediately
@@ -58,7 +62,11 @@ export interface ChargeResult {
   // Intuit's actual response shape — confirmed by inspecting a live charge.
   // Brand lives at `cardType` ("Visa", "MasterCard", ...) and the masked PAN
   // at `number` ("xxxxxxxxxxxx8553"). There is no separate `last4` field.
+  // The `id` on the nested card object is the reusable card-on-file
+  // identifier — Intuit lets you pass `{ card: { id } }` on a future
+  // /charges call to bill the same card without re-tokenizing.
   card?: {
+    id?: string;
     number: string;
     cardType: string;
     expMonth: string;
@@ -152,6 +160,11 @@ export async function createCharge(params: ChargeParams): Promise<ChargeResult> 
 
   if (params.card_present_token) {
     body.card = { token: params.card_present_token };
+  } else if (params.saved_card_id) {
+    // Card-on-file path — bill the previously-captured card by its id.
+    // Customer authorization for COF reuse must be captured upstream
+    // before calling this (Visa/MC network rules).
+    body.card = { id: params.saved_card_id };
   } else if (params.card_token) {
     body.token = params.card_token;
   }

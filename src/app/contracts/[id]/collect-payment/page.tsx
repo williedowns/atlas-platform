@@ -49,6 +49,17 @@ export default async function CollectPaymentPage({
           balanceDue={Math.max(0, contract.total - (contract.deposit_paid ?? 0))}
           surchargeEnabled={contract.location?.cc_surcharge_enabled ?? false}
           surchargeRate={contract.location?.cc_surcharge_rate ?? 0.035}
+          savedCard={
+            contract.saved_card_token
+              ? {
+                  brand: contract.saved_card_brand ?? "Card",
+                  last4: contract.saved_card_last4 ?? "",
+                  expMonth: contract.saved_card_exp_month ?? null,
+                  expYear: contract.saved_card_exp_year ?? null,
+                  consentAt: contract.saved_card_consent_at ?? null,
+                }
+              : null
+          }
         />
       </main>
     </div>
