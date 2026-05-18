@@ -535,11 +535,12 @@ export async function GET(
 
   // Initials box geometry — declared up here so the body text knows where
   // to stop wrapping. RIGHT_GAP is the breathing room between the wrapped
-  // body text and the box border (was 4mm — too tight, paragraphs were
-  // colliding with the box on dense acknowledgments).
+  // body text and the box border. 6mm still let "Atlas Spas & Swim" touch
+  // the box on the Texas Prescription acknowledgment — bumped to 12mm so
+  // every wrapped line has a clear gutter from the box border.
   const ackBoxW = 32;
   const ackBoxLeft = W - M - ackBoxW;
-  const ackRightGap = 6;
+  const ackRightGap = 12;
   const ackBodyMaxW = ackBoxLeft - M - ackRightGap;
 
   for (const a of REQUIRED_ACKNOWLEDGMENTS) {
