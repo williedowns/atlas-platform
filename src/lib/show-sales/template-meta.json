@@ -1,0 +1,626 @@
+{
+  "sheets": [
+    {
+      "name": "Sales",
+      "rows": 203,
+      "cols": 113,
+      "frozen_panes": "D3",
+      "headers": [
+        {
+          "col": 1,
+          "letter": "A",
+          "header": "Day"
+        },
+        {
+          "col": 2,
+          "letter": "B",
+          "header": "Status"
+        },
+        {
+          "col": 3,
+          "letter": "C",
+          "header": "#"
+        },
+        {
+          "col": 4,
+          "letter": "D",
+          "header": "Last Name"
+        },
+        {
+          "col": 5,
+          "letter": "E",
+          "header": "First Name"
+        },
+        {
+          "col": 6,
+          "letter": "F",
+          "header": "Address"
+        },
+        {
+          "col": 7,
+          "letter": "G",
+          "header": "City"
+        },
+        {
+          "col": 8,
+          "letter": "H",
+          "header": "State"
+        },
+        {
+          "col": 9,
+          "letter": "I",
+          "header": "Zip"
+        },
+        {
+          "col": 10,
+          "letter": "J",
+          "header": "Salesman"
+        },
+        {
+          "col": 11,
+          "letter": "K",
+          "header": "Salesman"
+        },
+        {
+          "col": 12,
+          "letter": "L",
+          "header": "Salesman"
+        },
+        {
+          "col": 13,
+          "letter": "M",
+          "header": "Salesman"
+        },
+        {
+          "col": 14,
+          "letter": "N",
+          "header": "Model"
+        },
+        {
+          "col": 15,
+          "letter": "O",
+          "header": "Color"
+        },
+        {
+          "col": 16,
+          "letter": "P",
+          "header": "Color Cost"
+        },
+        {
+          "col": 17,
+          "letter": "Q",
+          "header": "Cabinet"
+        },
+        {
+          "col": 18,
+          "letter": "R",
+          "header": "Cabinet Cost"
+        },
+        {
+          "col": 19,
+          "letter": "S",
+          "header": "Serial #"
+        },
+        {
+          "col": 20,
+          "letter": "T",
+          "header": "MasterPur"
+        },
+        {
+          "col": 21,
+          "letter": "U",
+          "header": "MasterPur Cost"
+        },
+        {
+          "col": 22,
+          "letter": "V",
+          "header": "Nonslip, Comfort Floor System"
+        },
+        {
+          "col": 23,
+          "letter": "W",
+          "header": "Floor System Cost"
+        },
+        {
+          "col": 24,
+          "letter": "X",
+          "header": "Other Options 1"
+        },
+        {
+          "col": 25,
+          "letter": "Y",
+          "header": "Other Options Cost"
+        },
+        {
+          "col": 26,
+          "letter": "Z",
+          "header": "Other Options 2"
+        },
+        {
+          "col": 27,
+          "letter": "AA",
+          "header": "Other Options Cost"
+        },
+        {
+          "col": 28,
+          "letter": "AB",
+          "header": "Other Spa Costs"
+        },
+        {
+          "col": 29,
+          "letter": "AC",
+          "header": "Step"
+        },
+        {
+          "col": 30,
+          "letter": "AD",
+          "header": "Step Cost"
+        },
+        {
+          "col": 31,
+          "letter": "AE",
+          "header": "Spa Cost"
+        },
+        {
+          "col": 32,
+          "letter": "AF",
+          "header": "Chem Kit"
+        },
+        {
+          "col": 33,
+          "letter": "AG",
+          "header": "Freight Cost"
+        },
+        {
+          "col": 34,
+          "letter": "AH",
+          "header": "Delivery Cost"
+        },
+        {
+          "col": 35,
+          "letter": "AI",
+          "header": "Crane Costs"
+        },
+        {
+          "col": 36,
+          "letter": "AJ",
+          "header": "Removal Cost"
+        },
+        {
+          "col": 37,
+          "letter": "AK",
+          "header": "Cover Lift Type"
+        },
+        {
+          "col": 38,
+          "letter": "AL",
+          "header": "# of Cover Lifts"
+        },
+        {
+          "col": 39,
+          "letter": "AM",
+          "header": "Lifter Costs"
+        },
+        {
+          "col": 40,
+          "letter": "AN",
+          "header": "Total Cost"
+        },
+        {
+          "col": 41,
+          "letter": "AO",
+          "header": "Sale Price"
+        },
+        {
+          "col": 42,
+          "letter": "AP",
+          "header": "Delivery Cost Charged"
+        },
+        {
+          "col": 43,
+          "letter": "AQ",
+          "header": "Cancelled Deal Sale Amount"
+        },
+        {
+          "col": 44,
+          "letter": "AR",
+          "header": "Sales Tax Rate"
+        },
+        {
+          "col": 45,
+          "letter": "AS",
+          "header": "Sales Tax"
+        },
+        {
+          "col": 46,
+          "letter": "AT",
+          "header": "Override Reason"
+        },
+        {
+          "col": 47,
+          "letter": "AU",
+          "header": "Commission Rate"
+        },
+        {
+          "col": 48,
+          "letter": "AV",
+          "header": "Comm Amount"
+        },
+        {
+          "col": 49,
+          "letter": "AW",
+          "header": "Spiff Reason"
+        },
+        {
+          "col": 50,
+          "letter": "AX",
+          "header": "Spiff Amount"
+        },
+        {
+          "col": 51,
+          "letter": "AY",
+          "header": "Spiff Payable"
+        },
+        {
+          "col": 52,
+          "letter": "AZ",
+          "header": "Spiff Paid Out @ Show"
+        },
+        {
+          "col": 53,
+          "letter": "BA",
+          "header": "Spiff amount paid on check"
+        },
+        {
+          "col": 54,
+          "letter": "BB",
+          "header": "=Variables!A2"
+        },
+        {
+          "col": 55,
+          "letter": "BC",
+          "header": "=Variables!A3"
+        },
+        {
+          "col": 56,
+          "letter": "BD",
+          "header": "=Variables!A4"
+        },
+        {
+          "col": 57,
+          "letter": "BE",
+          "header": "=Variables!A5"
+        },
+        {
+          "col": 58,
+          "letter": "BF",
+          "header": "=Variables!A6"
+        },
+        {
+          "col": 59,
+          "letter": "BG",
+          "header": "=Variables!A7"
+        },
+        {
+          "col": 60,
+          "letter": "BH",
+          "header": "=Variables!A8"
+        },
+        {
+          "col": 61,
+          "letter": "BI",
+          "header": "=Variables!A9"
+        },
+        {
+          "col": 62,
+          "letter": "BJ",
+          "header": "=Variables!A10"
+        },
+        {
+          "col": 63,
+          "letter": "BK",
+          "header": "=Variables!A11"
+        },
+        {
+          "col": 64,
+          "letter": "BL",
+          "header": "=Variables!A12"
+        },
+        {
+          "col": 65,
+          "letter": "BM",
+          "header": "=Variables!A13"
+        },
+        {
+          "col": 66,
+          "letter": "BN",
+          "header": "=Variables!A14"
+        },
+        {
+          "col": 67,
+          "letter": "BO",
+          "header": "=Variables!A15"
+        },
+        {
+          "col": 68,
+          "letter": "BP",
+          "header": "=Variables!A16"
+        },
+        {
+          "col": 69,
+          "letter": "BQ",
+          "header": "=Variables!A17"
+        },
+        {
+          "col": 70,
+          "letter": "BR",
+          "header": "=Variables!A18"
+        },
+        {
+          "col": 71,
+          "letter": "BS",
+          "header": "=Variables!A19"
+        },
+        {
+          "col": 72,
+          "letter": "BT",
+          "header": "=Variables!A20"
+        },
+        {
+          "col": 73,
+          "letter": "BU",
+          "header": "=Variables!A21"
+        },
+        {
+          "col": 74,
+          "letter": "BV",
+          "header": "Cash Deposit"
+        },
+        {
+          "col": 75,
+          "letter": "BW",
+          "header": "Check Deposit"
+        },
+        {
+          "col": 76,
+          "letter": "BX",
+          "header": "Debit Deposit"
+        },
+        {
+          "col": 77,
+          "letter": "BY",
+          "header": "Visa Deposit"
+        },
+        {
+          "col": 78,
+          "letter": "BZ",
+          "header": "Mastercard Deposit"
+        },
+        {
+          "col": 79,
+          "letter": "CA",
+          "header": "Discover Deposit"
+        },
+        {
+          "col": 80,
+          "letter": "CB",
+          "header": "AMEX Desposit"
+        },
+        {
+          "col": 81,
+          "letter": "CC",
+          "header": "Finance Deposit"
+        },
+        {
+          "col": 82,
+          "letter": "CD",
+          "header": "Total Deposit"
+        },
+        {
+          "col": 83,
+          "letter": "CE",
+          "header": "Financed Amount"
+        },
+        {
+          "col": 84,
+          "letter": "CF",
+          "header": "Plan#"
+        },
+        {
+          "col": 85,
+          "letter": "CG",
+          "header": "Financing Cost"
+        },
+        {
+          "col": 86,
+          "letter": "CH",
+          "header": "Appr Deliv Date"
+        },
+        {
+          "col": 87,
+          "letter": "CI",
+          "header": "Marketing Feedback"
+        },
+        {
+          "col": 88,
+          "letter": "CJ",
+          "header": "Comments"
+        },
+        {
+          "col": 89,
+          "letter": "CK",
+          "header": null
+        },
+        {
+          "col": 90,
+          "letter": "CL",
+          "header": "Contingent Sales"
+        },
+        {
+          "col": 91,
+          "letter": "CM",
+          "header": "Contingent Delivery Cost Charged"
+        },
+        {
+          "col": 92,
+          "letter": "CN",
+          "header": "Contingent Cost"
+        },
+        {
+          "col": 93,
+          "letter": "CO",
+          "header": "Contingent Delivery"
+        },
+        {
+          "col": 94,
+          "letter": "CP",
+          "header": "=Spas!S1"
+        },
+        {
+          "col": 95,
+          "letter": "CQ",
+          "header": "=Spas!T1"
+        },
+        {
+          "col": 96,
+          "letter": "CR",
+          "header": "=Spas!U1"
+        },
+        {
+          "col": 97,
+          "letter": "CS",
+          "header": "=Spas!V1"
+        },
+        {
+          "col": 98,
+          "letter": "CT",
+          "header": "=Spas!W1"
+        },
+        {
+          "col": 99,
+          "letter": "CU",
+          "header": "=Spas!X1"
+        },
+        {
+          "col": 100,
+          "letter": "CV",
+          "header": "=Spas!Y1"
+        },
+        {
+          "col": 101,
+          "letter": "CW",
+          "header": "=Spas!Z1"
+        },
+        {
+          "col": 102,
+          "letter": "CX",
+          "header": "=Spas!AA1"
+        },
+        {
+          "col": 103,
+          "letter": "CY",
+          "header": "=Spas!AB1"
+        },
+        {
+          "col": 104,
+          "letter": "CZ",
+          "header": "=Spas!AC1"
+        },
+        {
+          "col": 105,
+          "letter": "DA",
+          "header": "=Spas!AD1"
+        },
+        {
+          "col": 106,
+          "letter": "DB",
+          "header": "=Spas!AE1"
+        },
+        {
+          "col": 107,
+          "letter": "DC",
+          "header": "=Spas!AF1"
+        },
+        {
+          "col": 108,
+          "letter": "DD",
+          "header": "=Spas!AG1"
+        },
+        {
+          "col": 109,
+          "letter": "DE",
+          "header": "=Spas!AH1"
+        },
+        {
+          "col": 110,
+          "letter": "DF",
+          "header": "=Spas!AI1"
+        },
+        {
+          "col": 111,
+          "letter": "DG",
+          "header": "=Spas!AJ1"
+        },
+        {
+          "col": 112,
+          "letter": "DH",
+          "header": "=Spas!AK1"
+        },
+        {
+          "col": 113,
+          "letter": "DI",
+          "header": "=Spas!AL1"
+        }
+      ],
+      "first_data_row": 4
+    },
+    {
+      "name": "Variables",
+      "rows": 47,
+      "cols": 44,
+      "frozen_panes": "A2"
+    },
+    {
+      "name": "Spas",
+      "rows": 80,
+      "cols": 41,
+      "frozen_panes": "B2"
+    },
+    {
+      "name": "Price List",
+      "rows": 103,
+      "cols": 6,
+      "frozen_panes": null
+    },
+    {
+      "name": "SalesBySalesperson",
+      "rows": 1001,
+      "cols": 77,
+      "frozen_panes": null
+    },
+    {
+      "name": "Graph",
+      "rows": 46,
+      "cols": 13,
+      "frozen_panes": null
+    },
+    {
+      "name": "Marketing",
+      "rows": 25,
+      "cols": 3,
+      "frozen_panes": null
+    },
+    {
+      "name": "Travel",
+      "rows": 15,
+      "cols": 6,
+      "frozen_panes": null
+    },
+    {
+      "name": "Summary",
+      "rows": 1003,
+      "cols": 26,
+      "frozen_panes": null
+    }
+  ]
+}
