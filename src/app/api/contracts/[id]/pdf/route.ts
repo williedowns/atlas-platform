@@ -548,7 +548,14 @@ export async function GET(
     const isChecked = !isQuote && !!acks[a.key];
     // Wrap the label too — "Texas Prescription — 30-Day Deadline" is wide
     // enough at 8.5pt bold that some renderers nudged it past the box edge.
+    // Set each font BEFORE splitTextToSize so jsPDF measures with the same
+    // metrics it will render with — otherwise the body can be split using
+    // leftover (bold) state from the previous block and overflow the box.
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.5);
     const labelLines = doc.splitTextToSize(a.label, ackBodyMaxW);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
     const textLines = doc.splitTextToSize(a.text, ackBodyMaxW);
     const labelH = labelLines.length * 3.6;
     const textH = textLines.length * 3.4;
