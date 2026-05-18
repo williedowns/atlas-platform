@@ -55,7 +55,8 @@ export async function GET(
       line_items, financing,
       customer:customers(first_name, last_name, address, city, state, zip),
       sales_rep:profiles!sales_rep_id(full_name),
-      payments(method, card_brand, amount, status)
+      payments(method, card_brand, amount, status),
+      override:show_deal_overrides(*)
     `)
     .eq("show_id", id)
     .order("created_at", { ascending: true });
@@ -63,7 +64,13 @@ export async function GET(
     return NextResponse.json({ error: contractsErr.message }, { status: 500 });
   }
 
-  const deals = (contracts ?? []).map((c) => contractToDeal(c as unknown as MapperContract));
+  // PostgREST returns a 1-to-1 embed as an array; flatten to single object.
+  const deals = (contracts ?? []).map((c) => {
+    const raw = c as Record<string, unknown>;
+    const ov = raw.override;
+    const flat = Array.isArray(ov) ? (ov[0] ?? null) : ov;
+    return contractToDeal({ ...raw, override: flat } as unknown as MapperContract);
+  });
 
   // Salesman roster: assigned reps on the show, falling back to distinct reps
   // who actually wrote contracts here.
