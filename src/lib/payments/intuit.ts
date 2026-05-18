@@ -55,11 +55,16 @@ export interface ChargeResult {
   currency: string;
   created: string;
   authCode?: string;
+  // Intuit's actual response shape — confirmed by inspecting a live charge.
+  // Brand lives at `cardType` ("Visa", "MasterCard", ...) and the masked PAN
+  // at `number` ("xxxxxxxxxxxx8553"). There is no separate `last4` field.
   card?: {
-    last4: string;
-    brand: string;
-    expMonth: number;
-    expYear: number;
+    number: string;
+    cardType: string;
+    expMonth: string;
+    expYear: string;
+    name?: string;
+    address?: { country?: string; postalCode?: string };
   };
 }
 
