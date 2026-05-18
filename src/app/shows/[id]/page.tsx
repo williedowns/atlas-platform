@@ -29,6 +29,13 @@ export default async function ShowDetailPage({
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+  const canExportSpreadsheet = ["admin", "manager", "bookkeeper"].includes(profile?.role ?? "");
+
   const { data: show } = await supabase
     .from("shows")
     .select("*, location:locations(*)")
@@ -151,6 +158,33 @@ export default async function ShowDetailPage({
             </Button>
           </Link>
         </div>
+
+        {/* Show Sales Spreadsheet */}
+        {canExportSpreadsheet && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle>Show Sales Spreadsheet</CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 pt-0 space-y-3">
+              <p className="text-sm text-slate-600">
+                Generate Lori&apos;s 9-tab workbook for this show — Sales, Variables, Spas, Price
+                List, SalesBySalesperson, Graph, Marketing, Travel, and Summary. Deals,
+                customer info, deposits by payment type, and the salesman roster are
+                populated from contracts; all of the formulas and charts come from the
+                template and recompute when you open the file in Excel.
+              </p>
+              <a
+                href={`/api/shows/${id}/spreadsheet`}
+                className="inline-flex items-center justify-center gap-2 w-full bg-[#00929C] hover:bg-[#007a82] text-white font-semibold rounded-md py-3 px-4 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
+                </svg>
+                Download .xlsx ({contracts?.length ?? 0} deal{contracts?.length === 1 ? "" : "s"})
+              </a>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Contracts list */}
         <Card>
