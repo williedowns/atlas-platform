@@ -46,11 +46,16 @@ export default async function ShowsPage() {
         title="Shows & Events"
         subtitle={`${upcoming.length} upcoming`}
         actions={
-          canCreateShows && (
-            <Link href="/admin/shows/new">
-              <Button variant="accent" size="sm">+ New Show</Button>
+          <div className="flex gap-2">
+            <Link href="/shows/leaderboard">
+              <Button variant="outline" size="sm">Leaderboard</Button>
             </Link>
-          )
+            {canCreateShows && (
+              <Link href="/admin/shows/new">
+                <Button variant="accent" size="sm">+ New Show</Button>
+              </Link>
+            )}
+          </div>
         }
       />
 
