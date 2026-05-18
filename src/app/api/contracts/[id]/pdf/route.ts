@@ -418,12 +418,28 @@ export async function GET(
   doc.setTextColor(...SLATE_900);
 
   if (!isQuote && contract.signed_at) {
-    // Embed actual signature image if it's a base64 data URL (fallback path) or skip if remote
+    // Embed the actual signature image. Signatures uploaded to Supabase
+    // Storage land here as a remote https:// URL (the normal path); the
+    // storage-upload-failed fallback in Step7Sign/sign-token stores a
+    // data:image/png base64 URL instead. Handle both so the PDF matches
+    // the on-screen signature regardless of which path produced it.
     const sigUrl: string | undefined = contract.customer_signature_url;
-    let sigEmbedded = false;
-    if (sigUrl && sigUrl.startsWith("data:image/")) {
+    let sigDataUrl: string | null = null;
+    if (sigUrl?.startsWith("data:image/")) {
+      sigDataUrl = sigUrl;
+    } else if (sigUrl?.startsWith("http")) {
       try {
-        doc.addImage(sigUrl, "PNG", M, y, 70, 16);
+        const res = await fetch(sigUrl, { signal: AbortSignal.timeout(5000) });
+        if (res.ok) {
+          const buf = Buffer.from(await res.arrayBuffer());
+          sigDataUrl = `data:image/png;base64,${buf.toString("base64")}`;
+        }
+      } catch {/* network/timeout — fall through to text-only */}
+    }
+    let sigEmbedded = false;
+    if (sigDataUrl) {
+      try {
+        doc.addImage(sigDataUrl, "PNG", M, y, 70, 16);
         sigEmbedded = true;
         y += 18;
       } catch {/* ignore — fall through to text-only */}
