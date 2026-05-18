@@ -1,8 +1,9 @@
 # Salta CRM — Phase 0 Critical-Path Provisioning Checklist
 
 **Owner:** Willie Downs
-**Status:** Not started
+**Status:** 1 of 9 in progress (Twilio account created)
 **Created:** 2026-05-01
+**Last updated:** 2026-05-19
 
 These items have **multi-week lead times** and must be kicked off in parallel with the database build (migrations 044-060). Each blocks one or more downstream phases. The CRM will not function in production without them.
 
@@ -19,20 +20,22 @@ The build itself does **not** depend on these — Phase 0 schema is pure SQL, an
 **Blocks:** Phase 1 (speed-to-lead SMS), Phase 2 (SMS broadcasts, cadence SMS steps)
 
 **Steps:**
-1. Sign up at twilio.com (use a shared `crm@hqatlas.com` mailbox — not personal email)
-2. Add a payment method
-3. Submit 10DLC Brand registration via The Campaign Registry (TCR) — Twilio walks you through it
+1. ✅ Sign up at twilio.com — DONE 2026-05-19 by willie@hqatlas.com
+   - ⚠️ Used personal email. Recommend inviting a shared `crm@hqatlas.com` or `admin@hqatlas.com` as a secondary owner on the Twilio console so account access doesn't go with one person. Twilio console → Account → Users → Invite. Easy to do anytime.
+2. ☐ Add a payment method (Twilio won't let you submit 10DLC without one on file)
+3. ☐ **Submit 10DLC Brand registration via The Campaign Registry (TCR)** ← THIS IS THE LONG POLE (2-4 weeks)
+   - Twilio walks you through it in the console under Messaging → Regulatory Compliance → Brand
    - Brand: Atlas Building Systems / Atlas Spas
    - EIN, business address, vertical (HOME_FURNISHINGS or RETAIL)
-4. Once Brand is approved, register Campaigns:
+4. ☐ Once Brand is approved, register Campaigns:
    - Marketing — broadcasts, promos
    - Customer Care — support, status updates
    - Higher trust score (Standard or Low Volume Mixed) = higher throughput
-5. Provision phone numbers per location (Plano, Tulsa, etc.) — local-presence pool
-6. (Backup) Toll-free number for high-volume sends — separate verification process
-7. Save Twilio Account SID + Auth Token to Vercel env vars (do NOT commit)
+5. ☐ Provision phone numbers per location (Plano, Tulsa, etc.) — local-presence pool
+6. ☐ (Backup) Toll-free number for high-volume sends — separate verification process
+7. ☐ Save Twilio Account SID + Auth Token to Vercel env vars (do NOT commit)
 
-**Status:** ☐ Not started
+**Status:** ⏳ In progress — account created, 10DLC Brand registration not yet submitted (the 2-4 week long pole — do this next)
 
 ---
 
