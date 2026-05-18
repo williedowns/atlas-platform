@@ -462,6 +462,9 @@ export default async function ContractDetailPage({
                     <li key={p.id} className="px-4 py-3 flex justify-between items-center">
                       <div>
                         <p className="font-medium capitalize">{p.method?.replace(/_/g, " ")}</p>
+                        {p.card_brand && p.card_last4 && (
+                          <p className="text-xs text-slate-500">{p.card_brand} ending in {p.card_last4}</p>
+                        )}
                         <p className="text-xs text-slate-400">{p.processed_at ? formatDate(p.processed_at) : "Pending"}</p>
                       </div>
                       <div className="text-right">
