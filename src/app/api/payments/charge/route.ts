@@ -175,14 +175,27 @@ export async function POST(req: Request) {
     }
 
     // Update payment to completed
+    const cardBrand = chargeResult.card?.brand ?? null;
+    const cardLast4 = chargeResult.card?.last4 ?? null;
+    if (!cardBrand || !cardLast4) {
+      // Diagnostic: Intuit charge captured but didn't surface card brand/last4
+      // in the response. Log the card-object keys (NOT values) so we can see
+      // whether the shape changed without leaking PAN/CVV-adjacent fields.
+      console.warn("[charge] missing card brand/last4 on captured charge", {
+        payment_id: payment!.id,
+        intuit_charge_id: chargeResult.id,
+        card_keys: chargeResult.card ? Object.keys(chargeResult.card) : null,
+        has_card_object: !!chargeResult.card,
+      });
+    }
     await adminSupabase
       .from("payments")
       .update({
         status: "completed",
         intuit_charge_id: chargeResult.id,
         processed_at: new Date().toISOString(),
-        card_brand: chargeResult.card?.brand ?? null,
-        card_last4: chargeResult.card?.last4 ?? null,
+        card_brand: cardBrand,
+        card_last4: cardLast4,
       })
       .eq("id", payment!.id);
 
