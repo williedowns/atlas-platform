@@ -54,7 +54,7 @@ export default async function CrmContactDetailPage({
     .select(`
       id, first_name, last_name, email_primary, phone_primary, emails, phones,
       source, source_detail, score, notes, created_at, updated_at,
-      household_id, customer_id, owner_id, last_activity_at, dob,
+      household_id, customer_id, owner_id, role_in_household, last_activity_at, dob,
       address, city, state, zip,
       channels_consent, do_not_contact,
       household:households(id, name, lifecycle_stage),
