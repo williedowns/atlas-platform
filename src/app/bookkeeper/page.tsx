@@ -286,6 +286,7 @@ export default async function BookkeeperPage() {
               {lowDepositContracts.map(({ contract: c, info }) => {
                 const customer = Array.isArray(c.customer) ? c.customer[0] : c.customer;
                 const location = Array.isArray(c.location) ? c.location[0] : c.location;
+                const show = Array.isArray(c.show) ? c.show[0] : c.show;
                 return (
                   <Link key={c.id} href={`/contracts/${c.id}`} className="block">
                     <div className="px-3 py-2 hover:bg-amber-50 active:bg-amber-100 transition-colors">
@@ -296,7 +297,7 @@ export default async function BookkeeperPage() {
                             <LowDepositBadge pct={info.pct} threshold={info.threshold} size="xs" />
                           </div>
                           <p className="text-xs text-slate-700 mt-0.5">
-                            {customer?.first_name} {customer?.last_name} · {location?.name ?? "—"}
+                            {customer?.first_name} {customer?.last_name} · {show?.name ?? location?.name ?? "—"}
                           </p>
                           <p className="text-xs text-slate-500 mt-0.5">
                             {formatCurrency(c.deposit_paid ?? 0)} of {formatCurrency(c.total ?? 0)} collected
@@ -330,6 +331,7 @@ export default async function BookkeeperPage() {
                     {blocked.map(({ contract: c, blockers }) => {
                       const customer = Array.isArray(c.customer) ? c.customer[0] : c.customer;
                       const location = Array.isArray(c.location) ? c.location[0] : c.location;
+                      const show = Array.isArray(c.show) ? c.show[0] : c.show;
                       return (
                         <Link key={c.id} href={`/contracts/${c.id}`} className="block">
                           <div className="px-3 py-2 hover:bg-amber-50 active:bg-amber-100 transition-colors">
@@ -340,7 +342,7 @@ export default async function BookkeeperPage() {
                                   <span className="text-xs text-slate-500 capitalize">{c.status?.replace(/_/g, " ")}</span>
                                 </div>
                                 <p className="text-xs text-slate-700 mt-0.5">
-                                  {customer?.first_name} {customer?.last_name} · {location?.name ?? "—"}
+                                  {customer?.first_name} {customer?.last_name} · {show?.name ?? location?.name ?? "—"}
                                 </p>
                                 <div className="flex flex-wrap gap-1 mt-1.5">
                                   {blockers.map((b) => (
@@ -368,13 +370,14 @@ export default async function BookkeeperPage() {
                     {ready.map(({ contract: c }) => {
                       const customer = Array.isArray(c.customer) ? c.customer[0] : c.customer;
                       const location = Array.isArray(c.location) ? c.location[0] : c.location;
+                      const show = Array.isArray(c.show) ? c.show[0] : c.show;
                       return (
                         <Link key={c.id} href={`/contracts/${c.id}`} className="block">
                           <div className="px-3 py-2 hover:bg-emerald-50 active:bg-emerald-100 transition-colors flex items-center justify-between gap-3">
                             <div className="flex-1 min-w-0">
                               <span className="font-semibold text-slate-900 text-sm">{c.contract_number}</span>
                               <span className="text-xs text-slate-500 ml-2">
-                                {customer?.first_name} {customer?.last_name} · {location?.name ?? "—"}
+                                {customer?.first_name} {customer?.last_name} · {show?.name ?? location?.name ?? "—"}
                               </span>
                             </div>
                             <span className="text-xs font-semibold text-emerald-700">All clear</span>
