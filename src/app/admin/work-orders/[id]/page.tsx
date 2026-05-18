@@ -8,6 +8,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import ConflictWarningPanel from "@/components/contracts/ConflictWarningPanel";
+import { detectCrewConflicts, conflictSummary } from "@/lib/work-order-conflicts";
 
 type Profile = { id: string; full_name: string };
 
@@ -32,8 +34,11 @@ export default function WorkOrderDetailPage({ params }: { params: { id: string }
   const [order, setOrder] = useState<any>(null);
   const [crew, setCrew] = useState<Profile[]>([]);
   const [saving, setSaving] = useState(false);
+  const [conflicts, setConflicts] = useState<string[]>([]);
+  const [conflictReason, setConflictReason] = useState("");
   const [form, setForm] = useState({
     scheduled_date: "",
+    scheduled_window: "",
     status: "scheduled",
     notes: "",
     assigned_crew_ids: [] as string[],
@@ -43,7 +48,7 @@ export default function WorkOrderDetailPage({ params }: { params: { id: string }
     supabase
       .from("delivery_work_orders")
       .select(`
-        id, scheduled_date, status, notes, assigned_crew_ids,
+        id, scheduled_date, scheduled_window, status, notes, assigned_crew_ids,
         contract:contracts(
           id, contract_number, balance_due,
           customer:customers(first_name, last_name, phone, address, city, state, zip),
@@ -59,6 +64,7 @@ export default function WorkOrderDetailPage({ params }: { params: { id: string }
           setOrder(data);
           setForm({
             scheduled_date: data.scheduled_date ?? "",
+            scheduled_window: data.scheduled_window ?? "",
             status: data.status ?? "scheduled",
             notes: data.notes ?? "",
             assigned_crew_ids: data.assigned_crew_ids ?? [],
@@ -83,14 +89,36 @@ export default function WorkOrderDetailPage({ params }: { params: { id: string }
     }));
   }
 
-  async function handleSave() {
+  async function handleSave(opts: { overrideConflicts?: boolean } = {}) {
+    const { overrideConflicts = false } = opts;
     setSaving(true);
+    if (!overrideConflicts) setConflicts([]);
+
+    const isOpenState = form.status !== "completed" && form.status !== "cancelled";
+    if (isOpenState && !overrideConflicts && form.scheduled_date && form.assigned_crew_ids.length > 0) {
+      const found = await detectCrewConflicts(supabase, {
+        scheduledDate: form.scheduled_date,
+        crewIds: form.assigned_crew_ids,
+        excludeOrderId: params.id,
+      });
+      if (found.length > 0) {
+        setConflicts(conflictSummary(found));
+        setSaving(false);
+        return;
+      }
+    }
+
+    const finalNotes = overrideConflicts && conflictReason
+      ? [form.notes, `Conflict override: ${conflictReason}`].filter(Boolean).join("\n")
+      : form.notes;
+
     await supabase
       .from("delivery_work_orders")
       .update({
         scheduled_date: form.scheduled_date || null,
+        scheduled_window: form.scheduled_window || null,
         status: form.status,
-        notes: form.notes || null,
+        notes: finalNotes || null,
         assigned_crew_ids: form.assigned_crew_ids,
         ...(form.status === "completed" ? { completed_at: new Date().toISOString() } : {}),
       })
@@ -179,12 +207,21 @@ export default function WorkOrderDetailPage({ params }: { params: { id: string }
           <CardContent className="p-4 space-y-4">
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Schedule</p>
 
-            <Input
-              label="Scheduled Date"
-              type="date"
-              value={form.scheduled_date}
-              onChange={(e) => setForm((f) => ({ ...f, scheduled_date: e.target.value }))}
-            />
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                label="Scheduled Date"
+                type="date"
+                value={form.scheduled_date}
+                onChange={(e) => setForm((f) => ({ ...f, scheduled_date: e.target.value }))}
+              />
+              <Input
+                label="Time Window"
+                type="text"
+                placeholder="e.g. 2-4 PM"
+                value={form.scheduled_window}
+                onChange={(e) => setForm((f) => ({ ...f, scheduled_window: e.target.value }))}
+              />
+            </div>
 
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-medium text-slate-700">Status</label>
@@ -242,7 +279,16 @@ export default function WorkOrderDetailPage({ params }: { params: { id: string }
           </CardContent>
         </Card>
 
-        <Button size="xl" className="w-full" loading={saving} onClick={handleSave}>
+        <ConflictWarningPanel
+          conflicts={conflicts}
+          reason={conflictReason}
+          onReasonChange={setConflictReason}
+          onContinue={() => handleSave({ overrideConflicts: true })}
+          submitting={saving}
+          continueLabel="Save Anyway"
+        />
+
+        <Button size="xl" className="w-full" loading={saving} onClick={() => handleSave()}>
           Save Work Order
         </Button>
 

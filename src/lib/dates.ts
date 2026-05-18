@@ -87,3 +87,20 @@ export function todayDateStringInTZ(tz: string = ATLAS_TIMEZONE): string {
     day: "2-digit",
   }).format(new Date());
 }
+
+/** YYYY-MM-DD shifted by N days from today in the given tz (DST-safe via calendar math on the string). */
+export function dateStringInTZOffsetDays(offsetDays: number, tz: string = ATLAS_TIMEZONE): string {
+  const today = todayDateStringInTZ(tz);
+  const [y, m, d] = today.split("-").map(Number);
+  const shifted = new Date(Date.UTC(y, m - 1, d + offsetDays));
+  return shifted.toISOString().slice(0, 10);
+}
+
+/** Render a YYYY-MM-DD date string as "Wed · May 20" (matches list-view labels). */
+export function formatDayShort(dateStr: string | null): string {
+  if (!dateStr) return "TBD";
+  const d = new Date(dateStr + "T12:00:00");
+  return d
+    .toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
+    .replace(",", " ·");
+}

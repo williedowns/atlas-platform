@@ -9,6 +9,10 @@ import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import ReadinessBlockerPanel from "@/components/contracts/ReadinessBlockerPanel";
+import ReadinessChecklist from "@/components/contracts/ReadinessChecklist";
+import ConflictWarningPanel from "@/components/contracts/ConflictWarningPanel";
+import { evaluateReadiness, blockerLabels, type ReadinessResult } from "@/lib/readiness";
 
 type Profile = { id: string; full_name: string };
 
@@ -20,30 +24,79 @@ function NewWorkOrderForm() {
 
   const [contract, setContract] = useState<any>(null);
   const [crew, setCrew] = useState<Profile[]>([]);
+  const [readiness, setReadiness] = useState<ReadinessResult | null>(null);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [blockers, setBlockers] = useState<string[]>([]);
+  const [canOverride, setCanOverride] = useState(false);
+  const [overrideReason, setOverrideReason] = useState("");
+  const [conflicts, setConflicts] = useState<string[]>([]);
+  const [conflictReason, setConflictReason] = useState("");
   const [form, setForm] = useState({
     contract_id: contractId,
     scheduled_date: "",
+    scheduled_window: "",
     notes: "",
     assigned_crew_ids: [] as string[],
   });
 
   useEffect(() => {
-    if (contractId) {
-      supabase
-        .from("contracts")
-        .select(`id, contract_number, customer:customers(first_name, last_name), location:locations(name), show:shows(name)`)
-        .eq("id", contractId)
-        .single()
-        .then(({ data }) => setContract(data));
-    }
+    async function load() {
+      if (!contractId) return;
 
-    supabase
-      .from("profiles")
-      .select("id, full_name")
-      .in("role", ["field_crew", "admin", "manager"])
-      .order("full_name")
-      .then(({ data }) => setCrew(data ?? []));
+      // Pull contract (with readiness fields), caller role, and crew list in parallel.
+      const [
+        { data: contractData },
+        { data: { user } },
+        { data: crewData },
+      ] = await Promise.all([
+        supabase
+          .from("contracts")
+          .select(`
+            id, contract_number, balance_due, financing, customer_id,
+            needs_permit, permit_status, needs_hoa, hoa_status,
+            customer:customers(first_name, last_name),
+            location:locations(name),
+            show:shows(name)
+          `)
+          .eq("id", contractId)
+          .single(),
+        supabase.auth.getUser(),
+        supabase
+          .from("profiles")
+          .select("id, full_name")
+          .in("role", ["field_crew", "admin", "manager"])
+          .order("full_name"),
+      ]);
+
+      setContract(contractData);
+      setCrew(crewData ?? []);
+
+      if (!contractData) return;
+
+      const [{ data: dlRows }, { data: profile }] = await Promise.all([
+        contractData.customer_id
+          ? supabase
+              .from("customer_files")
+              .select("id")
+              .eq("customer_id", contractData.customer_id)
+              .eq("category", "drivers_license")
+              .limit(1)
+          : Promise.resolve({ data: [] as Array<{ id: string }> }),
+        user
+          ? supabase.from("profiles").select("role").eq("id", user.id).single()
+          : Promise.resolve({ data: null }),
+      ]);
+
+      const result = evaluateReadiness(contractData, (dlRows ?? []).length > 0);
+      const isAdminOrManager = ["admin", "manager"].includes((profile as any)?.role ?? "");
+      setReadiness(result);
+      setCanOverride(isAdminOrManager);
+      // Pre-populate blockers so the override panel appears immediately when
+      // items are missing — same proactive UX as the contract detail page.
+      if (!result.ok) setBlockers(blockerLabels(result));
+    }
+    load();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function toggleCrew(id: string) {
@@ -55,22 +108,51 @@ function NewWorkOrderForm() {
     }));
   }
 
-  async function handleSave() {
-    if (!form.contract_id) return;
+  async function handleSave(opts: { overrideReadiness?: boolean; overrideConflicts?: boolean } = {}) {
+    const { overrideReadiness = false, overrideConflicts = false } = opts;
+    if (!form.contract_id || !form.scheduled_date) return;
     setSaving(true);
-    const { data } = await supabase
-      .from("delivery_work_orders")
-      .insert({
+    setError(null);
+    if (!overrideReadiness) {
+      setBlockers([]);
+      setCanOverride(false);
+    }
+    if (!overrideConflicts) setConflicts([]);
+
+    const r = await fetch("/api/deliveries", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
         contract_id: form.contract_id,
-        scheduled_date: form.scheduled_date || null,
-        notes: form.notes || null,
+        scheduled_date: form.scheduled_date,
+        scheduled_window: form.scheduled_window || null,
+        special_instructions: form.notes || null,
         assigned_crew_ids: form.assigned_crew_ids,
-        status: "scheduled",
-      })
-      .select()
-      .single();
+        override_readiness: overrideReadiness,
+        override_reason: overrideReadiness ? overrideReason : null,
+        override_conflicts: overrideConflicts,
+        conflict_reason: overrideConflicts ? conflictReason : null,
+      }),
+    });
     setSaving(false);
-    if (data) router.push(`/admin/work-orders/${data.id}`);
+
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({}));
+      if (r.status === 409 && body.blockers) {
+        setBlockers(body.blockers);
+        setCanOverride(!!body.can_override);
+        return;
+      }
+      if (r.status === 409 && body.conflicts) {
+        setConflicts(body.conflicts);
+        return;
+      }
+      setError(body.error ?? "Failed to create work order");
+      return;
+    }
+
+    const { delivery } = await r.json();
+    if (delivery?.id) router.push(`/admin/work-orders/${delivery.id}`);
     else router.push("/admin/work-orders");
   }
 
@@ -89,14 +171,25 @@ function NewWorkOrderForm() {
         </Card>
       )}
 
+      {readiness && <ReadinessChecklist readiness={readiness} />}
+
       <Card>
         <CardContent className="p-4 space-y-4">
-          <Input
-            label="Scheduled Date"
-            type="date"
-            value={form.scheduled_date}
-            onChange={(e) => setForm((f) => ({ ...f, scheduled_date: e.target.value }))}
-          />
+          <div className="grid grid-cols-2 gap-3">
+            <Input
+              label="Scheduled Date"
+              type="date"
+              value={form.scheduled_date}
+              onChange={(e) => setForm((f) => ({ ...f, scheduled_date: e.target.value }))}
+            />
+            <Input
+              label="Time Window"
+              type="text"
+              placeholder="e.g. 2-4 PM"
+              value={form.scheduled_window}
+              onChange={(e) => setForm((f) => ({ ...f, scheduled_window: e.target.value }))}
+            />
+          </div>
           <div className="flex flex-col gap-1.5">
             <label className="text-sm font-medium text-slate-700">Notes</label>
             <textarea
@@ -139,7 +232,34 @@ function NewWorkOrderForm() {
         </CardContent>
       </Card>
 
-      <Button size="xl" className="w-full" loading={saving} onClick={handleSave} disabled={!form.contract_id}>
+      <ReadinessBlockerPanel
+        blockers={blockers}
+        canOverride={canOverride}
+        overrideReason={overrideReason}
+        onOverrideReasonChange={setOverrideReason}
+        onConfirm={() => handleSave({ overrideReadiness: true })}
+        submitting={saving}
+        confirmLabel="Override and Create Anyway"
+      />
+
+      <ConflictWarningPanel
+        conflicts={conflicts}
+        reason={conflictReason}
+        onReasonChange={setConflictReason}
+        onContinue={() => handleSave({ overrideConflicts: true })}
+        submitting={saving}
+        continueLabel="Create Anyway"
+      />
+
+      {error && <p className="text-sm text-red-700">{error}</p>}
+
+      <Button
+        size="xl"
+        className="w-full"
+        loading={saving}
+        onClick={() => handleSave()}
+        disabled={!form.contract_id || !form.scheduled_date}
+      >
         Create Work Order
       </Button>
     </main>

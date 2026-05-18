@@ -3,13 +3,24 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import ReadinessBlockerPanel from "@/components/contracts/ReadinessBlockerPanel";
+import ConflictWarningPanel from "@/components/contracts/ConflictWarningPanel";
 
 interface Props {
   contractId: string;
   defaultAddress?: string;
+  // Preview-only props — when readiness is already known (server-evaluated on RSC parent),
+  // the form shows blockers proactively before the user even submits.
+  initialBlockers?: string[];
+  canOverride?: boolean;
 }
 
-export default function ScheduleDeliveryButton({ contractId, defaultAddress }: Props) {
+export default function ScheduleDeliveryButton({
+  contractId,
+  defaultAddress,
+  initialBlockers = [],
+  canOverride: initialCanOverride = false,
+}: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [date, setDate] = useState("");
@@ -18,17 +29,23 @@ export default function ScheduleDeliveryButton({ contractId, defaultAddress }: P
   const [instructions, setInstructions] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [blockers, setBlockers] = useState<string[]>([]);
-  const [canOverride, setCanOverride] = useState(false);
+  // Seed blockers from server preview so the staff member sees them BEFORE filling the form,
+  // not after a failed submit.
+  const [blockers, setBlockers] = useState<string[]>(initialBlockers);
+  const [canOverride, setCanOverride] = useState(initialCanOverride);
   const [overrideReason, setOverrideReason] = useState("");
+  const [conflicts, setConflicts] = useState<string[]>([]);
+  const [conflictReason, setConflictReason] = useState("");
 
-  async function submit(override = false) {
+  async function submit(opts: { overrideReadiness?: boolean; overrideConflicts?: boolean } = {}) {
+    const { overrideReadiness = false, overrideConflicts = false } = opts;
     setSubmitting(true);
     setError(null);
-    if (!override) {
+    if (!overrideReadiness) {
       setBlockers([]);
       setCanOverride(false);
     }
+    if (!overrideConflicts) setConflicts([]);
     const r = await fetch("/api/deliveries", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -38,8 +55,10 @@ export default function ScheduleDeliveryButton({ contractId, defaultAddress }: P
         scheduled_window: windowText || null,
         delivery_address: address || null,
         special_instructions: instructions || null,
-        override_readiness: override,
-        override_reason: override ? overrideReason : null,
+        override_readiness: overrideReadiness,
+        override_reason: overrideReadiness ? overrideReason : null,
+        override_conflicts: overrideConflicts,
+        conflict_reason: overrideConflicts ? conflictReason : null,
       }),
     });
     setSubmitting(false);
@@ -48,6 +67,10 @@ export default function ScheduleDeliveryButton({ contractId, defaultAddress }: P
       if (r.status === 409 && body.blockers) {
         setBlockers(body.blockers);
         setCanOverride(!!body.can_override);
+        return;
+      }
+      if (r.status === 409 && body.conflicts) {
+        setConflicts(body.conflicts);
         return;
       }
       setError(body.error ?? "Failed to schedule");
@@ -110,34 +133,22 @@ export default function ScheduleDeliveryButton({ contractId, defaultAddress }: P
         />
       </div>
 
-      {blockers.length > 0 && (
-        <div className="rounded-lg bg-red-50 border-2 border-red-300 p-3 space-y-2">
-          <p className="text-sm font-bold text-red-800">Readiness check failed:</p>
-          <ul className="list-disc list-inside text-sm text-red-700">
-            {blockers.map((b) => <li key={b}>{b}</li>)}
-          </ul>
-          {canOverride && (
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-red-800">Override reason (manager only)</label>
-              <input
-                type="text"
-                placeholder="Why are you overriding the gate?"
-                value={overrideReason}
-                onChange={(e) => setOverrideReason(e.target.value)}
-                className="h-10 w-full rounded-lg border border-red-300 bg-white px-3 text-sm"
-              />
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={submitting || !overrideReason.trim()}
-                onClick={() => submit(true)}
-              >
-                Override and Schedule Anyway
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
+      <ReadinessBlockerPanel
+        blockers={blockers}
+        canOverride={canOverride}
+        overrideReason={overrideReason}
+        onOverrideReasonChange={setOverrideReason}
+        onConfirm={() => submit({ overrideReadiness: true })}
+        submitting={submitting}
+      />
+
+      <ConflictWarningPanel
+        conflicts={conflicts}
+        reason={conflictReason}
+        onReasonChange={setConflictReason}
+        onContinue={() => submit({ overrideConflicts: true })}
+        submitting={submitting}
+      />
 
       {error && <p className="text-sm text-red-700">{error}</p>}
 
@@ -147,7 +158,7 @@ export default function ScheduleDeliveryButton({ contractId, defaultAddress }: P
           size="lg"
           className="flex-1"
           disabled={submitting || !date}
-          onClick={() => submit(false)}
+          onClick={() => submit()}
         >
           {submitting ? "Scheduling…" : "Schedule"}
         </Button>

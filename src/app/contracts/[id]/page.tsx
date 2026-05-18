@@ -17,6 +17,8 @@ import CustomerFileVault from "@/components/contracts/CustomerFileVault";
 import ContingencyTracker from "@/components/contracts/ContingencyTracker";
 import DeliveryTimeframeEditor from "@/components/contracts/DeliveryTimeframeEditor";
 import ScheduleDeliveryButton from "@/components/contracts/ScheduleDeliveryButton";
+import ReadinessChecklist from "@/components/contracts/ReadinessChecklist";
+import { evaluateReadiness, blockerLabels } from "@/lib/readiness";
 import FinancingDetailsCard from "@/components/contracts/FinancingDetailsCard";
 import { LowDepositBadge } from "@/components/contracts/LowDepositBadge";
 import { lowDepositInfo } from "@/lib/low-deposit";
@@ -90,14 +92,28 @@ export default async function ContractDetailPage({
     .eq("contract_id", id)
     .order("product_name");
 
-  // Pull existing delivery work order (if scheduled)
-  const { data: deliveryRow } = await supabase
-    .from("delivery_work_orders")
-    .select("id, scheduled_date, scheduled_window, delivery_address, special_instructions, status, readiness_overridden, readiness_override_reason")
-    .eq("contract_id", id)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  // Pull existing delivery work order and DL presence in parallel — both depend
+  // only on already-resolved contract data, so we save a round-trip.
+  const [{ data: deliveryRow }, { data: dlRows }] = await Promise.all([
+    supabase
+      .from("delivery_work_orders")
+      .select("id, scheduled_date, scheduled_window, delivery_address, special_instructions, status, readiness_overridden, readiness_override_reason")
+      .eq("contract_id", id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    contract.customer_id
+      ? supabase
+          .from("customer_files")
+          .select("id")
+          .eq("customer_id", contract.customer_id)
+          .eq("category", "drivers_license")
+          .limit(1)
+      : Promise.resolve({ data: [] }),
+  ]);
+  const dlPresent = (dlRows ?? []).length > 0;
+  const readiness = evaluateReadiness(contract, dlPresent);
+  const canOverrideReadiness = ["admin", "manager"].includes(profile?.role ?? "");
 
   // Resolve who last edited the delivery timeframe (for the audit-style line
   // on the editor card). Skipped if no edit has happened yet.
@@ -618,6 +634,18 @@ export default async function ContractDetailPage({
           </Card>
         )}
 
+        {/* Delivery readiness checklist — proactive view of what's needed before scheduling */}
+        {!["cancelled", "delivered"].includes(contract.status) && (
+          <ReadinessChecklist
+            readiness={readiness}
+            overrideState={
+              deliveryRow?.readiness_overridden
+                ? { overridden: true, reason: deliveryRow.readiness_override_reason }
+                : undefined
+            }
+          />
+        )}
+
         {/* Delivery scheduling — show existing schedule or button to create one */}
         {!["cancelled", "delivered"].includes(contract.status) && (
           <Card>
@@ -660,6 +688,8 @@ export default async function ContractDetailPage({
                       return parts.join(", ");
                     })()
                   }
+                  initialBlockers={blockerLabels(readiness)}
+                  canOverride={canOverrideReadiness}
                 />
               )}
             </CardContent>
