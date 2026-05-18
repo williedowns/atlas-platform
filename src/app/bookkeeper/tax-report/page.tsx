@@ -97,7 +97,7 @@ export default async function TaxReportPage({ searchParams }: PageProps) {
       customer:customers(first_name, last_name, state),
       show:shows(id, name),
       location:locations(id, name, state),
-      sales_rep:profiles(full_name)
+      sales_rep:profiles!contracts_sales_rep_id_fkey(full_name)
     `)
     .not("status", "in", '("quote","draft","cancelled")')
     .gte("created_at", `${from}T00:00:00`)

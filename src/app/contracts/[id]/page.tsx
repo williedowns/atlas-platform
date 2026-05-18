@@ -57,7 +57,7 @@ export default async function ContractDetailPage({
         customer:customers(*),
         show:shows(name, venue_name),
         location:locations(name),
-        sales_rep:profiles(full_name)
+        sales_rep:profiles!contracts_sales_rep_id_fkey(full_name)
       `)
       .eq("id", id)
       .single(),

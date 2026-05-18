@@ -45,7 +45,7 @@ export async function GET(
 
   const { data: contract } = await supabase
     .from("contracts")
-    .select("*, customer:customers(*), location:locations(*), show:shows(name, venue_name), sales_rep:profiles(full_name)")
+    .select("*, customer:customers(*), location:locations(*), show:shows(name, venue_name), sales_rep:profiles!contracts_sales_rep_id_fkey(full_name)")
     .eq("id", id)
     .single();
 

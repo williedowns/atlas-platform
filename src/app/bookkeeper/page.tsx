@@ -49,7 +49,7 @@ export default async function BookkeeperPage() {
       customer:customers(id, first_name, last_name, phone, email),
       show:shows(id, name, start_date, end_date),
       location:locations(id, name),
-      sales_rep:profiles(full_name)
+      sales_rep:profiles!contracts_sales_rep_id_fkey(full_name)
     `)
     .not("status", "in", '("quote","draft","cancelled")')
     .order("created_at", { ascending: false })

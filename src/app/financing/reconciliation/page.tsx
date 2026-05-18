@@ -37,7 +37,7 @@ export default async function ReconciliationPage({ searchParams }: PageProps) {
       customer:customers(first_name, last_name),
       show:shows(id, name, start_date, end_date),
       location:locations(id, name),
-      sales_rep:profiles(full_name)
+      sales_rep:profiles!contracts_sales_rep_id_fkey(full_name)
     `)
     .not("status", "in", '("quote","draft","cancelled")')
     .not("financing", "eq", "[]")

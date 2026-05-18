@@ -48,7 +48,7 @@ export default async function FinancingPage() {
       customer:customers(first_name, last_name),
       show:shows(name),
       location:locations(name),
-      sales_rep:profiles(full_name)
+      sales_rep:profiles!contracts_sales_rep_id_fkey(full_name)
     `)
     .not("status", "in", '("quote","draft","cancelled")')
     .not("financing", "eq", "[]")

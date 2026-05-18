@@ -47,7 +47,7 @@ export async function GET(req: Request) {
     .select(`
       contract_number, total, status, created_at,
       customer:customers(first_name, last_name),
-      sales_rep:profiles(full_name),
+      sales_rep:profiles!contracts_sales_rep_id_fkey(full_name),
       show:shows(name),
       location:locations(name)
     `)

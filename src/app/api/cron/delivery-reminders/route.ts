@@ -50,7 +50,7 @@ export async function GET(req: Request) {
         needs_permit, permit_status, needs_hoa, hoa_status, customer_id, financing,
         customer:customers(first_name, last_name, email),
         location:locations(name),
-        sales_rep:profiles(full_name)
+        sales_rep:profiles!contracts_sales_rep_id_fkey(full_name)
       )
     `)
     .eq("scheduled_date", target)

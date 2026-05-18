@@ -51,7 +51,7 @@ export default async function FloorModePage({
       id, contract_number, status, total, deposit_paid, is_contingent, created_at,
       customer_id,
       customer:customers(first_name, last_name),
-      sales_rep:profiles(id, full_name),
+      sales_rep:profiles!contracts_sales_rep_id_fkey(id, full_name),
       line_items
     `)
     .eq("show_id", id)

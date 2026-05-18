@@ -129,7 +129,7 @@ export default async function AnalyticsPage({
       customer:customers(first_name, last_name),
       show:shows(id, name, start_date, end_date),
       location:locations(id, name, type),
-      sales_rep:profiles(id, full_name),
+      sales_rep:profiles!contracts_sales_rep_id_fkey(id, full_name),
       line_items
     `)
     .not("status", "in", '("cancelled","quote","draft")');
