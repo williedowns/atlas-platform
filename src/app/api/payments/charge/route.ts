@@ -174,13 +174,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Card declined" }, { status: 402 });
     }
 
-    // Update payment to completed
-    const cardBrand = chargeResult.card?.brand ?? null;
-    const cardLast4 = chargeResult.card?.last4 ?? null;
+    // Update payment to completed.
+    // Intuit returns the brand at `card.cardType` and the masked PAN at
+    // `card.number` ("xxxxxxxxxxxx8553"). There is no `card.brand` or
+    // `card.last4` field — earlier versions of this code read those and
+    // got undefined, which is why historical rows have NULL card details.
+    const cardBrand = chargeResult.card?.cardType ?? null;
+    const maskedNumber = chargeResult.card?.number ?? null;
+    const cardLast4 = maskedNumber ? maskedNumber.slice(-4) : null;
     if (!cardBrand || !cardLast4) {
-      // Diagnostic: Intuit charge captured but didn't surface card brand/last4
-      // in the response. Log the card-object keys (NOT values) so we can see
-      // whether the shape changed without leaking PAN/CVV-adjacent fields.
+      // Guard against future shape changes — log card-object keys (NOT
+      // values) so we can diagnose without leaking sensitive fields.
       console.warn("[charge] missing card brand/last4 on captured charge", {
         payment_id: payment!.id,
         intuit_charge_id: chargeResult.id,
@@ -287,8 +291,8 @@ export async function POST(req: Request) {
       success: true,
       payment_id: payment!.id,
       charge_id: chargeResult.id,
-      last4: chargeResult.card?.last4,
-      brand: chargeResult.card?.brand,
+      last4: cardLast4,
+      brand: cardBrand,
       amount_charged: totalCharge,
     });
   }

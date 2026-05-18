@@ -465,11 +465,6 @@ export default async function ContractDetailPage({
                         {p.card_brand && p.card_last4 && (
                           <p className="text-xs text-slate-500">{p.card_brand} ending in {p.card_last4}</p>
                         )}
-                        {canViewAudit && (
-                          <p className="text-[10px] text-amber-600 font-mono mt-0.5">
-                            debug: brand={p.card_brand ?? "null"} · last4={p.card_last4 ?? "null"} · intuit_id={p.intuit_charge_id ? `${String(p.intuit_charge_id).slice(0, 8)}…` : "null"}
-                          </p>
-                        )}
                         <p className="text-xs text-slate-400">{p.processed_at ? formatDate(p.processed_at) : "Pending"}</p>
                       </div>
                       <div className="text-right">
