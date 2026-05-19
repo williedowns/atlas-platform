@@ -40,6 +40,7 @@ export default function NewShowPage() {
     zip: "",
     start_date: "",
     end_date: "",
+    total_cost: "",
   });
 
   useEffect(() => {
@@ -88,6 +89,12 @@ export default function NewShowPage() {
       return;
     }
 
+    const parsedCost = form.total_cost.trim() === "" ? null : Number(form.total_cost);
+    if (parsedCost !== null && (Number.isNaN(parsedCost) || parsedCost < 0)) {
+      setError("Total cost must be a positive number.");
+      return;
+    }
+
     setSaving(true);
     setError("");
 
@@ -101,7 +108,8 @@ export default function NewShowPage() {
       zip: form.zip,
       start_date: form.start_date,
       end_date: form.end_date,
-    });
+      total_cost: parsedCost,
+    } as Record<string, unknown>);
 
     if (error) {
       setError(error.message);
@@ -230,6 +238,31 @@ export default function NewShowPage() {
                   required
                 />
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Show Cost (for ROI tracking) */}
+          <Card>
+            <CardContent className="p-4 space-y-3">
+              <div>
+                <h2 className="font-semibold text-slate-700">Show Cost</h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Total all-in cost: booth fees + travel + payroll + other. Used on the analytics page to compute profit and ROI%.
+                </p>
+              </div>
+              <Input
+                label="Total Cost (USD)"
+                type="number"
+                inputMode="decimal"
+                step="0.01"
+                min="0"
+                value={form.total_cost}
+                onChange={(e) => set("total_cost", e.target.value)}
+                placeholder="e.g. 12500"
+              />
+              <p className="text-xs text-slate-500">
+                Optional — can be filled in later via Edit Show.
+              </p>
             </CardContent>
           </Card>
 

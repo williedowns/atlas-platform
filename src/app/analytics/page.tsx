@@ -51,12 +51,15 @@ function getPeriodRange(period: Period): { gte?: string; lte?: string } {
   return {}; // all
 }
 
+// Returns the same period one year ago — year-over-year comparison.
+// Atlas's show business is highly seasonal so MoM/WoW deltas are misleading;
+// "this May vs last May" reflects the real signal.
 function getPriorPeriodRange(period: Period): { gte?: string; lte?: string } {
   const now = new Date();
 
   if (period === "today") {
-    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const start = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+    const end = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate() + 1);
     return { gte: start.toISOString(), lte: end.toISOString() };
   }
 
@@ -65,13 +68,15 @@ function getPriorPeriodRange(period: Period): { gte?: string; lte?: string } {
     const thisWeekStart = new Date(now);
     thisWeekStart.setDate(now.getDate() - day);
     thisWeekStart.setHours(0, 0, 0, 0);
-    const start = new Date(thisWeekStart.getTime() - 7 * 86400000);
-    return { gte: start.toISOString(), lte: thisWeekStart.toISOString() };
+    const start = new Date(thisWeekStart);
+    start.setFullYear(start.getFullYear() - 1);
+    const end = new Date(start.getTime() + 7 * 86400000);
+    return { gte: start.toISOString(), lte: end.toISOString() };
   }
 
   if (period === "month") {
-    const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const end = new Date(now.getFullYear(), now.getMonth(), 1);
+    const start = new Date(now.getFullYear() - 1, now.getMonth(), 1);
+    const end = new Date(now.getFullYear() - 1, now.getMonth() + 1, 1);
     return { gte: start.toISOString(), lte: end.toISOString() };
   }
 
@@ -82,6 +87,21 @@ function getPriorPeriodRange(period: Period): { gte?: string; lte?: string } {
   }
 
   return {};
+}
+
+function getPriorPeriodLabel(period: Period): string | undefined {
+  const now = new Date();
+  if (period === "today") {
+    const d = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+    return `vs ${d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+  }
+  if (period === "week") return `vs same week ${now.getFullYear() - 1}`;
+  if (period === "month") {
+    const d = new Date(now.getFullYear() - 1, now.getMonth(), 1);
+    return `vs ${d.toLocaleDateString("en-US", { month: "long", year: "numeric" })}`;
+  }
+  if (period === "year") return `vs ${now.getFullYear() - 1}`;
+  return undefined;
 }
 
 const PERIOD_LABELS: Record<Period, string> = {
@@ -173,8 +193,35 @@ export default async function AnalyticsPage({
 
   const commissionQuery = supabase.from("commission_rates").select("rep_id, rate_pct");
 
-  const [{ data: contracts }, { data: priorContracts }, { data: outstanding }, { data: allOpps }, { data: goalRows }, { data: commissionRows }] =
-    await Promise.all([query, priorQuery, outstandingQuery, closingRatioQuery, goalsQuery, commissionQuery]);
+  // Shows with costs — overlap with the selected period.
+  // A show overlaps the period if its start_date <= period_end AND end_date >= period_start.
+  // For "all" period we omit both bounds and fetch every show.
+  let showsCostQuery = supabase
+    .from("shows")
+    .select("id, name, start_date, end_date, total_cost")
+    .limit(500);
+  if (range.gte) showsCostQuery = showsCostQuery.gte("end_date", range.gte.split("T")[0]);
+  if (range.lte) showsCostQuery = showsCostQuery.lt("start_date", range.lte.split("T")[0]);
+
+  // Open pipeline — current state, NOT period-filtered. A quote that has been
+  // sitting for 90 days is still "in pipeline" today regardless of when created.
+  const pipelineQuery = supabase
+    .from("contracts")
+    .select("id, total, created_at")
+    .eq("status", "quote");
+
+  // Cancellations in the period — filtered by created_at since the schema has
+  // no cancelled_at column. A contract created in March and cancelled in April
+  // will appear under March's stats (same convention as revenue attribution).
+  let cancelledQuery = supabase
+    .from("contracts")
+    .select("id, total, created_at")
+    .eq("status", "cancelled");
+  if (range.gte) cancelledQuery = cancelledQuery.gte("created_at", range.gte);
+  if (range.lte) cancelledQuery = cancelledQuery.lt("created_at", range.lte);
+
+  const [{ data: contracts }, { data: priorContracts }, { data: outstanding }, { data: allOpps }, { data: goalRows }, { data: commissionRows }, { data: showsInPeriod }, { data: pipelineRows }, { data: cancelledRows }] =
+    await Promise.all([query, priorQuery, outstandingQuery, closingRatioQuery, goalsQuery, commissionQuery, showsCostQuery, pipelineQuery, cancelledQuery]);
 
   const rows = contracts ?? [];
   const priorRows = priorContracts ?? [];
@@ -199,6 +246,24 @@ export default async function AnalyticsPage({
   const revDelta = priorRevenue > 0 ? ((totalRevenue - priorRevenue) / priorRevenue) * 100 : null;
   const depDelta = priorDeposits > 0 ? ((totalDeposits - priorDeposits) / priorDeposits) * 100 : null;
   const cntDelta = priorCount > 0 ? ((contractCount - priorCount) / priorCount) * 100 : null;
+  const priorPeriodLabel = getPriorPeriodLabel(period);
+
+  // ── Pipeline (open quotes — current state, not period-filtered) ────────────
+  const pipeline = pipelineRows ?? [];
+  const pipelineValue = pipeline.reduce((s, q) => s + (q.total ?? 0), 0);
+  const pipelineCount = pipeline.length;
+  const oldestQuoteDays = pipeline.reduce((max, q) => {
+    const days = Math.floor((Date.now() - new Date(q.created_at).getTime()) / 86400000);
+    return days > max ? days : max;
+  }, 0);
+
+  // ── Cancellations in period ─────────────────────────────────────────────────
+  const cancelled = cancelledRows ?? [];
+  const cancelCount = cancelled.length;
+  const cancelTotal = cancelled.reduce((s, c) => s + (c.total ?? 0), 0);
+  const bookingsCount = contractCount + contingentCount;
+  const cancelDenom = cancelCount + bookingsCount;
+  const cancelRate = cancelDenom > 0 ? (cancelCount / cancelDenom) * 100 : null;
 
   // ── Sales rep leaderboard ───────────────────────────────────────────────────
   const goalMap = new Map((goalRows ?? []).map((g) => [g.rep_id, g.target_revenue]));
@@ -216,9 +281,22 @@ export default async function AnalyticsPage({
   const reps = Array.from(repMap.values()).sort((a, b) => b.revenue - a.revenue);
 
   // ── Shows breakdown ─────────────────────────────────────────────────────────
+  // Two sources feed showMap:
+  //   1. Contracts that attribute to a show (revenue side)
+  //   2. Shows that overlap the period and have a total_cost set (cost side)
+  // Merging both means a show with $5k cost and $0 sales still surfaces — that's
+  // the worst-case ROI scenario we never want to hide.
   const showMap = new Map<
     string,
-    { id: string; name: string; start_date?: string; count: number; revenue: number; deposits: number }
+    {
+      id: string;
+      name: string;
+      start_date?: string;
+      count: number;
+      revenue: number;
+      deposits: number;
+      cost: number | null;
+    }
   >();
   for (const c of rows) {
     const showId = (c.show as { id?: string } | null)?.id ?? "unknown";
@@ -231,11 +309,28 @@ export default async function AnalyticsPage({
       count: 0,
       revenue: 0,
       deposits: 0,
+      cost: null,
     };
     existing.count += 1;
     existing.revenue += c.total ?? 0;
     existing.deposits += c.deposit_paid ?? 0;
     showMap.set(showId, existing);
+  }
+  // Merge cost data — also adds shows that have cost but no contracts.
+  for (const s of (showsInPeriod ?? []) as Array<{ id: string; name: string; start_date: string; total_cost: number | string | null }>) {
+    const rawCost = s.total_cost;
+    const cost = rawCost == null ? null : Number(rawCost);
+    const existing = showMap.get(s.id) ?? {
+      id: s.id,
+      name: s.name,
+      start_date: s.start_date,
+      count: 0,
+      revenue: 0,
+      deposits: 0,
+      cost: null,
+    };
+    existing.cost = cost != null && !Number.isNaN(cost) ? cost : null;
+    showMap.set(s.id, existing);
   }
   const shows = Array.from(showMap.values()).sort((a, b) => b.revenue - a.revenue);
 
@@ -291,6 +386,16 @@ export default async function AnalyticsPage({
     const pct = (closed / opps) * 100;
     if (pct >= 50) return "font-semibold text-emerald-600";
     if (pct >= 30) return "font-semibold text-amber-600";
+    return "font-semibold text-red-600";
+  }
+  function roiPct(revenue: number, cost: number | null): string {
+    if (cost == null || cost <= 0) return "—";
+    return `${(((revenue - cost) / cost) * 100).toFixed(1)}%`;
+  }
+  function roiColor(revenue: number, cost: number | null): string {
+    if (cost == null || cost <= 0) return "text-slate-400";
+    const pct = ((revenue - cost) / cost) * 100;
+    if (pct > 0) return "font-semibold text-emerald-600";
     return "font-semibold text-red-600";
   }
 
@@ -458,12 +563,13 @@ export default async function AnalyticsPage({
         </div>
 
         {/* ── KPI Strip ── */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
           <KpiCard
             label="Gross Revenue"
             value={formatCurrency(totalRevenue)}
             trend={revDelta == null ? undefined : revDelta >= 0 ? "up" : "down"}
             trendValue={revDelta == null ? undefined : `${Math.abs(revDelta).toFixed(1)}%`}
+            sublabel={revDelta == null ? undefined : priorPeriodLabel}
             accentColor="#00929C"
           />
           <KpiCard
@@ -471,6 +577,7 @@ export default async function AnalyticsPage({
             value={formatCurrency(totalDeposits)}
             trend={depDelta == null ? undefined : depDelta >= 0 ? "up" : "down"}
             trendValue={depDelta == null ? undefined : `${Math.abs(depDelta).toFixed(1)}%`}
+            sublabel={depDelta == null ? undefined : priorPeriodLabel}
             accentColor="#10b981"
           />
           <KpiCard
@@ -478,12 +585,23 @@ export default async function AnalyticsPage({
             value={contractCount.toString()}
             trend={cntDelta == null ? undefined : cntDelta >= 0 ? "up" : "down"}
             trendValue={cntDelta == null ? undefined : `${Math.abs(cntDelta).toFixed(1)}%`}
+            sublabel={cntDelta == null ? undefined : priorPeriodLabel}
             accentColor="#0f172a"
           />
           <KpiCard
             label="Avg Deal Size"
             value={formatCurrency(avgDeal)}
             accentColor="#d97706"
+          />
+          <KpiCard
+            label="Pipeline"
+            value={formatCurrency(pipelineValue)}
+            sublabel={
+              pipelineCount === 0
+                ? undefined
+                : `${pipelineCount} open · ${oldestQuoteDays}d oldest`
+            }
+            accentColor="#7c3aed"
           />
         </div>
 
@@ -508,6 +626,7 @@ export default async function AnalyticsPage({
             {[
               { href: "#trend", label: "Trend" },
               { href: "#breakdown", label: "Revenue" },
+              { href: "#cancellations", label: "Cancellations" },
               { href: "#leaderboard", label: "Leaderboard" },
               { href: "#shows", label: "Shows" },
               { href: "#locations", label: "Locations" },
@@ -546,6 +665,40 @@ export default async function AnalyticsPage({
               <span className="text-slate-900">{formatCurrency(totalRevenue)}</span>
             </div>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* ── Cancellations ── */}
+        <Card id="cancellations" className="scroll-mt-32">
+          <CardHeader className="pb-3">
+            <div className="flex items-baseline justify-between gap-3">
+              <CardTitle className="text-base">Cancellations</CardTitle>
+              <p className="text-xs text-slate-500">{PERIOD_LABELS[period]}</p>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {cancelCount === 0 ? (
+              <p className="text-sm text-emerald-700 bg-emerald-50 rounded-xl border border-emerald-100 px-4 py-3 text-center">
+                ✓ No cancellations this period.
+              </p>
+            ) : (
+              <div className="grid grid-cols-3 gap-3">
+                <div className="text-center p-3 bg-red-50 rounded-xl border border-red-100">
+                  <p className="text-2xl font-bold text-red-700">{cancelCount}</p>
+                  <p className="text-xs text-red-600 mt-0.5">Cancelled</p>
+                </div>
+                <div className="text-center p-3 bg-red-50 rounded-xl border border-red-100">
+                  <p className="text-lg font-bold text-red-700">{formatCurrency(cancelTotal)}</p>
+                  <p className="text-xs text-red-600 mt-0.5">Revenue Lost</p>
+                </div>
+                <div className="text-center p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <p className="text-2xl font-bold text-slate-800">
+                    {cancelRate != null ? `${cancelRate.toFixed(1)}%` : "—"}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-0.5">Cancel Rate</p>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -675,6 +828,8 @@ export default async function AnalyticsPage({
                       <th className="text-right py-3 px-4 font-medium text-slate-500">Contracts</th>
                       <th className="text-right py-3 px-4 font-medium text-slate-500">Revenue</th>
                       <th className="text-right py-3 px-4 font-medium text-slate-500">Deposits</th>
+                      <th className="text-right py-3 px-4 font-medium text-slate-500">Cost</th>
+                      <th className="text-right py-3 px-4 font-medium text-slate-500">ROI %</th>
                       <th className="text-right py-3 px-4 font-medium text-slate-500">Close %</th>
                     </tr>
                   </thead>
@@ -682,7 +837,7 @@ export default async function AnalyticsPage({
                     {shows.map((show) => {
                       const cr = showClosingMap.get(show.id);
                       return (
-                      <tr key={show.name} className="border-b border-slate-100">
+                      <tr key={show.id} className="border-b border-slate-100">
                         <td className="py-3 px-4">
                           <p className="font-medium text-slate-900">{show.name}</p>
                           {show.start_date && (
@@ -700,6 +855,12 @@ export default async function AnalyticsPage({
                         </td>
                         <td className="py-3 px-4 text-right text-slate-600">
                           {formatCurrency(show.deposits)}
+                        </td>
+                        <td className="py-3 px-4 text-right text-slate-600">
+                          {show.cost != null ? formatCurrency(show.cost) : <span className="text-slate-300">—</span>}
+                        </td>
+                        <td className={`py-3 px-4 text-right ${roiColor(show.revenue, show.cost)}`}>
+                          {roiPct(show.revenue, show.cost)}
                         </td>
                         <td className={`py-3 px-4 text-right ${cr ? closingRatioColor(cr.opps, cr.closed) : "text-slate-400"}`}>
                           {cr ? closingRatioPct(cr.opps, cr.closed) : "—"}
