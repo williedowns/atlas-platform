@@ -303,12 +303,15 @@ export default async function ContractDetailPage({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {lineItems.map((item: { product_name: string; serial_number?: string; sell_price: number; quantity: number }, i: number) => (
+                {lineItems.map((item: { product_name: string; serial_number?: string; shell_color?: string; cabinet_color?: string; sell_price: number; quantity: number }, i: number) => (
                   <tr key={i}>
                     <td className="px-4 py-3">
                       <p className="font-medium text-slate-900">{item.product_name}</p>
                       {item.serial_number && (
                         <p className="text-xs text-slate-400">SN: {item.serial_number}</p>
+                      )}
+                      {(item.shell_color || item.cabinet_color) && (
+                        <p className="text-xs text-slate-400">{[item.shell_color, item.cabinet_color && `${item.cabinet_color} cabinet`].filter(Boolean).join(" · ")}</p>
                       )}
                     </td>
                     <td className="px-4 py-3 text-right font-medium">

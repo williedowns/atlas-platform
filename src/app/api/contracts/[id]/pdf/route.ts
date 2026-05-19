@@ -203,13 +203,16 @@ export async function GET(
   const lineItems = Array.isArray(contract.line_items) ? contract.line_items : [];
   let altRow = false;
   for (const item of lineItems) {
+    const colorParts = [item.shell_color, item.cabinet_color && `${item.cabinet_color} cabinet`].filter(Boolean) as string[];
+    const colorText = colorParts.join(" · ");
+    const rowH = colorText ? 10 : 6.5;
     if (y > 240) {
       doc.addPage();
       y = M;
     }
     if (altRow) {
       doc.setFillColor(252, 252, 253);
-      doc.rect(M, y - 4, W - M * 2, 6.5, "F");
+      doc.rect(M, y - 4, W - M * 2, rowH, "F");
     }
     altRow = !altRow;
 
@@ -235,8 +238,17 @@ export async function GET(
       doc.setFont("helvetica", "normal");
       doc.text(formatCurrency(lineTotal), colPrice - 1, y, { align: "right" });
     }
+
+    if (colorText) {
+      doc.setFontSize(8);
+      doc.setTextColor(...SLATE_500);
+      doc.setFont("helvetica", "normal");
+      const displayColor = colorText.length > 55 ? colorText.substring(0, 52) + "…" : colorText;
+      doc.text(displayColor, colProduct + 1, y + 3.5);
+    }
+
     doc.setFontSize(10);
-    y += 6.5;
+    y += rowH;
   }
 
   // Bottom rule
