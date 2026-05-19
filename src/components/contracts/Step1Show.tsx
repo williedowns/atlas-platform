@@ -29,12 +29,14 @@ export default function Step1Show({ onNext }: Step1ShowProps) {
   useEffect(() => {
     async function fetchData() {
       const supabase = createClient();
+      const today = new Date().toISOString().split("T")[0];
 
       const [showsResult, locationsResult] = await Promise.all([
         supabase
           .from("shows")
           .select("*, location:locations(*)")
           .eq("active", true)
+          .gte("end_date", today)
           .order("start_date", { ascending: true }),
         supabase
           .from("locations")
