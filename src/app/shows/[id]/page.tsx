@@ -29,6 +29,13 @@ export default async function ShowDetailPage({
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+  const canExportSpreadsheet = ["admin", "manager", "bookkeeper"].includes(profile?.role ?? "");
+
   const { data: show } = await supabase
     .from("shows")
     .select("*, location:locations(*)")
@@ -151,6 +158,44 @@ export default async function ShowDetailPage({
             </Button>
           </Link>
         </div>
+
+        {/* Show Sales Workbook — live editable spreadsheet per show */}
+        {canExportSpreadsheet && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle>Show Sales Workbook</CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 pt-0 space-y-3">
+              <p className="text-sm text-slate-600">
+                The live workbook for this show. Auto-populated from contracts (customer,
+                model, sale price, deposits) and editable in place for the fields Lori
+                tracks alongside — multi-rep splits, spiffs, freight/crane/removal,
+                marketing feedback, comments. Edits save automatically and feed both the
+                .xlsx export and platform reports.
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                <Link
+                  href={`/shows/${id}/workbook`}
+                  className="col-span-2 inline-flex items-center justify-center gap-2 bg-[#00929C] hover:bg-[#007a82] text-white font-semibold rounded-md py-3 px-3 transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                  </svg>
+                  Open Workbook ({contracts?.length ?? 0} deal{contracts?.length === 1 ? "" : "s"})
+                </Link>
+                <a
+                  href={`/api/shows/${id}/spreadsheet`}
+                  className="inline-flex items-center justify-center gap-1.5 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 font-medium rounded-md py-3 px-2 text-sm transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
+                  </svg>
+                  .xlsx
+                </a>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Contracts list */}
         <Card>
