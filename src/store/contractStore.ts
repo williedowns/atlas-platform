@@ -11,6 +11,8 @@ import type {
   UnitType,
 } from "@/types";
 import { buildGraniteLineItem, isSpaWithDimensions } from "@/lib/granite";
+import { buildConcreteLineItem } from "@/lib/concrete";
+import type { Contract } from "@/types";
 
 export interface ContractDraft {
   // Context
@@ -129,6 +131,11 @@ export interface ContractDraft {
   // Optional so persisted drafts from prior versions rehydrate cleanly.
   concrete_estimate_pending?: boolean;
   concrete_estimate_notes?: string;
+
+  // Set when this draft is an addon contract spawned from a parent (e.g. a
+  // post-show concrete site-prep contract). Persisted on the saved row so the
+  // parent's detail page can render a link to the child.
+  parent_contract_id?: string;
 }
 
 export interface DepositSplit {
@@ -193,6 +200,7 @@ interface ContractStore {
   setTaxExemptCert: (cert: { dataUrl: string; filename: string; mime: string } | null) => void;
   setConcreteEstimatePending: (pending: boolean) => void;
   setConcreteEstimateNotes: (notes: string) => void;
+  prefillForConcreteAddon: (parentContract: Contract) => void;
   computeTotals: () => void;
   resetDraft: () => void;
   hasDraftProgress: () => boolean;
@@ -517,6 +525,27 @@ export const useContractStore = create<ContractStore>()(
 
       setConcreteEstimateNotes: (concrete_estimate_notes) =>
         set((state) => ({ draft: { ...state.draft, concrete_estimate_notes } })),
+
+      // Site-visit addon flow: rep opens the parent (spa) contract, taps
+      // "Create Concrete Contract", lands here. Pre-fills customer + a single
+      // editable Concrete Pad line item, and inherits the parent's show so
+      // the contract history stays attributed to the original venue.
+      prefillForConcreteAddon: (parentContract) => {
+        set((state) => {
+          const concreteLine = buildConcreteLineItem();
+          const newDraft: ContractDraft = {
+            ...state.draft,
+            customer: parentContract.customer ?? state.draft.customer,
+            show_id: parentContract.show_id ?? undefined,
+            show: parentContract.show ?? undefined,
+            location_id: parentContract.location_id ?? undefined,
+            location: parentContract.location ?? undefined,
+            line_items: [concreteLine],
+            parent_contract_id: parentContract.id,
+          };
+          return { draft: { ...newDraft, ...computeTotalsFromDraft(newDraft) } };
+        });
+      },
 
       computeTotals: () =>
         set((state) => ({
