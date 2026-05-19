@@ -44,6 +44,8 @@ export async function POST(req: Request) {
     delivery_diagram,
     delivery_timeframe,
     idempotency_key,
+    concrete_estimate_pending,
+    concrete_estimate_notes,
   } = body;
 
   // Idempotent replay: if the client sent a key it has used before for this
@@ -148,6 +150,8 @@ export async function POST(req: Request) {
       delivery_timeframe: delivery_timeframe?.trim() || null,
       delivery_timeframe_updated_at: delivery_timeframe?.trim() ? new Date().toISOString() : null,
       delivery_timeframe_updated_by: delivery_timeframe?.trim() ? user.id : null,
+      concrete_estimate_pending: !!concrete_estimate_pending,
+      concrete_estimate_notes: concrete_estimate_pending ? (concrete_estimate_notes?.trim() || null) : null,
       signature_metadata: {
         ip_address: ip,
         user_agent: userAgent,
