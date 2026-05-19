@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -55,7 +55,24 @@ const INTEREST_OPTIONS = [
   { value: "service", label: "Service" },
 ];
 
+// Next.js 16 / React 19 requires `useSearchParams()` callers to be inside a
+// Suspense boundary at the static prerender boundary. The inner component
+// does the actual work; the default export wraps it.
 export default function NewOpportunityPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+          <div className="w-6 h-6 border-2 border-[#00929C] border-t-transparent rounded-full animate-spin" />
+        </div>
+      }
+    >
+      <NewOpportunityForm />
+    </Suspense>
+  );
+}
+
+function NewOpportunityForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialStageId = searchParams.get("stage_id");
