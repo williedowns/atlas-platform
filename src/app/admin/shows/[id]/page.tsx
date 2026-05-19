@@ -35,6 +35,7 @@ export default function EditShowPage({ params }: { params: { id: string } }) {
     zip: "",
     start_date: "",
     end_date: "",
+    total_cost: "",
     qbo_deposit_account_id: "",
     qbo_deposit_account_name: "",
     qbo_department_id: "",
@@ -71,6 +72,10 @@ export default function EditShowPage({ params }: { params: { id: string } }) {
             zip: data.zip ?? "",
             start_date: data.start_date ?? "",
             end_date: data.end_date ?? "",
+            total_cost:
+              (data as any).total_cost != null
+                ? String((data as any).total_cost)
+                : "",
             qbo_deposit_account_id: (data as any).qbo_deposit_account_id ?? "",
             qbo_deposit_account_name: (data as any).qbo_deposit_account_name ?? "",
             qbo_department_id: (data as any).qbo_department_id ?? "",
@@ -107,6 +112,12 @@ export default function EditShowPage({ params }: { params: { id: string } }) {
       setError("End date must be on or after start date.");
       return;
     }
+    const parsedCost = form.total_cost.trim() === "" ? null : Number(form.total_cost);
+    if (parsedCost !== null && (Number.isNaN(parsedCost) || parsedCost < 0)) {
+      setError("Total cost must be a positive number.");
+      return;
+    }
+
     setSaving(true);
     setError("");
 
@@ -121,6 +132,7 @@ export default function EditShowPage({ params }: { params: { id: string } }) {
         zip: form.zip,
         start_date: form.start_date,
         end_date: form.end_date,
+        total_cost: parsedCost,
         qbo_deposit_account_id: form.qbo_deposit_account_id || null,
         qbo_deposit_account_name: form.qbo_deposit_account_name || null,
         qbo_department_id: form.qbo_department_id || null,
@@ -158,6 +170,16 @@ export default function EditShowPage({ params }: { params: { id: string } }) {
             </svg>
           </Link>
           <h1 className="text-lg font-bold">Edit Show</h1>
+          <a
+            href={`/api/admin/shows/${params.id}/spreadsheet`}
+            className="ml-auto inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-[#00929C] hover:bg-[#007a82] text-white text-sm font-semibold transition-colors"
+            title="Download Lori-format show sales XLSX"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
+            </svg>
+            Export Sales XLSX
+          </a>
         </div>
       </header>
 
@@ -239,6 +261,31 @@ export default function EditShowPage({ params }: { params: { id: string } }) {
                   required
                 />
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Show Cost (for ROI tracking) */}
+          <Card>
+            <CardContent className="p-4 space-y-3">
+              <div>
+                <h2 className="font-semibold text-slate-700">Show Cost</h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Total all-in cost: booth fees + travel + payroll + other. Used on the analytics page to compute profit and ROI%.
+                </p>
+              </div>
+              <Input
+                label="Total Cost (USD)"
+                type="number"
+                inputMode="decimal"
+                step="0.01"
+                min="0"
+                value={form.total_cost}
+                onChange={(e) => set("total_cost", e.target.value)}
+                placeholder="e.g. 12500"
+              />
+              <p className="text-xs text-slate-500">
+                Leave blank if not yet known — show will display em-dash for ROI until cost is entered.
+              </p>
             </CardContent>
           </Card>
 
