@@ -46,6 +46,7 @@ export async function POST(req: Request) {
     idempotency_key,
     concrete_estimate_pending,
     concrete_estimate_notes,
+    parent_contract_id,
   } = body;
 
   // Idempotent replay: if the client sent a key it has used before for this
@@ -152,6 +153,7 @@ export async function POST(req: Request) {
       delivery_timeframe_updated_by: delivery_timeframe?.trim() ? user.id : null,
       concrete_estimate_pending: !!concrete_estimate_pending,
       concrete_estimate_notes: concrete_estimate_pending ? (concrete_estimate_notes?.trim() || null) : null,
+      parent_contract_id: parent_contract_id ?? null,
       signature_metadata: {
         ip_address: ip,
         user_agent: userAgent,
@@ -204,6 +206,23 @@ export async function POST(req: Request) {
     },
     req,
   });
+
+  // Addon link bookkeeping: when this contract is a concrete (or other) addon
+  // spawned from a parent, clear the parent's concrete_estimate_pending flag
+  // so the badge + "Create Concrete Contract" button disappear on next view.
+  // Awaited (not fire-and-forget) so the parent's UI state stays consistent
+  // with the new addon row before the client navigates back to it.
+  if (parent_contract_id) {
+    const { error: parentUpdateErr } = await supabase
+      .from("contracts")
+      .update({ concrete_estimate_pending: false })
+      .eq("id", parent_contract_id);
+    if (parentUpdateErr) {
+      // Non-fatal: the addon row was created successfully; the parent flag
+      // can be cleared manually if this update fails (rare — RLS or FK).
+      console.error("Failed to clear parent concrete_estimate_pending:", parentUpdateErr);
+    }
+  }
 
   // Allocate inventory units if serial numbers provided
   for (const item of line_items) {

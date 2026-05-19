@@ -385,6 +385,10 @@ export interface Contract {
   concrete_estimate_pending?: boolean;
   concrete_estimate_notes?: string;
 
+  // Addon link — set on a child contract (e.g. concrete site-prep) created
+  // after a site visit. Points back to the parent (spa) contract.
+  parent_contract_id?: string;
+
   created_at: string;
   updated_at: string;
 }

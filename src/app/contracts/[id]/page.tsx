@@ -115,6 +115,18 @@ export default async function ContractDetailPage({
   const readiness = evaluateReadiness(contract, dlPresent);
   const canOverrideReadiness = ["admin", "manager"].includes(profile?.role ?? "");
 
+  // Concrete-pad addon link: any child contract whose parent_contract_id
+  // points to this one. Used to render the link under the concrete badge
+  // and to suppress the "Create Concrete Contract" button on contracts that
+  // already have an addon (so the rep doesn't spawn duplicates).
+  const { data: concreteAddon } = await supabase
+    .from("contracts")
+    .select("id, contract_number")
+    .eq("parent_contract_id", id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
   // Resolve who last edited the delivery timeframe (for the audit-style line
   // on the editor card). Skipped if no edit has happened yet.
   let timeframeEditorName: string | null = null;
@@ -242,24 +254,68 @@ export default async function ContractDetailPage({
 
         {/* Concrete pad estimate pending — flagged at Step 5 when customer
             wants concrete instead of granite. Visible so Brad/Alex follow up
-            after a site check; no money is owed against this flag itself. */}
+            after a site check; no money is owed against this flag itself.
+            "Create Concrete Contract" only shown on PARENT contracts (no
+            parent_contract_id) without an existing addon, so reps can't spawn
+            an addon-of-an-addon or duplicate one. Once the addon is saved,
+            POST /api/contracts clears concrete_estimate_pending on this row
+            and the badge disappears entirely. */}
         {contract.concrete_estimate_pending && (
           <div className="rounded-xl border-2 border-amber-300 bg-amber-50 px-4 py-3">
             <div className="flex items-start gap-3">
               <span className="text-xl leading-none mt-0.5" aria-hidden="true">🚧</span>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-bold text-amber-900">Concrete estimate pending</p>
-                {contract.concrete_estimate_notes ? (
-                  <p className="text-xs text-amber-800 mt-1 whitespace-pre-wrap">
-                    {contract.concrete_estimate_notes}
-                  </p>
-                ) : (
-                  <p className="text-xs text-amber-700 mt-1 italic">
-                    No notes captured at show — site check required.
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-bold text-amber-900">Concrete estimate pending</p>
+                    {contract.concrete_estimate_notes ? (
+                      <p className="text-xs text-amber-800 mt-1 whitespace-pre-wrap">
+                        {contract.concrete_estimate_notes}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-amber-700 mt-1 italic">
+                        No notes captured at show — site check required.
+                      </p>
+                    )}
+                  </div>
+                  {!contract.parent_contract_id && !concreteAddon && (
+                    <Link
+                      href={`/contracts/new?from_contract=${contract.id}&type=concrete-addon`}
+                      className="inline-flex items-center justify-center rounded-lg bg-amber-600 px-3 py-2 text-xs font-bold text-white hover:bg-amber-700 active:bg-amber-800 transition-colors whitespace-nowrap flex-shrink-0"
+                    >
+                      Create Concrete Contract
+                    </Link>
+                  )}
+                </div>
+                {concreteAddon && (
+                  <p className="text-xs text-amber-800 mt-2">
+                    Concrete addon:{" "}
+                    <Link
+                      href={`/contracts/${concreteAddon.id}`}
+                      className="font-semibold underline hover:text-amber-900"
+                    >
+                      Contract #{concreteAddon.contract_number}
+                    </Link>
                   </p>
                 )}
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Concrete addon link — shown even after the pending flag is cleared,
+            so the parent contract always carries a link to its child. */}
+        {!contract.concrete_estimate_pending && !contract.parent_contract_id && concreteAddon && (
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+            <p className="text-xs text-slate-600">
+              Concrete addon:{" "}
+              <Link
+                href={`/contracts/${concreteAddon.id}`}
+                className="font-semibold text-[#00929C] underline hover:text-[#00939B]"
+              >
+                Contract #{concreteAddon.contract_number}
+              </Link>
+            </p>
           </div>
         )}
 

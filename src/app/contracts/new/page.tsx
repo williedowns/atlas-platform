@@ -35,16 +35,27 @@ function NewContractContent() {
   // Show-prefill: when the rep enters the wizard from /shows/[id]/page.tsx
   // ("+ Start New Contract"), the show is known. Skip the Pick Show step.
   const prefillShowId = searchParams.get("show");
+  // Concrete addon-prefill: rep tapped "Create Concrete Contract" on a
+  // parent contract's detail page. We load the parent and pre-fill customer
+  // + a Concrete Pad line item, then jump straight to Step 3 (Products) so
+  // the rep can enter qty + on-site price.
+  const fromContractId = searchParams.get("from_contract");
+  const addonType = searchParams.get("type");
+  const isConcreteAddon = addonType === "concrete-addon" && !!fromContractId;
 
-  const { resetDraft, setWizardStep, setShow } = useContractStore();
+  const { resetDraft, setWizardStep, setShow, prefillForConcreteAddon } = useContractStore();
   const persistedStep = useContractStore((s) => s.draft.wizard_step);
   const customerOnDraft = useContractStore((s) => s.draft.customer);
   const lineItemsOnDraft = useContractStore((s) => s.draft.line_items);
+  const parentContractIdOnDraft = useContractStore((s) => s.draft.parent_contract_id);
   const hasDraftProgress = useContractStore((s) => s.hasDraftProgress);
   const [step, setStep] = useState(1);
   const [loadingQuote, setLoadingQuote] = useState(!!fromQuoteId);
   const [loadingShowPrefill, setLoadingShowPrefill] = useState(
     !fromQuoteId && !!prefillShowId
+  );
+  const [loadingConcreteAddon, setLoadingConcreteAddon] = useState(
+    !fromQuoteId && !prefillShowId && isConcreteAddon
   );
   // Resume prompt: shown on mount when there's persisted in-progress work AND
   // we're not loading from a saved quote. Replaces the previous behavior of
@@ -58,11 +69,21 @@ function NewContractContent() {
       loadFromQuote(fromQuoteId);
       return;
     }
+    // Concrete addon re-entry: if the persisted draft already points at this
+    // parent, skip the fetch + prefill (and skip the resume prompt) — the rep
+    // is just navigating back into the wizard mid-flow.
+    if (isConcreteAddon && parentContractIdOnDraft === fromContractId) {
+      return;
+    }
     if (hasDraftProgress()) {
       // Don't touch persisted state — let the rep choose Resume or Start Over.
-      // If a ?show= prefill was requested, defer the prefill until the rep
-      // chooses Start Over below.
+      // If a ?show= or ?from_contract= prefill was requested, defer the
+      // prefill until the rep chooses Start Over below.
       setShowResumePrompt(true);
+      return;
+    }
+    if (isConcreteAddon) {
+      loadConcreteAddon(fromContractId);
       return;
     }
     if (prefillShowId) {
@@ -92,6 +113,24 @@ function NewContractContent() {
     setLoadingShowPrefill(false);
   }
 
+  async function loadConcreteAddon(parentId: string) {
+    const supabase = createClient();
+    const { data } = await supabase
+      .from("contracts")
+      .select("*, customer:customers(*), show:shows(*), location:locations(*)")
+      .eq("id", parentId)
+      .single();
+    if (data) {
+      // Parent row has the same shape the Contract type expects (customer +
+      // show + location joined). Cast to Contract for the store action.
+      prefillForConcreteAddon(data as Parameters<typeof prefillForConcreteAddon>[0]);
+      // Jump to Step 3 (Products) — customer + show are pre-filled and the
+      // Concrete Pad line is already added; rep just edits qty + price.
+      setStep(3);
+    }
+    setLoadingConcreteAddon(false);
+  }
+
   // Persist the wizard step so a reload returns to the same step.
   useEffect(() => {
     setWizardStep(step);
@@ -110,6 +149,14 @@ function NewContractContent() {
   function handleStartOver() {
     resetDraft();
     setShowResumePrompt(false);
+    // If the rep arrived via ?from_contract=<id>&type=concrete-addon, honor
+    // the addon prefill — they explicitly chose to start the concrete flow,
+    // not a generic blank contract.
+    if (isConcreteAddon) {
+      setLoadingConcreteAddon(true);
+      loadConcreteAddon(fromContractId);
+      return;
+    }
     // If the rep arrived via ?show=<id>, honor that prefill even when they
     // chose Start Over from the resume prompt.
     if (prefillShowId) {
@@ -192,7 +239,7 @@ function NewContractContent() {
 
   const isQuotePhase = QUOTE_STEPS.has(step);
 
-  if (loadingQuote || loadingShowPrefill) {
+  if (loadingQuote || loadingShowPrefill || loadingConcreteAddon) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
@@ -200,7 +247,13 @@ function NewContractContent() {
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
           </svg>
-          <p className="text-slate-500">{loadingQuote ? "Loading quote…" : "Loading show…"}</p>
+          <p className="text-slate-500">
+            {loadingQuote
+              ? "Loading quote…"
+              : loadingConcreteAddon
+              ? "Loading parent contract…"
+              : "Loading show…"}
+          </p>
         </div>
       </div>
     );
