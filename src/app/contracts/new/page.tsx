@@ -32,14 +32,20 @@ function NewContractContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const fromQuoteId = searchParams.get("from");
+  // Show-prefill: when the rep enters the wizard from /shows/[id]/page.tsx
+  // ("+ Start New Contract"), the show is known. Skip the Pick Show step.
+  const prefillShowId = searchParams.get("show");
 
-  const { resetDraft, setWizardStep } = useContractStore();
+  const { resetDraft, setWizardStep, setShow } = useContractStore();
   const persistedStep = useContractStore((s) => s.draft.wizard_step);
   const customerOnDraft = useContractStore((s) => s.draft.customer);
   const lineItemsOnDraft = useContractStore((s) => s.draft.line_items);
   const hasDraftProgress = useContractStore((s) => s.hasDraftProgress);
   const [step, setStep] = useState(1);
   const [loadingQuote, setLoadingQuote] = useState(!!fromQuoteId);
+  const [loadingShowPrefill, setLoadingShowPrefill] = useState(
+    !fromQuoteId && !!prefillShowId
+  );
   // Resume prompt: shown on mount when there's persisted in-progress work AND
   // we're not loading from a saved quote. Replaces the previous behavior of
   // unconditionally wiping the draft, which destroyed any work that survived
@@ -54,11 +60,37 @@ function NewContractContent() {
     }
     if (hasDraftProgress()) {
       // Don't touch persisted state — let the rep choose Resume or Start Over.
+      // If a ?show= prefill was requested, defer the prefill until the rep
+      // chooses Start Over below.
       setShowResumePrompt(true);
+      return;
     }
-    // No progress on draft → default empty state is fine, nothing to reset.
+    if (prefillShowId) {
+      loadShowPrefill(prefillShowId);
+      return;
+    }
+    // No progress, no quote, no prefill → default empty state is fine.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function loadShowPrefill(showId: string) {
+    const supabase = createClient();
+    const { data } = await supabase
+      .from("shows")
+      .select("*, location:locations(*)")
+      .eq("id", showId)
+      .single();
+    if (data) {
+      type ShowWithLocation = Parameters<typeof setShow>[0] & {
+        location?: Parameters<typeof setShow>[1];
+      };
+      const show = data as unknown as ShowWithLocation;
+      const location = (show.location as Parameters<typeof setShow>[1]) ?? null;
+      setShow(show, location);
+      setStep(2); // Customer step — show is pre-filled
+    }
+    setLoadingShowPrefill(false);
+  }
 
   // Persist the wizard step so a reload returns to the same step.
   useEffect(() => {
@@ -77,8 +109,15 @@ function NewContractContent() {
 
   function handleStartOver() {
     resetDraft();
-    setStep(1);
     setShowResumePrompt(false);
+    // If the rep arrived via ?show=<id>, honor that prefill even when they
+    // chose Start Over from the resume prompt.
+    if (prefillShowId) {
+      setLoadingShowPrefill(true);
+      loadShowPrefill(prefillShowId);
+      return;
+    }
+    setStep(1);
   }
 
   async function loadFromQuote(quoteId: string) {
@@ -153,7 +192,7 @@ function NewContractContent() {
 
   const isQuotePhase = QUOTE_STEPS.has(step);
 
-  if (loadingQuote) {
+  if (loadingQuote || loadingShowPrefill) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
@@ -161,7 +200,7 @@ function NewContractContent() {
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
           </svg>
-          <p className="text-slate-500">Loading quote…</p>
+          <p className="text-slate-500">{loadingQuote ? "Loading quote…" : "Loading show…"}</p>
         </div>
       </div>
     );
