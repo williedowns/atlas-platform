@@ -10,6 +10,7 @@ import { formatCurrency } from "@/lib/utils";
 import type { Product, DiscountType, ContractDiscount } from "@/types";
 import { isSpaProduct, isOptionAvailableForModel } from "@/lib/inventory-constants";
 import { InventoryUnitPicker } from "@/components/contracts/InventoryUnitPicker";
+import { GRANITE_PRICE_TIERS } from "@/lib/granite";
 
 interface Step3ProductsProps {
   onNext: () => void;
@@ -369,11 +370,15 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
               Selected ({draft.line_items.length})
             </h3>
             <div className="space-y-2">
-              {draft.line_items.map((item, index) => (
+              {draft.line_items.map((item, index) => {
+                const isGranite = item.linked_spa_product_id !== undefined;
+                return (
                 <div key={`${item.product_id}-${index}`} className="flex items-center justify-between gap-3">
                   <div className="flex-1 min-w-0">
                     <span className="text-base font-medium text-slate-900 block truncate">{item.product_name}</span>
-                    {(item.inventory_unit_id || item.shell_color || item.cabinet_color) && (
+                    {isGranite ? (
+                      <span className="text-xs text-slate-500">{item.quantity} ft (locked to spa size)</span>
+                    ) : (item.inventory_unit_id || item.shell_color || item.cabinet_color) && (
                       <span className="text-xs text-slate-500">
                         {item.serial_number ? `S/N: ${item.serial_number}` : item.inventory_unit_id ? "Unit selected" : ""}
                         {item.shell_color ? `${item.serial_number || item.inventory_unit_id ? " · " : ""}${item.shell_color}` : ""}
@@ -383,8 +388,18 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
                     )}
                   </div>
 
-                  {/* Price — tap to edit */}
-                  {item.waived ? (
+                  {/* Price — granite uses a $135/$140/$145 dropdown; everything else taps to edit */}
+                  {isGranite ? (
+                    <select
+                      value={item.sell_price}
+                      onChange={(e) => updateLineItemPrice(index, parseFloat(e.target.value))}
+                      className="h-9 px-2 rounded-lg border-2 border-[#00929C] bg-white text-sm font-semibold focus:outline-none touch-manipulation"
+                    >
+                      {GRANITE_PRICE_TIERS.map((p) => (
+                        <option key={p} value={p}>${p}/ft</option>
+                      ))}
+                    </select>
+                  ) : item.waived ? (
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <span className="text-xs font-bold text-slate-400 line-through">{formatCurrency(item.msrp)}</span>
                       <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">FREE</span>
@@ -453,7 +468,8 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
                     </button>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           </CardContent>
         </Card>

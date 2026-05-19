@@ -240,6 +240,29 @@ export default async function ContractDetailPage({
           </div>
         </div>
 
+        {/* Concrete pad estimate pending — flagged at Step 5 when customer
+            wants concrete instead of granite. Visible so Brad/Alex follow up
+            after a site check; no money is owed against this flag itself. */}
+        {contract.concrete_estimate_pending && (
+          <div className="rounded-xl border-2 border-amber-300 bg-amber-50 px-4 py-3">
+            <div className="flex items-start gap-3">
+              <span className="text-xl leading-none mt-0.5" aria-hidden="true">🚧</span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-bold text-amber-900">Concrete estimate pending</p>
+                {contract.concrete_estimate_notes ? (
+                  <p className="text-xs text-amber-800 mt-1 whitespace-pre-wrap">
+                    {contract.concrete_estimate_notes}
+                  </p>
+                ) : (
+                  <p className="text-xs text-amber-700 mt-1 italic">
+                    No notes captured at show — site check required.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Status Timeline */}
         <Card>
           <CardContent className="p-4">

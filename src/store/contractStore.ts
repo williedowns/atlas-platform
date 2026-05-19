@@ -10,6 +10,7 @@ import type {
   Location,
   UnitType,
 } from "@/types";
+import { buildGraniteLineItem, isSpaWithDimensions } from "@/lib/granite";
 
 export interface ContractDraft {
   // Context
@@ -121,6 +122,13 @@ export interface ContractDraft {
   tax_exempt_cert_data_url?: string;
   tax_exempt_cert_filename?: string;
   tax_exempt_cert_mime?: string;
+
+  // Concrete pad estimate — toggled at Step 5 when the customer wants
+  // concrete instead of crushed granite. No line item, no money collected.
+  // Flag + notes carry to the contract row for back-office follow-up.
+  // Optional so persisted drafts from prior versions rehydrate cleanly.
+  concrete_estimate_pending?: boolean;
+  concrete_estimate_notes?: string;
 }
 
 export interface DepositSplit {
@@ -183,6 +191,8 @@ interface ContractStore {
   setElectronicConsent: (consent: boolean) => void;
   setInitialUrl: (key: "sales_final" | "cancellation_forfeit" | "rx_30_day", url: string | null) => void;
   setTaxExemptCert: (cert: { dataUrl: string; filename: string; mime: string } | null) => void;
+  setConcreteEstimatePending: (pending: boolean) => void;
+  setConcreteEstimateNotes: (notes: string) => void;
   computeTotals: () => void;
   resetDraft: () => void;
   hasDraftProgress: () => boolean;
@@ -206,6 +216,8 @@ const initialDraft: ContractDraft = {
   surcharge_amount: 0,
   total: 0,
   deposit_amount: 0,
+  concrete_estimate_pending: false,
+  concrete_estimate_notes: "",
 };
 
 function computeTotalsFromDraft(draft: ContractDraft): Partial<ContractDraft> {
@@ -271,53 +283,65 @@ export const useContractStore = create<ContractStore>()(
 
       addLineItem: (product, price, waived = false, shell_color?, cabinet_color?) => {
         set((state) => {
-          const newDraft = {
-            ...state.draft,
-            line_items: [
-              ...state.draft.line_items,
-              {
-                product_id: product.id,
-                product_name: product.name,
-                msrp: product.msrp,
-                sell_price: waived ? 0 : price,
-                quantity: 1,
-                ...(waived ? { waived: true } : {}),
-                ...(shell_color ? { shell_color } : {}),
-                ...(cabinet_color ? { cabinet_color } : {}),
-              },
-            ],
+          const spaLine: ContractLineItem = {
+            product_id: product.id,
+            product_name: product.name,
+            msrp: product.msrp,
+            sell_price: waived ? 0 : price,
+            quantity: 1,
+            ...(waived ? { waived: true } : {}),
+            ...(shell_color ? { shell_color } : {}),
+            ...(cabinet_color ? { cabinet_color } : {}),
           };
+          const nextLineItems = [...state.draft.line_items, spaLine];
+          if (isSpaWithDimensions(product)) {
+            nextLineItems.push(buildGraniteLineItem(product));
+          }
+          const newDraft = { ...state.draft, line_items: nextLineItems };
           return { draft: { ...newDraft, ...computeTotalsFromDraft(newDraft) } };
         });
       },
 
       addLineItemWithUnit: (product, price, unit) => {
         set((state) => {
-          const newDraft = {
-            ...state.draft,
-            line_items: [
-              ...state.draft.line_items,
-              {
-                product_id: product.id,
-                product_name: product.name,
-                msrp: product.msrp,
-                sell_price: price,
-                quantity: 1,
-                inventory_unit_id: unit.id,
-                serial_number: unit.serial_number ?? undefined,
-                unit_type: (unit.unit_type ?? undefined) as UnitType | undefined,
-                shell_color: unit.shell_color ?? undefined,
-                cabinet_color: unit.cabinet_color ?? undefined,
-              },
-            ],
+          const spaLine: ContractLineItem = {
+            product_id: product.id,
+            product_name: product.name,
+            msrp: product.msrp,
+            sell_price: price,
+            quantity: 1,
+            inventory_unit_id: unit.id,
+            serial_number: unit.serial_number ?? undefined,
+            unit_type: (unit.unit_type ?? undefined) as UnitType | undefined,
+            shell_color: unit.shell_color ?? undefined,
+            cabinet_color: unit.cabinet_color ?? undefined,
           };
+          const nextLineItems = [...state.draft.line_items, spaLine];
+          if (isSpaWithDimensions(product)) {
+            nextLineItems.push(buildGraniteLineItem(product));
+          }
+          const newDraft = { ...state.draft, line_items: nextLineItems };
           return { draft: { ...newDraft, ...computeTotalsFromDraft(newDraft) } };
         });
       },
 
       removeLineItem: (index) => {
         set((state) => {
-          const line_items = state.draft.line_items.filter((_, i) => i !== index);
+          const removed = state.draft.line_items[index];
+          // If removing a spa, cascade-remove the FIRST granite line linked to it.
+          // Removed-spa index comes BEFORE its granite line in the array (granite
+          // is appended right after the spa in addLineItem), so we look up the
+          // granite index in the ORIGINAL array, then filter both out together
+          // in a single atomic update.
+          let graniteIndex = -1;
+          if (removed && !removed.linked_spa_product_id) {
+            graniteIndex = state.draft.line_items.findIndex(
+              (li) => li.linked_spa_product_id === removed.product_id
+            );
+          }
+          const line_items = state.draft.line_items.filter(
+            (_, i) => i !== index && i !== graniteIndex
+          );
           const newDraft = { ...state.draft, line_items };
           return { draft: { ...newDraft, ...computeTotalsFromDraft(newDraft) } };
         });
@@ -487,6 +511,12 @@ export const useContractStore = create<ContractStore>()(
             tax_exempt_cert_mime: cert?.mime,
           },
         })),
+
+      setConcreteEstimatePending: (concrete_estimate_pending) =>
+        set((state) => ({ draft: { ...state.draft, concrete_estimate_pending } })),
+
+      setConcreteEstimateNotes: (concrete_estimate_notes) =>
+        set((state) => ({ draft: { ...state.draft, concrete_estimate_notes } })),
 
       computeTotals: () =>
         set((state) => ({

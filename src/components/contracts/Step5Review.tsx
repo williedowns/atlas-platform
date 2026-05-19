@@ -67,7 +67,7 @@ function downscaleImageToDataUrl(file: File, maxDim: number, quality: number): P
 
 export default function Step5Review({ onNext }: Step5ReviewProps) {
   const router = useRouter();
-  const { draft, addDepositSplit, removeDepositSplit, updateLineItemSerial, setNotes, setExternalNotes, setNeedsPermit, setNeedsHoa, setPermitJurisdiction, setTaxExempt, setDocFeeWaived, setTaxExemptCert } = useContractStore();
+  const { draft, addDepositSplit, removeDepositSplit, updateLineItemSerial, setNotes, setExternalNotes, setNeedsPermit, setNeedsHoa, setPermitJurisdiction, setTaxExempt, setDocFeeWaived, setTaxExemptCert, setConcreteEstimatePending, setConcreteEstimateNotes } = useContractStore();
   const [certError, setCertError] = useState<string | null>(null);
 
   // Capture or pick the customer's Texas tax-exemption certificate. The
@@ -395,29 +395,89 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
                 </tr>
               </thead>
               <tbody>
-                {draft.line_items.map((item, idx) => (
+                {draft.line_items.map((item, idx) => {
+                  const isGranite = item.linked_spa_product_id !== undefined;
+                  return (
                   <tr key={idx} className="border-b border-slate-100">
-                    <td className="py-3 px-4 font-medium">{item.product_name}</td>
+                    <td className="py-3 px-4 font-medium">
+                      {item.product_name}
+                      {isGranite && (
+                        <span className="ml-2 text-xs font-normal text-slate-500">
+                          {item.quantity} ft @ {formatCurrency(item.sell_price)}/ft
+                        </span>
+                      )}
+                    </td>
                     <td className="py-2 px-4">
-                      <input
-                        type="text"
-                        value={item.serial_number ?? ""}
-                        onChange={(e) => updateLineItemSerial(idx, e.target.value)}
-                        placeholder="Enter serial #"
-                        className="w-full h-10 px-3 rounded-lg border border-slate-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#00929C] touch-manipulation"
-                      />
+                      {isGranite ? (
+                        <span className="text-xs text-slate-400">—</span>
+                      ) : (
+                        <input
+                          type="text"
+                          value={item.serial_number ?? ""}
+                          onChange={(e) => updateLineItemSerial(idx, e.target.value)}
+                          placeholder="Enter serial #"
+                          className="w-full h-10 px-3 rounded-lg border border-slate-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#00929C] touch-manipulation"
+                        />
+                      )}
                     </td>
                     <td className="py-3 px-4 text-right text-slate-500">
-                      {formatCurrency(item.msrp)}
+                      {formatCurrency(item.msrp * item.quantity)}
                     </td>
                     <td className="py-3 px-4 text-right font-medium">
-                      {formatCurrency(item.sell_price)}
+                      {formatCurrency(item.sell_price * item.quantity)}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* ── Concrete Pad Estimate ──────────────────────────── */}
+      {/* Concrete pad is NOT priced at the show — Alex estimates it after a
+          site check. Toggle just flags the contract for follow-up; no line
+          item, no tax, no money collected. */}
+      <Card className={`border-2 transition-all ${draft.concrete_estimate_pending ? "border-amber-400 bg-amber-50" : "border-slate-200"}`}>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg">Concrete Pad Estimate</CardTitle>
+        </CardHeader>
+        <CardContent className="p-4 pt-0 space-y-3">
+          <button
+            type="button"
+            onClick={() => setConcreteEstimatePending(!draft.concrete_estimate_pending)}
+            className="flex items-center gap-4 w-full text-left touch-manipulation"
+          >
+            <div className={`w-12 h-7 rounded-full flex items-center px-1 transition-all flex-shrink-0 ${
+              draft.concrete_estimate_pending ? "bg-amber-500 justify-end" : "bg-slate-200 justify-start"
+            }`}>
+              <div className="w-5 h-5 rounded-full bg-white shadow-sm" />
+            </div>
+            <div>
+              <p className="font-semibold text-slate-900 text-sm">Concrete pad estimate pending</p>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {draft.concrete_estimate_pending
+                  ? "Flagged for site check. Estimate priced and billed separately after the show."
+                  : "Toggle on if customer wants a concrete pad instead of crushed granite"}
+              </p>
+            </div>
+          </button>
+
+          {draft.concrete_estimate_pending && (
+            <div className="rounded-xl bg-white border border-amber-200 p-3">
+              <label className="text-sm font-semibold text-slate-700 block mb-1">
+                Notes <span className="text-xs font-normal text-slate-500">(rough sq ft, site specifics, customer expectations)</span>
+              </label>
+              <textarea
+                value={draft.concrete_estimate_notes ?? ""}
+                onChange={(e) => setConcreteEstimateNotes(e.target.value)}
+                placeholder="e.g. ~80 sq ft, existing patio needs extension on east side, customer wants stamped finish"
+                rows={3}
+                className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-base placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent touch-manipulation resize-none"
+              />
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -677,19 +737,45 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
             {/* Items tax. When tax-exempt (Rx on file) the row still renders
                 so the breakdown reads cleanly, but the dollar amount shows
                 $0.00 — the exempt-status hint sits in the label rather than
-                the value column. */}
-            {(draft.tax_amount > 0 || draft.tax_exempt) && (
-              <div className="flex justify-between">
-                <span className={draft.tax_exempt ? "text-emerald-700 font-medium" : "text-slate-600"}>
-                  {draft.tax_exempt
-                    ? `Tax (${(draft.tax_rate * 100).toFixed(2)}%) — Exempt (Rx on file)`
-                    : `Tax (${(draft.tax_rate * 100).toFixed(2)}%)`}
-                </span>
-                <span className={`font-medium ${draft.tax_exempt ? "text-emerald-700" : ""}`}>
-                  {formatCurrency(draft.tax_exempt ? 0 : draft.tax_amount)}
-                </span>
-              </div>
-            )}
+                the value column. When granite line items are present and the
+                contract is not exempt, the tax row splits into Spa + Granite
+                for audit visibility (customer total unchanged). */}
+            {(draft.tax_amount > 0 || draft.tax_exempt) && (() => {
+              const graniteSubtotal = draft.line_items
+                .filter((item) => item.linked_spa_product_id !== undefined)
+                .reduce((sum, item) => sum + item.sell_price * item.quantity, 0);
+              const showGraniteBreakdown = graniteSubtotal > 0 && !draft.tax_exempt && draft.tax_amount > 0;
+              if (!showGraniteBreakdown) {
+                return (
+                  <div className="flex justify-between">
+                    <span className={draft.tax_exempt ? "text-emerald-700 font-medium" : "text-slate-600"}>
+                      {draft.tax_exempt
+                        ? `Tax (${(draft.tax_rate * 100).toFixed(2)}%) — Exempt (Rx on file)`
+                        : `Tax (${(draft.tax_rate * 100).toFixed(2)}%)`}
+                    </span>
+                    <span className={`font-medium ${draft.tax_exempt ? "text-emerald-700" : ""}`}>
+                      {formatCurrency(draft.tax_exempt ? 0 : draft.tax_amount)}
+                    </span>
+                  </div>
+                );
+              }
+              // Subtract from tax_amount (not direct compute) so the two lines
+              // always sum exactly to the existing total tax — no penny drift.
+              const graniteTax = Math.round(graniteSubtotal * draft.tax_rate * 100) / 100;
+              const spaTax = draft.tax_amount - graniteTax;
+              return (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Tax — Spa ({(draft.tax_rate * 100).toFixed(2)}%)</span>
+                    <span className="font-medium">{formatCurrency(spaTax)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Tax — Granite ({(draft.tax_rate * 100).toFixed(2)}%)</span>
+                    <span className="font-medium">{formatCurrency(graniteTax)}</span>
+                  </div>
+                </>
+              );
+            })()}
 
             {/* Doc-fee tax — shown whenever the doc fee is being charged.
                 State requires this even when items tax is exempt; this

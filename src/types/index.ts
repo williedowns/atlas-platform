@@ -67,6 +67,10 @@ export interface Product {
   floor_price?: number;
   description?: string;
   photo_url?: string;
+  // Dimensions used for site-prep line auto-add (e.g. crushed granite base).
+  // Only populated for spas / swim spas / cold tubs — null for everything else.
+  length_ft?: number;
+  width_ft?: number;
   active: boolean;
   synced_at: string;
 }
@@ -307,6 +311,10 @@ export interface ContractLineItem {
   sell_price: number; // floor or negotiated price; 0 if waived
   quantity: number;
   waived?: boolean; // included free as sales incentive
+  // Auto-added site-prep lines (e.g. Crushed Granite Base) reference the spa
+  // they were generated for so the UI can render them as locked dependents
+  // and the cascade can remove them when the spa line is removed.
+  linked_spa_product_id?: string;
 }
 
 export interface Contract {
@@ -370,6 +378,12 @@ export interface Contract {
 
   // Notes
   notes?: string;
+
+  // Concrete pad estimate — flagged at the show when a customer wants a
+  // concrete (not crushed granite) base. Estimate happens after a site check;
+  // no line item is created and no money is collected at sign.
+  concrete_estimate_pending?: boolean;
+  concrete_estimate_notes?: string;
 
   created_at: string;
   updated_at: string;
