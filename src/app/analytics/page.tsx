@@ -146,6 +146,7 @@ export default async function AnalyticsPage({
     .from("contracts")
     .select(`
       id, contract_number, total, deposit_paid, balance_due, status, is_contingent, created_at,
+      signature_metadata,
       customer:customers(first_name, last_name),
       show:shows(id, name, start_date, end_date),
       location:locations(id, name, type),
@@ -264,6 +265,29 @@ export default async function AnalyticsPage({
   const bookingsCount = contractCount + contingentCount;
   const cancelDenom = cancelCount + bookingsCount;
   const cancelRate = cancelDenom > 0 ? (cancelCount / cancelDenom) * 100 : null;
+
+  // ── Sales velocity (days from created → signed) ─────────────────────────────
+  // signature_metadata.consented_at is the legal signing timestamp captured at
+  // canvas signature. Anything past pending_signature should have it set; we
+  // skip rows that don't to avoid false zeroes.
+  const velocityDays: number[] = [];
+  for (const c of rows) {
+    const sig = (c as any).signature_metadata as { consented_at?: string } | null;
+    const consentedAt = sig?.consented_at;
+    if (!consentedAt) continue;
+    const days =
+      (new Date(consentedAt).getTime() - new Date(c.created_at).getTime()) / 86400000;
+    if (Number.isFinite(days) && days >= 0) velocityDays.push(days);
+  }
+  const velocityCount = velocityDays.length;
+  const velocityAvg =
+    velocityCount > 0 ? velocityDays.reduce((s, d) => s + d, 0) / velocityCount : null;
+  const velocityMedian = (() => {
+    if (velocityCount === 0) return null;
+    const sorted = [...velocityDays].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+  })();
 
   // ── Sales rep leaderboard ───────────────────────────────────────────────────
   const goalMap = new Map((goalRows ?? []).map((g) => [g.rep_id, g.target_revenue]));
@@ -435,6 +459,32 @@ export default async function AnalyticsPage({
     .map(([name, v]) => ({ name, ...v }))
     .sort((a, b) => b.revenue - a.revenue)
     .slice(0, 10);
+
+  // ── Attach rate (accessories per main unit) ─────────────────────────────────
+  // "Main" = hot tub / swim spa / cold tub / sauna / pool (the unit of sale).
+  // "Accessory" = line items with a product_id that maps to a non-main category
+  // (chemicals, covers, steps, options, upgrades — anything in the products
+  // catalog that isn't a main unit). Excludes inline fees (no product_id).
+  let mainUnits = 0;
+  let mainRevenue = 0;
+  let accessoryRevenue = 0;
+  for (const c of rows) {
+    const items: LineItem[] = Array.isArray(c.line_items) ? c.line_items : [];
+    for (const item of items) {
+      const cat = item.product_id ? categoryByProductId.get(item.product_id) : null;
+      const qty = item.quantity ?? 1;
+      const price = item.sell_price ?? 0;
+      const lineTotal = price * qty;
+      if (isMainProduct(cat)) {
+        mainUnits += qty;
+        mainRevenue += lineTotal;
+      } else if (item.product_id && cat) {
+        accessoryRevenue += lineTotal;
+      }
+    }
+  }
+  const accessoryPerUnit = mainUnits > 0 ? accessoryRevenue / mainUnits : null;
+  const attachPctOfMain = mainRevenue > 0 ? (accessoryRevenue / mainRevenue) * 100 : null;
 
   // ── Outstanding items ───────────────────────────────────────────────────────
   const signedNoDeposit = outstandingRows.filter(
@@ -627,6 +677,8 @@ export default async function AnalyticsPage({
               { href: "#trend", label: "Trend" },
               { href: "#breakdown", label: "Revenue" },
               { href: "#cancellations", label: "Cancellations" },
+              { href: "#velocity", label: "Velocity" },
+              { href: "#attach", label: "Attach" },
               { href: "#leaderboard", label: "Leaderboard" },
               { href: "#shows", label: "Shows" },
               { href: "#locations", label: "Locations" },
@@ -698,6 +750,88 @@ export default async function AnalyticsPage({
                   <p className="text-xs text-slate-500 mt-0.5">Cancel Rate</p>
                 </div>
               </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* ── Sales Velocity (days from created → signed) ── */}
+        <Card id="velocity" className="scroll-mt-32">
+          <CardHeader className="pb-3">
+            <div className="flex items-baseline justify-between gap-3">
+              <CardTitle className="text-base">Sales Velocity</CardTitle>
+              <p className="text-xs text-slate-500">Created → Signed · {PERIOD_LABELS[period]}</p>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {velocityCount === 0 ? (
+              <p className="text-sm text-slate-500 bg-slate-50 rounded-xl border border-slate-200 px-4 py-3 text-center">
+                No signed deals with signing timestamps in this period.
+              </p>
+            ) : (
+              <>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="text-center p-3 bg-[#00929C]/10 rounded-xl border border-[#00929C]/20">
+                    <p className="text-2xl font-bold text-[#00929C]">
+                      {velocityAvg != null ? velocityAvg.toFixed(1) : "—"}
+                    </p>
+                    <p className="text-xs text-slate-600 mt-0.5">Avg Days</p>
+                  </div>
+                  <div className="text-center p-3 bg-slate-50 rounded-xl border border-slate-200">
+                    <p className="text-2xl font-bold text-slate-800">
+                      {velocityMedian != null ? velocityMedian.toFixed(1) : "—"}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-0.5">Median Days</p>
+                  </div>
+                  <div className="text-center p-3 bg-slate-50 rounded-xl border border-slate-200">
+                    <p className="text-2xl font-bold text-slate-800">{velocityCount}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">Signed Deals</p>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-400 mt-3 text-center">
+                  Show sales typically close same-day (0 days). Store deals stretch longer — high median may signal slow follow-up.
+                </p>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* ── Attach Rate (accessories per main unit) ── */}
+        <Card id="attach" className="scroll-mt-32">
+          <CardHeader className="pb-3">
+            <div className="flex items-baseline justify-between gap-3">
+              <CardTitle className="text-base">Attach Rate</CardTitle>
+              <p className="text-xs text-slate-500">Accessories per main unit · {PERIOD_LABELS[period]}</p>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {mainUnits === 0 ? (
+              <p className="text-sm text-slate-500 bg-slate-50 rounded-xl border border-slate-200 px-4 py-3 text-center">
+                No main units sold in this period.
+              </p>
+            ) : (
+              <>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="text-center p-3 bg-[#00929C]/10 rounded-xl border border-[#00929C]/20">
+                    <p className="text-lg font-bold text-[#00929C]">
+                      {accessoryPerUnit != null ? formatCurrency(accessoryPerUnit) : "—"}
+                    </p>
+                    <p className="text-xs text-slate-600 mt-0.5">$ Accessories / Unit</p>
+                  </div>
+                  <div className="text-center p-3 bg-slate-50 rounded-xl border border-slate-200">
+                    <p className="text-lg font-bold text-slate-800">{formatCurrency(accessoryRevenue)}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">Total Accessory Revenue</p>
+                  </div>
+                  <div className="text-center p-3 bg-slate-50 rounded-xl border border-slate-200">
+                    <p className="text-2xl font-bold text-slate-800">
+                      {attachPctOfMain != null ? `${attachPctOfMain.toFixed(1)}%` : "—"}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-0.5">% of Main Revenue</p>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-400 mt-3 text-center">
+                  Across {mainUnits} unit{mainUnits === 1 ? "" : "s"}. Excludes fees and inline charges — counts only catalog accessories.
+                </p>
+              </>
             )}
           </CardContent>
         </Card>
