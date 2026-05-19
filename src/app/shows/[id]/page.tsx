@@ -139,7 +139,7 @@ export default async function ShowDetailPage({
 
         {/* CTAs */}
         <div className="grid grid-cols-2 gap-3">
-          <Link href="/contracts/new" className="col-span-2">
+          <Link href={`/contracts/new?show=${id}`} className="col-span-2">
             <Button variant="accent" size="xl" className="w-full text-lg font-bold">
               + Start New Contract
             </Button>
