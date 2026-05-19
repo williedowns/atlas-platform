@@ -29,6 +29,9 @@ export function InviteUserButton({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [emailDeliveryStatus, setEmailDeliveryStatus] = useState<
+    "sent" | "failed" | "skipped" | null
+  >(null);
   const [loginLink, setLoginLink] = useState<string | null>(null);
   const [linkLoading, setLinkLoading] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
@@ -57,16 +60,25 @@ export function InviteUserButton({
       return;
     }
 
+    // Detect when the user was created but the email did NOT actually go out.
+    // The send-invite route returns 200 OK in three states:
+    //   { success: true }                            → email sent normally
+    //   { success: true, email_failed: true, link }  → Resend errored, surface link
+    //   { success: true, skipped_email: true, link } → RESEND_API_KEY missing
+    // The previous behavior showed "Invite sent!" in all three cases, which
+    // is why admins kept manually adding users — the email never arrived.
+    if (data.email_failed) {
+      setEmailDeliveryStatus("failed");
+      setLoginLink(data.link ?? null);
+    } else if (data.skipped_email) {
+      setEmailDeliveryStatus("skipped");
+      setLoginLink(data.link ?? null);
+    } else {
+      setEmailDeliveryStatus("sent");
+    }
+
     setSuccess(true);
     onInvited?.();
-    setTimeout(() => {
-      setOpen(false);
-      setSuccess(false);
-      setEmail("");
-      setFullName("");
-      setRole("sales_rep");
-      setLocationId("");
-    }, 1500);
   }
 
   async function handleGetLink() {
@@ -112,11 +124,92 @@ export function InviteUserButton({
             </div>
 
             {success ? (
-              <div className="py-6 text-center">
-                <p className="text-2xl mb-2">✅</p>
-                <p className="font-semibold text-slate-900">Invite sent!</p>
-                <p className="text-sm text-slate-500 mt-1">{email}</p>
-              </div>
+              emailDeliveryStatus === "sent" ? (
+                <div className="py-6 text-center">
+                  <p className="text-2xl mb-2">✅</p>
+                  <p className="font-semibold text-slate-900">Invite sent!</p>
+                  <p className="text-sm text-slate-500 mt-1">{email}</p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-4"
+                    onClick={() => {
+                      setOpen(false);
+                      setSuccess(false);
+                      setEmailDeliveryStatus(null);
+                      setLoginLink(null);
+                      setEmail("");
+                      setFullName("");
+                      setRole("sales_rep");
+                      setLocationId("");
+                    }}
+                  >
+                    Close
+                  </Button>
+                </div>
+              ) : (
+                <div className="py-2 space-y-4">
+                  <div className="text-center">
+                    <p className="text-2xl mb-2">⚠️</p>
+                    <p className="font-semibold text-slate-900">
+                      User created, but the email did NOT send
+                    </p>
+                    <p className="text-sm text-slate-500 mt-1">
+                      {emailDeliveryStatus === "skipped"
+                        ? "Email service not configured (RESEND_API_KEY missing in production)."
+                        : "Email service rejected the send. The user account exists; copy the login link below and share it manually."}
+                    </p>
+                  </div>
+                  {loginLink ? (
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium text-slate-700">
+                        One-time login link for {email}
+                      </p>
+                      <div className="flex gap-2">
+                        <input
+                          readOnly
+                          value={loginLink}
+                          className="flex-1 h-10 rounded-lg border border-slate-300 bg-slate-50 px-3 text-xs font-mono text-slate-700"
+                          onFocus={(e) => e.currentTarget.select()}
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="accent"
+                          onClick={async () => {
+                            await navigator.clipboard.writeText(loginLink);
+                            setLinkCopied(true);
+                            setTimeout(() => setLinkCopied(false), 2000);
+                          }}
+                        >
+                          {linkCopied ? "Copied!" : "Copy"}
+                        </Button>
+                      </div>
+                      <p className="text-xs text-slate-500">
+                        Paste this link into a text / email manually. The user clicks
+                        it to sign in and set their password.
+                      </p>
+                    </div>
+                  ) : null}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => {
+                      setOpen(false);
+                      setSuccess(false);
+                      setEmailDeliveryStatus(null);
+                      setLoginLink(null);
+                      setEmail("");
+                      setFullName("");
+                      setRole("sales_rep");
+                      setLocationId("");
+                    }}
+                  >
+                    Done
+                  </Button>
+                </div>
+              )
             ) : (
               <form onSubmit={handleSubmit} className="space-y-4">
                 <Input
