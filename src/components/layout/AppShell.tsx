@@ -8,6 +8,7 @@ import { DEFAULT_PERMISSIONS } from "@/lib/permissions";
 import type { Feature, RolePermissions } from "@/lib/permissions";
 import ViewAsBanner from "@/components/layout/ViewAsBanner";
 import ViewAsControls from "@/components/layout/ViewAsControls";
+import CmdK from "@/components/cmdk/CmdK";
 
 interface AppShellProps {
   /**
@@ -76,6 +77,9 @@ function ServiceIcon() {
 function ShowSalesIcon() {
   return <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-6a2 2 0 012-2h2a2 2 0 012 2v6m-6 0h6m-3-13a8 8 0 100 16 8 8 0 000-16z" /></svg>;
 }
+function CrmIcon() {
+  return <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>;
+}
 
 const ALL_NAV_ITEMS: NavItem[] = [
   { href: "/dashboard",  label: "Home",        icon: <HomeIcon />,        roles: ["admin","manager","sales_rep"] },
@@ -84,6 +88,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { href: "/service/jobs",      label: "Service",     icon: <ServiceIcon />,     roles: ["admin","manager"] },
   { href: "/contracts",  label: "Contracts",   icon: <ContractsIcon />,   roles: ["admin","manager","sales_rep","bookkeeper"], feature: "contracts" },
   { href: "/leads",      label: "Leads",       icon: <LeadsIcon />,       roles: ["admin","manager","sales_rep"],              feature: "leads" },
+  { href: "/crm",        label: "CRM",         icon: <CrmIcon />,         roles: ["admin","manager"] },
   { href: "/shows",      label: "Shows",       icon: <ShowsIcon />,       roles: ["admin","manager","sales_rep"],              feature: "shows" },
   { href: "/show-sales", label: "Show Sales",  icon: <ShowSalesIcon />,   roles: ["admin","manager","sales_admin"],            feature: "shows" },
   { href: "/analytics",  label: "Analytics",   icon: <AnalyticsIcon />,   roles: ["admin","manager"],                          feature: "analytics" },
@@ -360,6 +365,10 @@ export default function AppShell({
         />
         {children}
       </div>
+
+      {/* Global Cmd-K palette — mounted once at the shell level so the keyboard
+          shortcut (⌘K / Ctrl+K) works from anywhere inside the authenticated app. */}
+      <CmdK />
     </div>
   );
 }
