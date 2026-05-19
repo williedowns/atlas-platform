@@ -15,6 +15,7 @@ import {
   generateContractNumber,
   calculateMinDeposit,
 } from "@/lib/utils";
+import { GRANITE_PRICE_TIERS } from "@/lib/granite";
 
 const PAYMENT_METHODS = [
   { value: "credit_card", label: "Credit Card" },
@@ -67,7 +68,7 @@ function downscaleImageToDataUrl(file: File, maxDim: number, quality: number): P
 
 export default function Step5Review({ onNext }: Step5ReviewProps) {
   const router = useRouter();
-  const { draft, addDepositSplit, removeDepositSplit, updateLineItemSerial, setNotes, setExternalNotes, setNeedsPermit, setNeedsHoa, setPermitJurisdiction, setTaxExempt, setDocFeeWaived, setTaxExemptCert, setConcreteEstimatePending, setConcreteEstimateNotes } = useContractStore();
+  const { draft, addDepositSplit, removeDepositSplit, updateLineItemSerial, updateLineItemPrice, removeLineItem, setNotes, setExternalNotes, setNeedsPermit, setNeedsHoa, setPermitJurisdiction, setTaxExempt, setDocFeeWaived, setTaxExemptCert, setConcreteEstimatePending, setConcreteEstimateNotes } = useContractStore();
   const [certError, setCertError] = useState<string | null>(null);
 
   // Capture or pick the customer's Texas tax-exemption certificate. The
@@ -400,11 +401,33 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
                   return (
                   <tr key={idx} className="border-b border-slate-100">
                     <td className="py-3 px-4 font-medium">
-                      {item.product_name}
-                      {isGranite && (
-                        <span className="ml-2 text-xs font-normal text-slate-500">
-                          {item.quantity} ft @ {formatCurrency(item.sell_price)}/ft
-                        </span>
+                      {isGranite ? (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span>{item.product_name}</span>
+                          <span className="text-xs font-normal text-slate-500">{item.quantity} ft @</span>
+                          <select
+                            value={item.sell_price}
+                            onChange={(e) => updateLineItemPrice(idx, parseFloat(e.target.value))}
+                            className="h-7 px-1.5 rounded border border-slate-300 bg-white text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#00929C] touch-manipulation"
+                            aria-label="Granite price per foot"
+                          >
+                            {GRANITE_PRICE_TIERS.map((p) => (
+                              <option key={p} value={p}>${p}/ft</option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => removeLineItem(idx)}
+                            className="inline-flex items-center justify-center w-6 h-6 rounded text-red-400 hover:bg-red-50 hover:text-red-500 touch-manipulation"
+                            aria-label="Remove crushed granite base"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      ) : (
+                        item.product_name
                       )}
                     </td>
                     <td className="py-2 px-4">
@@ -712,8 +735,10 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
               ) : null;
             })()}
 
-            {/* Document Fee — auto-added, waivable. Shown even when waived so
-                the rep can see the line + un-waive without hunting for a button. */}
+            {/* Document Fee — auto-added, waivable. Amount shown is fee+tax
+                combined per Willie's call (single line, no separate tax row
+                below). Strikethrough applied when waived so the rep can see
+                what was skipped. */}
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-2">
                 <span className="text-slate-600">Document Fee</span>
@@ -730,7 +755,7 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
                 </button>
               </div>
               <span className={`font-medium ${draft.doc_fee_waived ? "line-through text-slate-400" : ""}`}>
-                {formatCurrency(draft.doc_fee_amount ?? 0)}
+                {formatCurrency((draft.doc_fee_amount ?? 0) + (draft.doc_fee_tax_amount ?? 0))}
               </span>
             </div>
 
@@ -776,16 +801,6 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
                 </>
               );
             })()}
-
-            {/* Doc-fee tax — shown whenever the doc fee is being charged.
-                State requires this even when items tax is exempt; this
-                portion is never refunded once the Rx arrives. */}
-            {!draft.doc_fee_waived && (draft.doc_fee_tax_amount ?? 0) > 0 && (
-              <div className="flex justify-between">
-                <span className="text-slate-600">Doc Fee Tax ({(draft.tax_rate * 100).toFixed(2)}%)</span>
-                <span className="font-medium">{formatCurrency(draft.doc_fee_tax_amount ?? 0)}</span>
-              </div>
-            )}
 
             <div className="border-t border-slate-200 pt-3 mt-3">
               <div className="flex justify-between text-lg font-bold text-[#00929C]">
