@@ -49,9 +49,9 @@ export default async function ContractsPage({
     ? viewAs.effectiveUserId
     : user.id;
 
-  let query = supabase
-    .from("contracts")
-    .select(`
+  // PostgREST caps each request at 1000 rows on this project, so we paginate
+  // in 1000-row chunks fetched in parallel after a fast count() query.
+  const SELECT_COLUMNS = `
       id, contract_number, status, is_contingent,
       total, subtotal, discount_total, tax_amount, deposit_paid, balance_due,
       payment_method, notes, line_items, created_at,
@@ -59,15 +59,32 @@ export default async function ContractsPage({
       customer:customers(first_name, last_name, phone, email, address, city, state, zip),
       show:shows(name),
       location:locations(name)
-    `)
-    .order("created_at", { ascending: false })
-    .limit(200);
+    `;
+  const PAGE_SIZE = 1000;
 
+  let countQuery = supabase.from("contracts").select("id", { count: "exact", head: true });
   if (!isAdminEffective && filterUserId) {
-    query = query.eq("sales_rep_id", filterUserId);
+    countQuery = countQuery.eq("sales_rep_id", filterUserId);
   }
+  const { count } = await countQuery;
+  const total = count ?? 0;
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  const { data: contracts } = await query;
+  const pageResults = await Promise.all(
+    Array.from({ length: pages }, (_, i) => {
+      let q = supabase
+        .from("contracts")
+        .select(SELECT_COLUMNS)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .range(i * PAGE_SIZE, (i + 1) * PAGE_SIZE - 1);
+      if (!isAdminEffective && filterUserId) {
+        q = q.eq("sales_rep_id", filterUserId);
+      }
+      return q;
+    })
+  );
+  const contracts = pageResults.flatMap((r) => r.data ?? []);
 
   return (
     <AppShell
