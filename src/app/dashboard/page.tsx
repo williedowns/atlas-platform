@@ -14,6 +14,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { getViewAsContext } from "@/lib/view-as";
+import { shouldShowPicker } from "@/lib/active-show";
 import { todayStartUTC, daysAgoStartUTC, monthStartUTC, todayDateStringInTZ } from "@/lib/dates";
 
 export default async function DashboardPage() {
@@ -38,6 +39,12 @@ export default async function DashboardPage() {
   // Role-based routing — respect the impersonated role so View-As actually switches landing pages.
   if (effectiveRole === "bookkeeper") redirect("/bookkeeper");
   if (effectiveRole === "field_crew") redirect("/field");
+
+  // Sales reps get the active-workspace picker on first login of the day if
+  // they haven't set one. Admins/managers/etc. skip — they're in the office.
+  if (!viewAs.isImpersonatingRole && await shouldShowPicker(effectiveRole)) {
+    redirect("/select-active-show");
+  }
 
   const isAdmin = !viewAs.isImpersonatingUser && (effectiveRole === "admin" || effectiveRole === "manager");
   // All day boundaries computed in Atlas's local tz (America/Chicago) and

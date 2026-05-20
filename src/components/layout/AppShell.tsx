@@ -86,15 +86,15 @@ function SiteVisitsIcon() {
 }
 
 const ALL_NAV_ITEMS: NavItem[] = [
-  { href: "/dashboard",  label: "Home",        icon: <HomeIcon />,        roles: ["admin","manager","sales_rep"] },
+  { href: "/dashboard",  label: "Home",        icon: <HomeIcon />,        roles: ["admin","manager","sales_rep","show_manager"] },
   { href: "/field",             label: "Work Orders", icon: <WorkOrdersIcon />,  roles: ["field_crew"] },
   { href: "/admin/work-orders", label: "Work Orders", icon: <WorkOrdersIcon />,  roles: ["admin","manager"] },
   { href: "/service/jobs",      label: "Service",     icon: <ServiceIcon />,     roles: ["admin","manager"] },
-  { href: "/contracts",  label: "Contracts",   icon: <ContractsIcon />,   roles: ["admin","manager","sales_rep","bookkeeper"], feature: "contracts" },
-  { href: "/site-visits", label: "Site Visits", icon: <SiteVisitsIcon />,  roles: ["admin","manager","sales_rep","bookkeeper"], feature: "contracts" },
-  { href: "/leads",      label: "Leads",       icon: <LeadsIcon />,       roles: ["admin","manager","sales_rep"],              feature: "leads" },
+  { href: "/contracts",  label: "Contracts",   icon: <ContractsIcon />,   roles: ["admin","manager","sales_rep","show_manager","bookkeeper"], feature: "contracts" },
+  { href: "/site-visits", label: "Site Visits", icon: <SiteVisitsIcon />,  roles: ["admin","manager","sales_rep","show_manager","bookkeeper"], feature: "contracts" },
+  { href: "/leads",      label: "Show Check-Ins", icon: <LeadsIcon />,    roles: ["admin","manager","sales_rep","show_manager"],              feature: "leads" },
   { href: "/crm",        label: "CRM",         icon: <CrmIcon />,         roles: ["admin","manager"] },
-  { href: "/shows",      label: "Shows",       icon: <ShowsIcon />,       roles: ["admin","manager","sales_rep"],              feature: "shows" },
+  { href: "/shows",      label: "Shows",       icon: <ShowsIcon />,       roles: ["admin","manager","sales_rep","show_manager"],              feature: "shows" },
   { href: "/show-sales", label: "Show Sales",  icon: <ShowSalesIcon />,   roles: ["admin","manager","sales_admin"],            feature: "shows" },
   { href: "/analytics",  label: "Analytics",   icon: <AnalyticsIcon />,   roles: ["admin","manager"],                          feature: "analytics" },
   { href: "/admin/inventory", label: "Inventory", icon: <InventoryIcon />, roles: ["admin","manager"], feature: "inventory" },

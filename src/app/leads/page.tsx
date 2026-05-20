@@ -7,6 +7,8 @@ import { formatDate } from "@/lib/utils";
 import AppShell from "@/components/layout/AppShell";
 import { AppHeader } from "@/components/ui/AppHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
+import ActiveShowBanner from "@/components/layout/ActiveShowBanner";
+import { getActiveShow } from "@/lib/active-show";
 
 const STATUS_COLORS: Record<string, "default" | "success" | "warning" | "destructive" | "secondary"> = {
   new: "default",
@@ -49,6 +51,10 @@ export default async function LeadsPage({
 
   const isAdmin = ["admin", "manager"].includes(profile?.role ?? "");
 
+  // URL ?show= overrides the active-show cookie when both are present.
+  const activeShow = await getActiveShow();
+  const effectiveShowId = showFilter ?? activeShow?.id ?? null;
+
   let query = supabase
     .from("leads")
     .select(`
@@ -61,7 +67,7 @@ export default async function LeadsPage({
 
   if (!isAdmin) query = query.eq("assigned_to", user.id);
   if (statusFilter && statusFilter !== "all") query = query.eq("status", statusFilter);
-  if (showFilter) query = query.eq("show_id", showFilter);
+  if (effectiveShowId) query = query.eq("show_id", effectiveShowId);
 
   const { data: leadsRaw } = await query;
   const leads = (leadsRaw ?? []) as any[];
@@ -86,9 +92,10 @@ export default async function LeadsPage({
 
   return (
     <AppShell role={profile?.role} userName={profile?.full_name} orgPerms={orgPerms}>
+      <ActiveShowBanner />
       <AppHeader
-        title="Leads Pipeline"
-        subtitle={`${leads.length} lead${leads.length === 1 ? "" : "s"}`}
+        title="Show Check-Ins"
+        subtitle={`${leads.length} check-in${leads.length === 1 ? "" : "s"}`}
         backHref="/dashboard"
       />
 

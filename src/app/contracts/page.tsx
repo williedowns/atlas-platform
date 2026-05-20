@@ -7,6 +7,8 @@ import AppShell from "@/components/layout/AppShell";
 import { AppHeader } from "@/components/ui/AppHeader";
 import { Button } from "@/components/ui/button";
 import { getViewAsContext } from "@/lib/view-as";
+import ActiveShowBanner from "@/components/layout/ActiveShowBanner";
+import { getActiveShow } from "@/lib/active-show";
 
 export default async function ContractsPage({
   searchParams,
@@ -95,6 +97,7 @@ export default async function ContractsPage({
     })
   );
   const contracts = pageResults.flatMap((r) => r.data ?? []);
+  const activeShow = await getActiveShow();
 
   return (
     <AppShell
@@ -106,6 +109,7 @@ export default async function ContractsPage({
       isImpersonatingRole={viewAs.isImpersonatingRole}
       isImpersonatingUser={viewAs.isImpersonatingUser}
     >
+      <ActiveShowBanner />
       <AppHeader
         title="Contracts"
         subtitle={contracts?.length ? `${contracts.length} ${contracts.length === 1 ? "contract" : "contracts"}` : undefined}
@@ -119,7 +123,11 @@ export default async function ContractsPage({
       />
 
       <main className="pb-28 max-w-4xl mx-auto w-full">
-        <ContractsList contracts={(contracts ?? []) as any[]} initialFilter={initialFilter} />
+        <ContractsList
+          contracts={(contracts ?? []) as any[]}
+          initialFilter={initialFilter}
+          initialShowId={activeShow?.id ?? null}
+        />
       </main>
 
       {/* FAB — mobile only */}
