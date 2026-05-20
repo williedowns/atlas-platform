@@ -10,6 +10,7 @@ import CancellationRefundTracker from "@/components/bookkeeper/CancellationRefun
 import AppShell from "@/components/layout/AppShell";
 import { AppHeader } from "@/components/ui/AppHeader";
 import { SectionCard } from "@/components/ui/SectionCard";
+import { Button } from "@/components/ui/button";
 import { OutstandingByAgeChart } from "@/components/bookkeeper/OutstandingByAgeChart";
 import { lowDepositInfo, DEFAULT_LOW_DEPOSIT_THRESHOLD } from "@/lib/low-deposit";
 import { LowDepositBadge } from "@/components/contracts/LowDepositBadge";
@@ -490,6 +491,19 @@ export default async function BookkeeperPage() {
 
           {/* ── Deposit Reconciliation (Summary + Transaction Detail) ── */}
           <ReconciliationView contracts={contracts} />
+
+          {/* ── Intuit Payments Report (auto-pulled from Salta payments + QBO) ── */}
+          <div className="rounded-xl border border-slate-200 bg-white p-4 flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <h3 className="font-semibold text-slate-900">Intuit Payments Report</h3>
+              <p className="text-xs text-slate-600 mt-1">
+                Every Intuit charge Salta has processed, with QBO reconciliation status. No CSV upload needed.
+              </p>
+            </div>
+            <Link href="/bookkeeper/intuit-payments">
+              <Button variant="accent" size="sm">Open report →</Button>
+            </Link>
+          </div>
 
           {/* ── Sales by Location / Event ── */}
           <SalesByEventList contracts={contracts} />
