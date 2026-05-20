@@ -298,6 +298,9 @@ export default function AppShell({
         window.localStorage.removeItem("atlas-contract-draft-v4"); // legacy key, clear in case the user signed in before the v5 bump
       } catch {}
     }
+    // Clear picker-dismissed cookie so the next sign-in re-prompts for an
+    // active workspace instead of silently skipping until midnight.
+    await fetch("/api/active-show/clear-skip", { method: "POST" }).catch(() => {});
     await supabase.auth.signOut();
     router.push("/login");
   }

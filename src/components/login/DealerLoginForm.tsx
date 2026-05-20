@@ -52,6 +52,9 @@ export function DealerLoginForm({ demoMode }: DealerLoginFormProps) {
           window.localStorage.removeItem("atlas-contract-draft-v4"); // legacy key
         } catch {}
       }
+      // Reset the picker-dismissed cookie so a fresh sign-in always re-prompts
+      // for active workspace, even if the previous session hit "Skip for now".
+      await fetch("/api/active-show/clear-skip", { method: "POST" }).catch(() => {});
       router.push("/dashboard");
     }
   }
