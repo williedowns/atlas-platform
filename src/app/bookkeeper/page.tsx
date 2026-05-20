@@ -35,6 +35,10 @@ export default async function BookkeeperPage() {
   if (!hasPermission(orgPerms, effectiveRole, "bookkeeper")) redirect("/dashboard");
 
   // ── Fetch all active contracts with full financial + customer + line item data ──
+  // Scoped to contracts created through Salta (idempotency_key is set on insert by the
+  // Salta contract-creation flow — historical/imported records have NULL). This keeps
+  // the bookkeeper focused on contracts Lori actually needs to process; historical data
+  // remains visible in /analytics and /show-sales.
   const { data: contractsRaw, error } = await supabase
     .from("contracts")
     .select(`
@@ -52,6 +56,7 @@ export default async function BookkeeperPage() {
       sales_rep:profiles!contracts_sales_rep_id_fkey(full_name)
     `)
     .not("status", "in", '("quote","draft","cancelled")')
+    .not("idempotency_key", "is", null)
     .order("created_at", { ascending: false })
     .limit(500);
 
@@ -69,6 +74,7 @@ export default async function BookkeeperPage() {
       location:locations(name)
     `)
     .eq("status", "cancelled")
+    .not("idempotency_key", "is", null)
     .order("created_at", { ascending: false })
     .limit(100);
 
