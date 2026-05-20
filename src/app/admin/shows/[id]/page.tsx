@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -18,8 +18,9 @@ const US_STATES = [
   "VA","WA","WV","WI","WY",
 ];
 
-export default function EditShowPage({ params }: { params: { id: string } }) {
+export default function EditShowPage() {
   const router = useRouter();
+  const params = useParams();
   const supabase = createClient();
 
   const [loading, setLoading] = useState(true);
