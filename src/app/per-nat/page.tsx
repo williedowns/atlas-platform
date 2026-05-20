@@ -19,9 +19,20 @@ type Status = "active" | "completed" | "cancelled";
 
 interface LineItemMaybe {
   product_name?: string;
+  name?: string;          // historical backfill writes `name`, current flow writes `product_name`
   color?: string;
   skirt?: string;
+  cabinet?: string;       // historical synonym for skirt
   inventory_unit_id?: string;
+}
+
+// Strip the "[backfill 2026-05-19] source=..." prefix that the historical
+// importer wrote into contracts.notes. We surface the real customer-facing
+// comment from show_deal_overrides.comments instead — see overridesByContract.
+function cleanBackfillNotes(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const cleaned = raw.replace(/\[backfill[^\]]*\][^\n]*/i, "").trim();
+  return cleaned.length > 0 ? cleaned : null;
 }
 
 export default async function PerNatPage({
@@ -99,13 +110,31 @@ export default async function PerNatPage({
     model: string | null;
     stock_assigned_at: string | null;
   }>();
+  const overridesByContract = new Map<string, {
+    color: string | null;
+    cabinet: string | null;
+    serial_number: string | null;
+    comments: string | null;
+    approx_delivery_date: string | null;
+  }>();
 
   if (contractIds.length > 0) {
-    const { data: units } = await supabase
-      .from("inventory_units")
-      .select(`id, serial_number, contract_id, stock_assigned_at, product:products ( name )`)
-      .in("contract_id", contractIds);
-    for (const u of units ?? []) {
+    const [unitsResult, overridesResult] = await Promise.all([
+      supabase
+        .from("inventory_units")
+        .select(`id, serial_number, contract_id, stock_assigned_at, product:products ( name )`)
+        .in("contract_id", contractIds),
+      // show_deal_overrides holds color/cabinet/serial#/comments for the
+      // historical backfilled rows (Lori's expo workbooks) — line_items
+      // doesn't carry those, so the Per Nat list needs the join to fill
+      // out the Color/Skirt/Serial columns for pre-Salta contracts.
+      supabase
+        .from("show_deal_overrides")
+        .select("contract_id, color, cabinet, serial_number, comments, approx_delivery_date")
+        .in("contract_id", contractIds),
+    ]);
+
+    for (const u of unitsResult.data ?? []) {
       if (!u.contract_id) continue;
       const productAny = u.product as { name?: string } | { name?: string }[] | null | undefined;
       const productName: string | null = Array.isArray(productAny)
@@ -116,6 +145,15 @@ export default async function PerNatPage({
         serial_number: u.serial_number ?? null,
         model: productName,
         stock_assigned_at: u.stock_assigned_at ?? null,
+      });
+    }
+    for (const o of overridesResult.data ?? []) {
+      overridesByContract.set(o.contract_id, {
+        color: o.color ?? null,
+        cabinet: o.cabinet ?? null,
+        serial_number: o.serial_number ?? null,
+        comments: o.comments ?? null,
+        approx_delivery_date: o.approx_delivery_date ?? null,
       });
     }
   }
@@ -159,11 +197,26 @@ export default async function PerNatPage({
       ? (c.line_items[0] as LineItemMaybe)
       : {};
     const unit = unitsByContract.get(c.id) ?? null;
-    const bucket = parseDeliveryTimeframeToBucket(c.delivery_timeframe);
+    const override = overridesByContract.get(c.id) ?? null;
+    // Timeframe falls back to overrides.approx_delivery_date so historical
+    // contracts can group under a real month instead of all bucketing as TBD.
+    const timeframeForBucket = c.delivery_timeframe ?? override?.approx_delivery_date ?? null;
+    const bucket = parseDeliveryTimeframeToBucket(timeframeForBucket);
     const customerArr = c.customer as { first_name?: string; last_name?: string } | { first_name?: string; last_name?: string }[] | null | undefined;
     const customer = Array.isArray(customerArr) ? customerArr[0] : customerArr;
     const salesArr = c.sales_rep as { full_name?: string } | { full_name?: string }[] | null | undefined;
     const salesRep = Array.isArray(salesArr) ? salesArr[0] : salesArr;
+
+    // Multi-source resolution: prefer the structured field for current
+    // Salta-created contracts, fall back to overrides for historical rows,
+    // fall back to allocated inventory_unit as a last resort.
+    const model = firstLine.product_name ?? firstLine.name ?? unit?.model ?? null;
+    const color = firstLine.color ?? override?.color ?? null;
+    const skirt = firstLine.skirt ?? firstLine.cabinet ?? override?.cabinet ?? null;
+    const serial = unit?.serial_number ?? override?.serial_number ?? null;
+    const cleanedContractNotes = cleanBackfillNotes(c.notes);
+    const notes = override?.comments ?? cleanedContractNotes ?? c.external_notes ?? null;
+
     return {
       contract_id: c.id,
       contract_number: c.contract_number,
@@ -171,16 +224,16 @@ export default async function PerNatPage({
         ? `${customer.first_name ?? ""} ${customer.last_name ?? ""}`.trim()
         : "—",
       sales_rep_name: salesRep?.full_name ?? "—",
-      model: firstLine.product_name ?? unit?.model ?? null,
-      color: firstLine.color ?? null,
-      skirt: firstLine.skirt ?? null,
-      timeframe_raw: c.delivery_timeframe ?? null,
-      notes: c.notes ?? null,
+      model,
+      color,
+      skirt,
+      timeframe_raw: c.delivery_timeframe ?? override?.approx_delivery_date ?? null,
+      notes,
       external_notes: c.external_notes ?? null,
       created_at: c.created_at,
       is_low_deposit: c.per_nat_reason === "low_deposit",
-      has_stock_unit: !!unit,
-      serial_number: unit?.serial_number ?? null,
+      has_stock_unit: !!unit || !!override?.serial_number,
+      serial_number: serial,
       days_held: daysHeld(unit?.stock_assigned_at ?? null),
       per_nat_reason: c.per_nat_reason ?? null,
       bucket_key: bucket.key,
