@@ -52,7 +52,7 @@ export async function GET(
     .from("contracts")
     .select(`
       id, status, created_at, is_contingent, notes, subtotal, tax_rate,
-      line_items, financing,
+      line_items, financing, deposit_paid, payment_method,
       customer:customers(first_name, last_name, address, city, state, zip),
       sales_rep:profiles!sales_rep_id(full_name),
       payments(method, card_brand, amount, status),

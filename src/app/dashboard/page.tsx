@@ -267,6 +267,21 @@ export default async function DashboardPage() {
   const recentQuotes = (recentQuotesRaw ?? []) as any[];
   const leads = (leadsRaw ?? []) as any[];
 
+  // Pending site visits — parent contracts flagged for a concrete estimate
+  // at Step 5. Same role/scope rules as the contracts list: admins/managers/
+  // bookkeepers see company-wide, reps see their own. Sorted oldest-first so
+  // the most urgent surfaces first in the mini-list.
+  const siteVisitsQuery = supabase
+    .from("contracts")
+    .select("id, created_at, customer:customers(first_name, last_name)")
+    .eq("concrete_estimate_pending", true)
+    .is("parent_contract_id", null)
+    .order("created_at", { ascending: true })
+    .limit(50);
+  if (!isAdmin) siteVisitsQuery.eq("sales_rep_id", effectiveUserId);
+  const { data: siteVisitsRaw } = await siteVisitsQuery;
+  const siteVisits = (siteVisitsRaw ?? []) as any[];
+
   // Overdue balances — delivered or ready_for_delivery with unpaid balance
   let overdueContracts: any[] = [];
   if (isAdmin) {
@@ -372,6 +387,47 @@ export default async function DashboardPage() {
                   {reorderAlerts.slice(0, 3).map((p: any) => p.name).join(", ")}
                   {reorderAlerts.length > 3 ? ` +${reorderAlerts.length - 3} more` : ""}
                 </p>
+              </div>
+            </div>
+          </Link>
+        )}
+
+        {/* ── Pending site visits ── */}
+        {siteVisits.length > 0 && (
+          <Link href="/site-visits" className="block">
+            <div className="bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 hover:bg-amber-100 transition-colors">
+              <div className="flex items-start gap-3">
+                <span className="text-xl leading-none mt-0.5" aria-hidden="true">🚧</span>
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-amber-800 text-sm">
+                    {siteVisits.length} pending site visit{siteVisits.length !== 1 ? "s" : ""}
+                  </p>
+                  <ul className="mt-1.5 space-y-0.5">
+                    {siteVisits.slice(0, 5).map((sv) => {
+                      const days = sv.created_at
+                        ? Math.max(0, Math.floor((Date.now() - new Date(sv.created_at).getTime()) / 86400000))
+                        : 0;
+                      const stale = days > 14;
+                      const name = [sv.customer?.first_name, sv.customer?.last_name]
+                        .filter(Boolean)
+                        .join(" ")
+                        .trim() || "Customer";
+                      return (
+                        <li key={sv.id} className="text-xs text-amber-800 flex items-center justify-between gap-2">
+                          <span className="truncate">{name}</span>
+                          <span className={`font-bold tabular-nums flex-shrink-0 ${stale ? "text-red-600" : "text-amber-700"}`}>
+                            {days}d
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  {siteVisits.length > 5 && (
+                    <p className="text-[11px] text-amber-700 mt-1.5">
+                      +{siteVisits.length - 5} more →
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
           </Link>

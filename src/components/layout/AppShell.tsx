@@ -80,6 +80,10 @@ function ShowSalesIcon() {
 function CrmIcon() {
   return <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>;
 }
+function SiteVisitsIcon() {
+  // Clipboard-list — visually distinct from Shows (map pin) and Work Orders.
+  return <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2M8 11h.01M8 15h.01M12 11h4M12 15h4" /></svg>;
+}
 
 const ALL_NAV_ITEMS: NavItem[] = [
   { href: "/dashboard",  label: "Home",        icon: <HomeIcon />,        roles: ["admin","manager","sales_rep"] },
@@ -87,6 +91,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { href: "/admin/work-orders", label: "Work Orders", icon: <WorkOrdersIcon />,  roles: ["admin","manager"] },
   { href: "/service/jobs",      label: "Service",     icon: <ServiceIcon />,     roles: ["admin","manager"] },
   { href: "/contracts",  label: "Contracts",   icon: <ContractsIcon />,   roles: ["admin","manager","sales_rep","bookkeeper"], feature: "contracts" },
+  { href: "/site-visits", label: "Site Visits", icon: <SiteVisitsIcon />,  roles: ["admin","manager","sales_rep","bookkeeper"], feature: "contracts" },
   { href: "/leads",      label: "Leads",       icon: <LeadsIcon />,       roles: ["admin","manager","sales_rep"],              feature: "leads" },
   { href: "/crm",        label: "CRM",         icon: <CrmIcon />,         roles: ["admin","manager"] },
   { href: "/shows",      label: "Shows",       icon: <ShowsIcon />,       roles: ["admin","manager","sales_rep"],              feature: "shows" },
