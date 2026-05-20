@@ -7,15 +7,27 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { formatCurrency } from "@/lib/utils";
 
-// "Financing" intentionally NOT a picker option — lender draws are managed via
-// Step 4 financing entries + the Log-A-Draw flow on the contract detail page.
+// "Financing" added as a picker option (2026-05-20) so reps can convert a
+// remaining balance to a new financing entry from the same place they collect
+// any other payment. Routes to POST /api/contracts/[id]/financing instead of
+// the charge / manual-record paths.
 const PAYMENT_METHODS = [
   { value: "credit_card", label: "Credit Card" },
   { value: "debit_card", label: "Debit Card" },
   { value: "ach", label: "ACH / eCheck" },
   { value: "check", label: "Check" },
   { value: "cash", label: "Cash" },
+  { value: "financing", label: "Financing" },
 ] as const;
+
+const KNOWN_FINANCERS = [
+  "Wells Fargo",
+  "Synchrony",
+  "Foundation",
+  "Lyon",
+  "GreenSky",
+  "In-house",
+];
 
 type PaymentState = "idle" | "processing" | "success" | "error";
 
@@ -87,6 +99,15 @@ export function CollectPaymentForm({
   const [checkNumber, setCheckNumber] = useState("");
   const [bankName, setBankName] = useState("");
 
+  // ── Financing fields ──────────────────────────────────────
+  const [financer, setFinancer] = useState<string>(KNOWN_FINANCERS[0]);
+  const [otherFinancer, setOtherFinancer] = useState("");
+  const [termMonths, setTermMonths] = useState("");
+  const [apr, setApr] = useState("");
+  const [approvalNumber, setApprovalNumber] = useState("");
+  const [externalAppId, setExternalAppId] = useState("");
+  const [financingNotes, setFinancingNotes] = useState("");
+
   // ── State ─────────────────────────────────────────────────
   const [state, setState] = useState<PaymentState>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -104,7 +125,7 @@ export function CollectPaymentForm({
       : 0;
   const totalToCharge = amount + surchargeAmount;
 
-  const isCard = method === "credit_card" || method === "debit_card" || isFinancing;
+  const isCard = method === "credit_card" || method === "debit_card";
   const isAch = method === "ach";
   const isCheck = method === "check";
 
@@ -140,10 +161,15 @@ export function CollectPaymentForm({
     accountNumber.length >= 4 &&
     accountName.trim().length >= 2;
 
+  const financingReady =
+    isFinancing &&
+    amount > 0 &&
+    (financer !== "Other" || otherFinancer.trim().length > 0);
+
   const canSubmit =
     amount > 0 &&
     state !== "processing" &&
-    (useSavedCard ? true : isCard ? cardReady : isAch ? achReady : true);
+    (useSavedCard ? true : isCard ? cardReady : isAch ? achReady : isFinancing ? financingReady : true);
 
   // ── Submit ────────────────────────────────────────────────
   const handleSubmit = async () => {
@@ -154,7 +180,25 @@ export function CollectPaymentForm({
     let endpoint = "/api/payments/record-manual";
     let body: Record<string, unknown> = { contract_id: contractId, amount, method };
 
-    if (useSavedCard) {
+    if (isFinancing) {
+      // Convert the remaining balance to a new financing entry. Doesn't move
+      // money — records lender terms, recalculates balance_due, and archives
+      // the prior contract PDF for legal defensibility.
+      endpoint = `/api/contracts/${contractId}/financing`;
+      const financerName = financer === "Other" ? otherFinancer.trim() : financer;
+      const fbody: Record<string, unknown> = {
+        financer_name: financerName,
+        financed_amount: amount,
+        type: financer === "In-house" ? "in_house" : "third_party",
+        deduct_from_balance: true,
+      };
+      if (termMonths.trim()) fbody.term_months = Number(termMonths);
+      if (apr.trim()) fbody.apr = Number(apr);
+      if (approvalNumber.trim()) fbody.approval_number = approvalNumber.trim();
+      if (externalAppId.trim()) fbody.external_application_id = externalAppId.trim();
+      if (financingNotes.trim()) fbody.notes = financingNotes.trim();
+      body = fbody;
+    } else if (useSavedCard) {
       // Charge the card the customer authorized at deposit. No card form
       // values needed — the server resolves the card via contract.saved_card_token.
       endpoint = "/api/payments/charge";
@@ -216,8 +260,14 @@ export function CollectPaymentForm({
     }
 
     setAmountCollected(useSavedCard || isCard ? totalToCharge : amount);
-    setNewBalance(Math.max(0, balanceDue - amount));
+    // For financing the API returns the authoritative new balance_due.
+    if (isFinancing && data?.balance_due !== undefined) {
+      setNewBalance(Math.max(0, Number(data.balance_due)));
+    } else {
+      setNewBalance(Math.max(0, balanceDue - amount));
+    }
     if (isAch) setSuccessNote("ACH payments typically settle within 1-2 business days.");
+    if (isFinancing) setSuccessNote("Financing entry added. Original signed PDF archived; new PDF regenerates on next view.");
     setState("success");
   };
 
@@ -232,7 +282,7 @@ export function CollectPaymentForm({
         </div>
         <div>
           <h2 className="text-3xl font-bold text-emerald-700">
-            {isAch ? "ACH Submitted!" : "Payment Collected!"}
+            {isFinancing ? "Financing Added!" : isAch ? "ACH Submitted!" : "Payment Collected!"}
           </h2>
           <p className="text-slate-500 mt-1">{customerName} · {contractNumber}</p>
         </div>
@@ -240,7 +290,9 @@ export function CollectPaymentForm({
         <Card className="w-full">
           <CardContent className="py-5 space-y-3 text-sm">
             <div className="flex justify-between">
-              <span className="text-slate-500">Amount {isAch ? "Submitted" : "Collected"}</span>
+              <span className="text-slate-500">
+                {isFinancing ? "Amount Financed" : isAch ? "Amount Submitted" : "Amount Collected"}
+              </span>
               <span className="font-bold text-emerald-700">{formatCurrency(amountCollected)}</span>
             </div>
             <div className="flex justify-between border-t border-slate-100 pt-3">
@@ -424,14 +476,9 @@ export function CollectPaymentForm({
       {!useSavedCard && isCard && (
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-lg">{isFinancing ? "Financing Card Details" : "Card Details"}</CardTitle>
+            <CardTitle className="text-lg">Card Details</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {isFinancing && (
-              <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2">
-                <p className="text-xs text-emerald-700 font-medium">Run the GreenSky / WF financing card through the reader or enter the card details below.</p>
-              </div>
-            )}
             <Input
               label="Card Number *"
               type="tel"
@@ -555,6 +602,89 @@ export function CollectPaymentForm({
         </Card>
       )}
 
+      {/* ── Financing Fields (only when method = financing) ── */}
+      {!useSavedCard && isFinancing && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">Financing Details</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
+              <p className="text-xs text-amber-800">
+                Records the balance as a new financing entry on this contract. No money moves now — balance updates immediately and the contract PDF regenerates with the new terms.
+              </p>
+            </div>
+
+            <label className="block text-sm">
+              <span className="text-slate-700 font-medium block mb-1">Financer *</span>
+              <select
+                value={financer}
+                onChange={(e) => setFinancer(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-base focus:outline-none focus:ring-2 focus:ring-[#00929C]/30"
+              >
+                {KNOWN_FINANCERS.map((f) => <option key={f} value={f}>{f}</option>)}
+                <option value="Other">Other…</option>
+              </select>
+              {financer === "Other" && (
+                <Input
+                  className="mt-2"
+                  placeholder="Financer name"
+                  value={otherFinancer}
+                  onChange={(e) => setOtherFinancer(e.target.value)}
+                />
+              )}
+            </label>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                label="Term (months)"
+                type="tel"
+                inputMode="numeric"
+                placeholder="e.g. 60"
+                value={termMonths}
+                onChange={(e) => setTermMonths(e.target.value.replace(/\D/g, ""))}
+              />
+              <Input
+                label="APR (%)"
+                type="text"
+                inputMode="decimal"
+                placeholder="e.g. 9.99"
+                value={apr}
+                onChange={(e) => setApr(e.target.value.replace(/[^\d.]/g, ""))}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                label="Approval #"
+                type="text"
+                placeholder="Optional"
+                value={approvalNumber}
+                onChange={(e) => setApprovalNumber(e.target.value)}
+              />
+              <Input
+                label="External app ID"
+                type="text"
+                placeholder="Optional"
+                value={externalAppId}
+                onChange={(e) => setExternalAppId(e.target.value)}
+              />
+            </div>
+
+            <label className="block text-sm">
+              <span className="text-slate-700 font-medium block mb-1">Notes</span>
+              <textarea
+                value={financingNotes}
+                onChange={(e) => setFinancingNotes(e.target.value)}
+                rows={2}
+                placeholder="e.g. Customer called to cancel; converted balance to WF to save the deal."
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#00929C]/30 resize-none"
+              />
+            </label>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Error */}
       {state === "error" && errorMessage && (
         <div className="rounded-lg bg-red-50 border border-red-200 p-4">
@@ -581,6 +711,8 @@ export function CollectPaymentForm({
           ? `Charge ${formatCurrency(totalToCharge)}`
           : isAch
           ? `Submit ACH ${formatCurrency(amount)}`
+          : isFinancing
+          ? `Add ${formatCurrency(amount)} Financing`
           : `Record ${formatCurrency(amount)}`}
       </Button>
     </div>
