@@ -39,7 +39,10 @@ export default async function FinancingPage() {
   const orgPerms = (profile?.organization as any)?.role_permissions ?? null;
   if (!hasPermission(orgPerms, profile?.role, "bookkeeper")) redirect("/dashboard");
 
-  // Fetch all contracts that have at least one financing entry
+  // Fetch all contracts that have at least one financing entry.
+  // Scoped to contracts created through Salta (idempotency_key is set on insert
+  // by the Salta contract-creation flow — historical/imported records have
+  // NULL). Matches the bookkeeper + /contracts scope.
   const { data: contractsRaw } = await supabase
     .from("contracts")
     .select(`
@@ -53,6 +56,7 @@ export default async function FinancingPage() {
     .not("status", "in", '("quote","draft","cancelled")')
     .not("financing", "eq", "[]")
     .not("financing", "is", null)
+    .not("idempotency_key", "is", null)
     .order("created_at", { ascending: false })
     .limit(500);
 
