@@ -17,10 +17,9 @@ export async function loadWorkbookDeals(
   const { data: contracts } = await supabase
     .from("contracts")
     .select(`
-      id, contract_number, status, created_at, subtotal, tax_rate, line_items, financing,
+      id, contract_number, status, created_at, subtotal, tax_rate, line_items, financing, deposit_paid,
       customer:customers(first_name, last_name, address, city, state, zip),
       sales_rep:profiles!sales_rep_id(full_name),
-      payments(amount, status),
       override:show_deal_overrides(*)
     `)
     .eq("show_id", showId)
@@ -43,10 +42,10 @@ function shapeDeal(raw: Record<string, unknown>): WorkbookDeal {
       : [];
   const financedTotal = financingArr.reduce((s, f) => s + (f.financed_amount ?? 0), 0);
 
-  const payments = (raw.payments as Array<{ amount: number; status: string }> | null) ?? [];
-  const depositsTotal = payments
-    .filter((p) => p.status === "completed")
-    .reduce((s, p) => s + (p.amount ?? 0), 0);
+  // contracts.deposit_paid is the canonical running total — kept in sync by
+  // every payment flow (charge, record-manual, echeck) and populated directly
+  // by historical-data backfills. Source of truth across the rest of the app.
+  const depositsTotal = (raw.deposit_paid as number | null) ?? 0;
 
   const createdAt = raw.created_at as string;
   const dow = WEEKDAY[new Date(createdAt).getUTCDay()] ?? "";

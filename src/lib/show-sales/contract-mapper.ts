@@ -55,6 +55,8 @@ export type MapperContract = {
   subtotal?: number | null;
   tax_rate?: number | null;
   payments?: MapperPayment[] | null;
+  deposit_paid?: number | null;
+  payment_method?: string | null;
   /**
    * Workbook-side annotations from public.show_deal_overrides.
    * When present, values here win over contract-derived defaults for the
@@ -145,48 +147,60 @@ type DepositBuckets = Pick<
   | "finance_deposit"
 >;
 
-/** Bucket completed payments into the template's deposit columns. */
-export function bucketDeposits(payments: MapperPayment[] | null | undefined): DepositBuckets {
-  const buckets: DepositBuckets = {};
-  if (!payments) return buckets;
-
-  for (const p of payments) {
-    if (p.status !== "completed") continue;
-    const amt = p.amount ?? 0;
-    if (!amt) continue;
-
-    const add = (key: keyof DepositBuckets) => {
-      buckets[key] = (buckets[key] ?? 0) + amt;
-    };
-
-    switch (p.method) {
-      case "cash":
-        add("cash_deposit");
-        break;
-      case "ach":
-        // ACH is closer to a bank-check than a debit card swipe
-        add("check_deposit");
-        break;
-      case "debit_card":
-        add("debit_deposit");
-        break;
-      case "financing":
-        add("finance_deposit");
-        break;
-      case "credit_card": {
-        const brand = (p.card_brand ?? "").toLowerCase().replace(/\s+/g, "");
-        if (brand === "visa") add("visa_deposit");
-        else if (brand === "mastercard") add("mastercard_deposit");
-        else if (brand === "discover") add("discover_deposit");
-        else if (brand === "americanexpress" || brand === "amex") add("amex_deposit");
-        else add("visa_deposit"); // fallback for unrecognized brands
-        break;
-      }
-      default:
-        add("cash_deposit");
+/** Map a contract.payment_method (or per-payment method) to a single deposit bucket. */
+function methodToBucket(method: string | null | undefined, cardBrand?: string | null): keyof DepositBuckets {
+  switch (method) {
+    case "cash":
+      return "cash_deposit";
+    case "ach":
+      // ACH is closer to a bank-check than a debit card swipe
+      return "check_deposit";
+    case "debit_card":
+      return "debit_deposit";
+    case "financing":
+      return "finance_deposit";
+    case "credit_card": {
+      const brand = (cardBrand ?? "").toLowerCase().replace(/\s+/g, "");
+      if (brand === "visa") return "visa_deposit";
+      if (brand === "mastercard") return "mastercard_deposit";
+      if (brand === "discover") return "discover_deposit";
+      if (brand === "americanexpress" || brand === "amex") return "amex_deposit";
+      return "visa_deposit"; // fallback for unrecognized brands (incl. backfilled)
     }
+    default:
+      return "cash_deposit";
+  }
+}
+
+/**
+ * Bucket deposits into the template's deposit columns.
+ *
+ * When payment rows exist with completed status, bucket per-payment to preserve
+ * multi-method detail (e.g. $500 cash + $1000 visa on one contract).
+ *
+ * Otherwise — and this is the common case, since virtually every show contract
+ * was historical-data backfilled without payment rows — fall back to bucketing
+ * the contract's deposit_paid lump sum under its single payment_method.
+ */
+export function bucketDeposits(contract: MapperContract): DepositBuckets {
+  const buckets: DepositBuckets = {};
+  const payments = contract.payments ?? [];
+  const completed = payments.filter((p) => p.status === "completed");
+
+  if (completed.length > 0) {
+    for (const p of completed) {
+      const amt = p.amount ?? 0;
+      if (!amt) continue;
+      const key = methodToBucket(p.method, p.card_brand);
+      buckets[key] = (buckets[key] ?? 0) + amt;
+    }
+    return buckets;
   }
 
+  const lump = contract.deposit_paid ?? 0;
+  if (!lump) return buckets;
+  const key = methodToBucket(contract.payment_method);
+  buckets[key] = lump;
   return buckets;
 }
 
@@ -255,7 +269,7 @@ export function contractToDeal(contract: MapperContract): DealInput {
     financing_cost: ov(o.financing_cost),
     approx_delivery_date: ov(o.approx_delivery_date),
 
-    ...bucketDeposits(contract.payments),
+    ...bucketDeposits(contract),
 
     marketing_feedback: ov(o.marketing_feedback),
     comments: ov(o.comments) ?? contract.notes ?? undefined,
