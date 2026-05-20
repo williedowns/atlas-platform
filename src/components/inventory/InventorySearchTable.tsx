@@ -4,6 +4,8 @@ import { useState } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { getStatusColor, getUnitTypeLabel, getCabinetName, getModelDisplayName, INVENTORY_STATUSES } from "@/lib/inventory-constants";
+import { daysHeld, holdSeverity, PER_NAT_REASON_LABEL } from "@/lib/per-nat";
+import { cn } from "@/lib/utils";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Unit = Record<string, any>;
@@ -128,6 +130,22 @@ export function InventorySearchTable({ units }: Props) {
                     ? <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-orange-100 text-orange-700">HOU/Aaron</span>
                     : null;
 
+                  // ── 90-day stock-hold indicators (Per Nat reconciliation) ──
+                  // stock_assigned_at starts the clock; >60d warns, >=90d alerts
+                  // the 90-day floor-model rule violation.
+                  const heldDays = daysHeld(u.stock_assigned_at);
+                  const heldSev = holdSeverity(heldDays);
+                  const heldChipCls =
+                    heldSev === "critical" ? "bg-red-100 text-red-800 border-red-300"
+                    : heldSev === "warn"   ? "bg-amber-100 text-amber-800 border-amber-300"
+                    : "bg-slate-100 text-slate-700 border-slate-300";
+                  const contractAny = unit.contract as { id?: string; is_per_nat?: boolean; per_nat_reason?: string } | { id?: string; is_per_nat?: boolean; per_nat_reason?: string }[] | null | undefined;
+                  const contract = Array.isArray(contractAny) ? contractAny[0] : contractAny;
+                  const isPerNat = !!contract?.is_per_nat;
+                  const perNatReasonLabel = contract?.per_nat_reason
+                    ? PER_NAT_REASON_LABEL[contract.per_nat_reason] ?? contract.per_nat_reason
+                    : null;
+
                   return (
                     <tr key={unit.id} className="hover:bg-slate-50">
                       <td className="py-3 px-4">
@@ -150,6 +168,16 @@ export function InventorySearchTable({ units }: Props) {
                             {u.scheduled_owes && <span className="text-amber-500 mr-1">⚠</span>}
                             {u.customer_name}
                           </p>
+                        )}
+                        {isPerNat && contract?.id && (
+                          <Link
+                            href={`/contracts/${contract.id}`}
+                            className="inline-flex items-center gap-1 mt-0.5 text-[11px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200"
+                            title={perNatReasonLabel ? `On Per Nat list · ${perNatReasonLabel}` : "On Per Nat list"}
+                          >
+                            Per Nat
+                            {perNatReasonLabel && <span className="font-normal text-amber-700">· {perNatReasonLabel}</span>}
+                          </Link>
                         )}
                         {u.fin_balance && u.fin_balance !== "PIF" && (
                           <p className="text-xs text-amber-600 font-medium">{u.fin_balance}</p>
@@ -176,9 +204,25 @@ export function InventorySearchTable({ units }: Props) {
                         )}
                       </td>
                       <td className="py-3 px-4">
-                        <Badge variant={getStatusColor(unit.status)}>
-                          {INVENTORY_STATUSES.find((s) => s.value === unit.status)?.label ?? unit.status}
-                        </Badge>
+                        <div className="flex flex-col items-start gap-1">
+                          <Badge variant={getStatusColor(unit.status)}>
+                            {INVENTORY_STATUSES.find((s) => s.value === unit.status)?.label ?? unit.status}
+                          </Badge>
+                          {heldDays !== null && (
+                            <span
+                              className={cn("text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border", heldChipCls)}
+                              title={
+                                heldSev === "critical"
+                                  ? `Held ${heldDays} days — 90-day stock-hold rule violation. Convert to new factory order or release.`
+                                  : heldSev === "warn"
+                                  ? `Held ${heldDays} days — approaching 90-day stock-hold rule.`
+                                  : `Held ${heldDays} day${heldDays === 1 ? "" : "s"}.`
+                              }
+                            >
+                              {heldDays}d held{heldSev === "critical" ? " · 90d!" : ""}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="py-3 px-4">
                         <Link

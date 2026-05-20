@@ -35,6 +35,11 @@ const ACTION_LABELS: Record<AuditAction, { label: string; variant: "default" | "
   "contract.refund_marked":    { label: "Refund Marked",          variant: "warning" },
   "contract.tax_refund_issued":{ label: "Tax Refund Issued",      variant: "warning" },
   "contract.delivery_timeframe_updated": { label: "Delivery Timeframe", variant: "secondary" },
+  "contract.per_nat_flagged":  { label: "Per Nat Flagged",        variant: "warning" },
+  "contract.per_nat_unflagged":{ label: "Per Nat Cleared",        variant: "secondary" },
+  "contract.inventory_unit_assigned": { label: "Unit Assigned",   variant: "accent" },
+  "contract.inventory_unit_released": { label: "Unit Released",   variant: "warning" },
+  "contract.financing_added":  { label: "Financing Added",        variant: "accent" },
   "lead.created":              { label: "Lead Created",           variant: "accent" },
   "lead.status_changed":       { label: "Lead Status",            variant: "secondary" },
 };

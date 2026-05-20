@@ -22,6 +22,11 @@ export type AuditAction =
   | "contract.refund_marked"
   | "contract.tax_refund_issued"
   | "contract.delivery_timeframe_updated"
+  | "contract.per_nat_flagged"
+  | "contract.per_nat_unflagged"
+  | "contract.inventory_unit_assigned"
+  | "contract.inventory_unit_released"
+  | "contract.financing_added"
   | "lead.created"
   | "lead.status_changed";
 

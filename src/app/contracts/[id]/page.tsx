@@ -20,6 +20,7 @@ import ScheduleDeliveryButton from "@/components/contracts/ScheduleDeliveryButto
 import ReadinessChecklist from "@/components/contracts/ReadinessChecklist";
 import { evaluateReadiness, blockerLabels } from "@/lib/readiness";
 import FinancingDetailsCard from "@/components/contracts/FinancingDetailsCard";
+import ModifyContractCard from "@/components/contracts/ModifyContractCard";
 import { LowDepositBadge } from "@/components/contracts/LowDepositBadge";
 import { lowDepositInfo } from "@/lib/low-deposit";
 import { AppHeader } from "@/components/ui/AppHeader";
@@ -145,13 +146,49 @@ export default async function ContractDetailPage({
   if (canViewAudit) {
     const { data } = await supabase
       .from("audit_logs")
-      .select("action, metadata, ip_address, created_at, user:profiles(full_name)")
+      .select("id, action, metadata, ip_address, created_at, user:profiles(full_name)")
       .eq("entity_type", "contract")
       .eq("entity_id", id)
       .order("created_at", { ascending: false })
-      .limit(10);
+      .limit(50);
     auditLogs = data ?? [];
   }
+
+  // Currently-assigned inventory unit (for the ModifyContractCard).
+  const canModifyContract = ["admin", "manager"].includes(profile?.role ?? "");
+  let currentUnit: { inventory_unit_id: string; serial_number: string | null; model: string | null; stock_assigned_at: string | null } | null = null;
+  if (canModifyContract) {
+    const { data: unitRow } = await supabase
+      .from("inventory_units")
+      .select("id, serial_number, stock_assigned_at, product:products(name)")
+      .eq("contract_id", id)
+      .maybeSingle();
+    if (unitRow) {
+      const productAny = unitRow.product as { name?: string } | { name?: string }[] | null | undefined;
+      const productName: string | null = Array.isArray(productAny)
+        ? (productAny[0]?.name ?? null)
+        : (productAny?.name ?? null);
+      currentUnit = {
+        inventory_unit_id: unitRow.id,
+        serial_number: unitRow.serial_number ?? null,
+        model: productName,
+        stock_assigned_at: unitRow.stock_assigned_at ?? null,
+      };
+    }
+  }
+  const modifyAuditEntries = canModifyContract
+    ? (auditLogs as Array<{ id: string; action: string; created_at: string; user?: { full_name?: string } | { full_name?: string }[] | null; metadata: Record<string, unknown> }>).map((e) => {
+        const userAny = e.user;
+        const userObj = Array.isArray(userAny) ? userAny[0] : userAny;
+        return {
+          id: e.id,
+          action: e.action,
+          created_at: e.created_at,
+          actor_name: userObj?.full_name ?? null,
+          metadata: e.metadata ?? {},
+        };
+      })
+    : [];
 
   const lineItems = Array.isArray(contract.line_items) ? contract.line_items : [];
   const discounts = Array.isArray(contract.discounts) ? contract.discounts : [];
@@ -625,6 +662,23 @@ export default async function ContractDetailPage({
           firmScheduledDate={deliveryRow?.scheduled_date ?? null}
         />
 
+        {/* Post-sale modification card — Per Nat flag, inventory unit, balance-to-financing.
+            Visible only to admin/manager. Every change writes audit_logs. */}
+        {canModifyContract && (
+          <ModifyContractCard
+            contractId={contract.id}
+            contractNumber={contract.contract_number}
+            total={Number(contract.total ?? 0)}
+            depositPaid={Number(contract.deposit_paid ?? 0)}
+            balanceDue={Number(contract.balance_due ?? 0)}
+            isPerNat={!!contract.is_per_nat}
+            perNatReason={contract.per_nat_reason ?? null}
+            currentUnit={currentUnit}
+            financing={financingArr}
+            auditEntries={modifyAuditEntries}
+          />
+        )}
+
         {/* Customer file vault — DL, proof of homeownership, ACH, permits, etc. */}
         {contract.customer_id && (
           <CustomerFileVault
@@ -815,6 +869,27 @@ export default async function ContractDetailPage({
               Download PDF
             </Button>
           </Link>
+          {Array.isArray(contract.contract_pdf_archive_urls) && contract.contract_pdf_archive_urls.length > 0 && (
+            <div className="text-xs text-slate-600 px-1">
+              <p className="font-semibold mb-1">
+                Previous versions ({contract.contract_pdf_archive_urls.length})
+              </p>
+              <ul className="space-y-0.5">
+                {contract.contract_pdf_archive_urls.map((url: string, i: number) => (
+                  <li key={url}>
+                    <a
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[#00929C] hover:underline"
+                    >
+                      Version {contract.contract_pdf_archive_urls.length - i} (archived){i === 0 ? " — most recent" : ""}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {!["quote", "draft", "cancelled"].includes(contract.status) && (
             <ContingentToggle
               contractId={contract.id}
