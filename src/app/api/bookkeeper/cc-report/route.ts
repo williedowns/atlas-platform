@@ -48,11 +48,24 @@ export async function GET(req: Request) {
     location:locations(name)
   `;
 
+  // Scope every source below to contracts created through Salta (idempotency_key
+  // is set on insert by the Salta contract-creation flow — historical/imported
+  // records have NULL). Mirrors the bookkeeper page filter so the deposit
+  // reconciliation only reflects payments tied to Salta-originated contracts.
+  const { data: systemContractsList, error: scError } = await supabase
+    .from("contracts")
+    .select("id")
+    .not("idempotency_key", "is", null);
+
+  if (scError) return NextResponse.json({ error: scError.message }, { status: 500 });
+  const systemContractIds = (systemContractsList ?? []).map((c) => c.id);
+
   // ── All payments — include every status so nothing is silently dropped ──
   const { data: allPayments, error: paymentsError } = await supabase
     .from("payments")
     .select(`id, amount, method, card_brand, card_last4, processed_at, created_at, status, contract:contracts(${contractSelect})`)
     .not("status", "eq", "failed")
+    .in("contract_id", systemContractIds.length > 0 ? systemContractIds : ["00000000-0000-0000-0000-000000000000"])
     .order("created_at", { ascending: true });
 
   if (paymentsError) return NextResponse.json({ error: paymentsError.message }, { status: 500 });
@@ -66,6 +79,7 @@ export async function GET(req: Request) {
       location:locations(name)
     `)
     .not("financing", "is", null)
+    .not("idempotency_key", "is", null)
     .gte("created_at", `${dateFrom}T00:00:00`)
     .lte("created_at", `${dateTo}T23:59:59`);
 
@@ -195,6 +209,7 @@ export async function GET(req: Request) {
       location:locations(name)
     `)
     .not("tax_refund_amount", "is", null)
+    .not("idempotency_key", "is", null)
     .gte("tax_refund_issued_at", `${dateFrom}T00:00:00`)
     .lte("tax_refund_issued_at", `${dateTo}T23:59:59`);
 
