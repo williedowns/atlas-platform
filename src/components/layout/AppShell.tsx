@@ -84,6 +84,10 @@ function SiteVisitsIcon() {
   // Clipboard-list — visually distinct from Shows (map pin) and Work Orders.
   return <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2M8 11h.01M8 15h.01M12 11h4M12 15h4" /></svg>;
 }
+function PerNatIcon() {
+  // Calendar-with-clock — sales held back from immediate ordering.
+  return <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 14v2l1.5 1.5" /></svg>;
+}
 
 const ALL_NAV_ITEMS: NavItem[] = [
   { href: "/dashboard",  label: "Home",        icon: <HomeIcon />,        roles: ["admin","manager","sales_rep","show_manager"] },
@@ -97,6 +101,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { href: "/shows",      label: "Shows",       icon: <ShowsIcon />,       roles: ["admin","manager","sales_rep","show_manager"],              feature: "shows" },
   { href: "/show-sales", label: "Show Sales",  icon: <ShowSalesIcon />,   roles: ["admin","manager","sales_admin"],            feature: "shows" },
   { href: "/analytics",  label: "Analytics",   icon: <AnalyticsIcon />,   roles: ["admin","manager"],                          feature: "analytics" },
+  { href: "/per-nat",    label: "Per Nat",     icon: <PerNatIcon />,      roles: ["admin","manager"] },
   { href: "/admin/inventory", label: "Inventory", icon: <InventoryIcon />, roles: ["admin","manager"], feature: "inventory" },
   { href: "/admin/customers", label: "Customers", icon: <CustomersIcon />, roles: ["admin","manager"] },
   { href: "/bookkeeper", label: "Books",       icon: <FinanceIcon />,     roles: ["admin","manager","bookkeeper"],             feature: "bookkeeper" },
