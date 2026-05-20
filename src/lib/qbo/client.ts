@@ -385,6 +385,44 @@ export async function queryQBOAccounts(type?: string) {
 
 // ─── OAuth Token Refresh ─────────────────────────────────────────────────────
 
+// ─── Reports / Payment List ──────────────────────────────────────────────────
+//
+// Used by /api/qbo/reports/payments to mirror the QBO "Payment List" data
+// (what bookkeeping sees inside QBO) for cross-reference against Salta's
+// own payments table. We use the SQL-ish Query endpoint instead of the
+// /reports/PaymentList endpoint because Query returns structured Payment
+// entities with LinkedTxn arrays — way easier to join on invoice id.
+export interface QBOPaymentRow {
+  Id: string;
+  TxnDate: string;
+  TotalAmt: number;
+  CustomerRef?: { value: string; name?: string };
+  PaymentMethodRef?: { value: string; name?: string };
+  PaymentRefNum?: string;
+  PrivateNote?: string;
+  Line?: Array<{
+    Amount: number;
+    LinkedTxn?: Array<{ TxnId: string; TxnType: string }>;
+  }>;
+}
+
+export async function queryQBOPayments(from: string, to: string): Promise<QBOPaymentRow[]> {
+  // QBO Query language requires single quotes around date values.
+  // Pull in pages — Query API caps at 1000 per page, paginate via STARTPOSITION.
+  const all: QBOPaymentRow[] = [];
+  const pageSize = 1000;
+  let start = 1;
+  for (let i = 0; i < 20; i++) {
+    const q = `SELECT * FROM Payment WHERE TxnDate >= '${from}' AND TxnDate <= '${to}' STARTPOSITION ${start} MAXRESULTS ${pageSize}`;
+    const data = await qboFetch(`/query?query=${encodeURIComponent(q)}`);
+    const batch: QBOPaymentRow[] = data?.QueryResponse?.Payment ?? [];
+    all.push(...batch);
+    if (batch.length < pageSize) break;
+    start += pageSize;
+  }
+  return all;
+}
+
 export async function refreshQBOToken(refreshToken: string) {
   const credentials = Buffer.from(
     `${process.env.QBO_CLIENT_ID}:${process.env.QBO_CLIENT_SECRET}`
