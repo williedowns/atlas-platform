@@ -13,6 +13,15 @@ import { PICKER_DISMISSED_COOKIE } from "@/lib/active-show";
 
 export async function POST() {
   const cookieStore = await cookies();
-  cookieStore.delete(PICKER_DISMISSED_COOKIE);
+  // Must match the path the cookie was set with (path: "/") — Next's
+  // default delete uses the current route's path, which here is
+  // /api/active-show/clear-skip and won't match the cookie set at /.
+  cookieStore.set(PICKER_DISMISSED_COOKIE, "", {
+    path: "/",
+    sameSite: "lax",
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 0,
+  });
   return NextResponse.json({ ok: true });
 }
