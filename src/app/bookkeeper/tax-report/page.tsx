@@ -100,6 +100,7 @@ export default async function TaxReportPage({ searchParams }: PageProps) {
       sales_rep:profiles!contracts_sales_rep_id_fkey(full_name)
     `)
     .not("status", "in", '("quote","draft","cancelled")')
+    .not("idempotency_key", "is", null)
     .gte("created_at", `${from}T00:00:00`)
     .lte("created_at", `${to}T23:59:59`)
     .order("created_at", { ascending: false })
