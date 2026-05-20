@@ -42,6 +42,7 @@ export default async function ReconciliationPage({ searchParams }: PageProps) {
     .not("status", "in", '("quote","draft","cancelled")')
     .not("financing", "eq", "[]")
     .not("financing", "is", null)
+    .not("idempotency_key", "is", null)
     .order("created_at", { ascending: false })
     .limit(1000);
 
