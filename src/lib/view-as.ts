@@ -18,12 +18,13 @@
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 
-export type ViewAsRole = "admin" | "manager" | "sales_rep" | "bookkeeper" | "field_crew" | "customer";
+export type ViewAsRole = "admin" | "manager" | "sales_rep" | "show_manager" | "bookkeeper" | "field_crew" | "customer";
 
 const ALLOWED_ROLES: ReadonlyArray<ViewAsRole> = [
   "admin",
   "manager",
   "sales_rep",
+  "show_manager",
   "bookkeeper",
   "field_crew",
   "customer",

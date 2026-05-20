@@ -85,14 +85,16 @@ function isQuote(c: ContractRow): boolean {
 export function ContractsList({
   contracts,
   initialFilter = "all",
+  initialShowId = null,
 }: {
   contracts: ContractRow[];
   initialFilter?: FilterType;
+  initialShowId?: string | null;
 }) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterType>(initialFilter);
   const [dateFilter, setDateFilter] = useState<DateFilter>("all");
-  const [selectedShowId, setSelectedShowId] = useState<string>("all");
+  const [selectedShowId, setSelectedShowId] = useState<string>(initialShowId ?? "all");
   const [cancelledExpanded, setCancelledExpanded] = useState(false);
 
   const availableShows = useMemo(() => {

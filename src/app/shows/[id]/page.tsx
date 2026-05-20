@@ -9,6 +9,8 @@ import { AppHeader } from "@/components/ui/AppHeader";
 import { ShowDailyTrendChart } from "@/components/shows/ShowDailyTrendChart";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { getActiveShow } from "@/lib/active-show";
+import SetActiveShowButton from "./_components/SetActiveShowButton";
 
 const STATUS_COLORS: Record<string, "default" | "success" | "warning" | "destructive" | "secondary"> = {
   draft: "secondary",
@@ -43,6 +45,9 @@ export default async function ShowDetailPage({
     .single();
 
   if (!show) notFound();
+
+  const activeShow = await getActiveShow();
+  const isThisShowActive = activeShow?.id === id;
 
   const { data: contracts } = await supabase
     .from("contracts")
@@ -136,6 +141,9 @@ export default async function ShowDetailPage({
             <ShowDailyTrendChart data={trendData} />
           </SectionCard>
         )}
+
+        {/* Active show toggle — affects /leads + /contracts filtering for this user */}
+        <SetActiveShowButton showId={id} isCurrentlyActive={isThisShowActive} />
 
         {/* CTAs */}
         <div className="grid grid-cols-2 gap-3">

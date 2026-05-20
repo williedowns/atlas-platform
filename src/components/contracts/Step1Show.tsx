@@ -62,6 +62,13 @@ export default function Step1Show({ onNext }: Step1ShowProps) {
     const location = (show.location as Location) ?? null;
     setSelectedId(show.id);
     setShow(show, location);
+    // Fire-and-forget: also mark this show as the rep's active show so the
+    // banner + Check-Ins filter follow them around the platform.
+    fetch("/api/active-show", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ show_id: show.id }),
+    }).catch(() => {});
     onNext();
   }
 

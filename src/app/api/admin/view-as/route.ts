@@ -18,6 +18,7 @@ const ALLOWED_ROLES: ReadonlyArray<ViewAsRole> = [
   "admin",
   "manager",
   "sales_rep",
+  "show_manager",
   "bookkeeper",
   "field_crew",
   "customer",
