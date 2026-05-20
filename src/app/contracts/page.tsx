@@ -51,6 +51,12 @@ export default async function ContractsPage({
 
   // PostgREST caps each request at 1000 rows on this project, so we paginate
   // in 1000-row chunks fetched in parallel after a fast count() query.
+  //
+  // Scoped to contracts created through Salta (idempotency_key is set on insert
+  // by the Salta contract-creation flow — historical/imported records have
+  // NULL). Matches the bookkeeper scope so reps see the same set of contracts
+  // they actually create here. Historical data remains in /analytics and
+  // /show-sales.
   const SELECT_COLUMNS = `
       id, contract_number, status, is_contingent,
       total, subtotal, discount_total, tax_amount, deposit_paid, balance_due,
@@ -62,7 +68,10 @@ export default async function ContractsPage({
     `;
   const PAGE_SIZE = 1000;
 
-  let countQuery = supabase.from("contracts").select("id", { count: "exact", head: true });
+  let countQuery = supabase
+    .from("contracts")
+    .select("id", { count: "exact", head: true })
+    .not("idempotency_key", "is", null);
   if (!isAdminEffective && filterUserId) {
     countQuery = countQuery.eq("sales_rep_id", filterUserId);
   }
@@ -75,6 +84,7 @@ export default async function ContractsPage({
       let q = supabase
         .from("contracts")
         .select(SELECT_COLUMNS)
+        .not("idempotency_key", "is", null)
         .order("created_at", { ascending: false })
         .order("id", { ascending: false })
         .range(i * PAGE_SIZE, (i + 1) * PAGE_SIZE - 1);
