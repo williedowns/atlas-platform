@@ -54,7 +54,7 @@ export async function GET(req: Request) {
       contract:contracts (
         id,
         contract_number,
-        customer:customers ( first_name, last_name )
+        customer:customers ( first_name, last_name, co_buyer_first_name, co_buyer_last_name )
       )
     `)
     .gte("processed_at", fromIso)
@@ -66,18 +66,31 @@ export async function GET(req: Request) {
 
   // Shape that matches the existing intuit-parser.ts IntuitTransaction
   // interface so downstream reconciliation code stays compatible.
+  type CustomerRow = {
+    first_name?: string;
+    last_name?: string;
+    co_buyer_first_name?: string | null;
+    co_buyer_last_name?: string | null;
+  };
   const transactions = (payments ?? []).map((p) => {
     const contractAny = p.contract as
-      | { id?: string; contract_number?: string; customer?: { first_name?: string; last_name?: string } | { first_name?: string; last_name?: string }[] | null }
-      | { id?: string; contract_number?: string; customer?: { first_name?: string; last_name?: string } | { first_name?: string; last_name?: string }[] | null }[]
+      | { id?: string; contract_number?: string; customer?: CustomerRow | CustomerRow[] | null }
+      | { id?: string; contract_number?: string; customer?: CustomerRow | CustomerRow[] | null }[]
       | null
       | undefined;
     const contract = Array.isArray(contractAny) ? contractAny[0] : contractAny;
     const custAny = contract?.customer;
     const customer = Array.isArray(custAny) ? custAny[0] : custAny;
-    const cardholderName = customer
+    // Bookkeeper-friendly: include co-buyer when present so Lori can identify
+    // contracts by either spouse's name on the reconciliation report.
+    const primaryName = customer
       ? `${customer.first_name ?? ""} ${customer.last_name ?? ""}`.trim()
       : "";
+    const coFirst = (customer?.co_buyer_first_name ?? "").trim();
+    const coLast = (customer?.co_buyer_last_name ?? "").trim();
+    const cardholderName = coFirst && coLast
+      ? `${primaryName} & ${coFirst} ${coLast}`
+      : primaryName;
 
     const amt = Number(p.amount ?? 0);
     const isRefund = p.status === "refunded";

@@ -5,12 +5,12 @@ import { createClient } from "@/lib/supabase/server";
 import { formatCurrency } from "@/lib/utils";
 import TaxExemptTracker from "@/components/bookkeeper/TaxExemptTracker";
 import ReconciliationView from "@/components/bookkeeper/ReconciliationView";
+import IntuitPaymentsTable from "@/components/bookkeeper/IntuitPaymentsTable";
 import SalesByEventList from "@/components/bookkeeper/SalesByEventList";
 import CancellationRefundTracker from "@/components/bookkeeper/CancellationRefundTracker";
 import AppShell from "@/components/layout/AppShell";
 import { AppHeader } from "@/components/ui/AppHeader";
 import { SectionCard } from "@/components/ui/SectionCard";
-import { Button } from "@/components/ui/button";
 import { OutstandingByAgeChart } from "@/components/bookkeeper/OutstandingByAgeChart";
 import { lowDepositInfo, DEFAULT_LOW_DEPOSIT_THRESHOLD } from "@/lib/low-deposit";
 import { LowDepositBadge } from "@/components/contracts/LowDepositBadge";
@@ -214,6 +214,26 @@ export default async function BookkeeperPage() {
     .map((c) => ({ contract: c, info: lowDepositInfo({ total: c.total, deposit_paid: c.deposit_paid, status: c.status }) }))
     .filter((r) => r.info.isLow)
     .sort((a, b) => a.info.pct - b.info.pct); // lowest % first
+
+  // ── Intuit Payments inline: preload contract → QBO invoice ID map so the
+  //    client component can join Salta payments to QBO payments by invoice id
+  //    without a second round trip.
+  const { data: contractInvoiceRows } = await supabase
+    .from("contracts")
+    .select("id, qbo_deposit_invoice_id, qbo_final_invoice_id")
+    .or("qbo_deposit_invoice_id.not.is.null,qbo_final_invoice_id.not.is.null")
+    .order("created_at", { ascending: false })
+    .limit(5000);
+  const invoiceIdsByContractId: Record<string, string[]> = {};
+  for (const c of contractInvoiceRows ?? []) {
+    const ids = [c.qbo_deposit_invoice_id, c.qbo_final_invoice_id].filter(Boolean) as string[];
+    if (ids.length > 0) invoiceIdsByContractId[c.id] = ids;
+  }
+  // Default Intuit date range: last 30 days
+  const intuitToDate = new Date();
+  const intuitFromDate = new Date(intuitToDate.getTime() - 30 * 86_400_000);
+  const intuitFrom = intuitFromDate.toISOString().slice(0, 10);
+  const intuitTo = intuitToDate.toISOString().slice(0, 10);
 
   return (
     <AppShell
@@ -493,17 +513,11 @@ export default async function BookkeeperPage() {
           <ReconciliationView contracts={contracts} />
 
           {/* ── Intuit Payments Report (auto-pulled from Salta payments + QBO) ── */}
-          <div className="rounded-xl border border-slate-200 bg-white p-4 flex items-center justify-between gap-4 flex-wrap">
-            <div>
-              <h3 className="font-semibold text-slate-900">Intuit Payments Report</h3>
-              <p className="text-xs text-slate-600 mt-1">
-                Every Intuit charge Salta has processed, with QBO reconciliation status. No CSV upload needed.
-              </p>
-            </div>
-            <Link href="/bookkeeper/intuit-payments">
-              <Button variant="accent" size="sm">Open report →</Button>
-            </Link>
-          </div>
+          <IntuitPaymentsTable
+            initialFrom={intuitFrom}
+            initialTo={intuitTo}
+            invoiceIdsByContractId={invoiceIdsByContractId}
+          />
 
           {/* ── Sales by Location / Event ── */}
           <SalesByEventList contracts={contracts} />

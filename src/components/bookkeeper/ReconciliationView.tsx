@@ -48,6 +48,16 @@ function fmtDate(iso: string) {
   });
 }
 
+const METHOD_OPTIONS: { value: string; label: string }[] = [
+  { value: "all",         label: "All methods" },
+  { value: "credit_card", label: "Credit Card" },
+  { value: "debit_card",  label: "Debit Card" },
+  { value: "ach",         label: "ACH" },
+  { value: "financing",   label: "Financing" },
+  { value: "cash",        label: "Cash" },
+  { value: "check",       label: "Check" },
+];
+
 // contracts prop kept for API compatibility but not used in this view
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export default function ReconciliationView({ contracts: _ }: { contracts: unknown[] }) {
@@ -55,6 +65,7 @@ export default function ReconciliationView({ contracts: _ }: { contracts: unknow
   const [dateFrom, setDateFrom] = useState(thirtyDaysAgoStr);
   const [dateTo, setDateTo]     = useState(todayStr);
   const [search, setSearch]     = useState("");
+  const [method, setMethod]     = useState<string>("all");
   const [rows, setRows]         = useState<TransactionRow[]>([]);
   const [total, setTotal]       = useState(0);
   const [gross, setGross]       = useState(0);
@@ -66,7 +77,7 @@ export default function ReconciliationView({ contracts: _ }: { contracts: unknow
     setLoading(true);
     setError(null);
     try {
-      const p = new URLSearchParams({ dateFrom, dateTo, ...(search ? { search } : {}) });
+      const p = new URLSearchParams({ dateFrom, dateTo, ...(search ? { search } : {}), ...(method && method !== "all" ? { method } : {}) });
       const res  = await fetch(`/api/bookkeeper/cc-report?${p}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to load");
@@ -82,16 +93,17 @@ export default function ReconciliationView({ contracts: _ }: { contracts: unknow
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo, search]);
+  }, [dateFrom, dateTo, search, method]);
 
   useEffect(() => { fetchRows(); }, [fetchRows]);
 
   const downloadPdf = () => {
-    const p = new URLSearchParams({ dateFrom, dateTo, ...(search ? { search } : {}) });
+    const p = new URLSearchParams({ dateFrom, dateTo, ...(search ? { search } : {}), ...(method && method !== "all" ? { method } : {}) });
     const url = `/api/bookkeeper/cc-report/pdf?${p}`;
     const a = document.createElement("a");
     a.href = url;
-    a.download = `deposit-reconciliation-${dateFrom}${dateTo !== dateFrom ? `-to-${dateTo}` : ""}.pdf`;
+    const methodTag = method && method !== "all" ? `-${method}` : "";
+    a.download = `deposit-reconciliation${methodTag}-${dateFrom}${dateTo !== dateFrom ? `-to-${dateTo}` : ""}.pdf`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -143,6 +155,18 @@ export default function ReconciliationView({ contracts: _ }: { contracts: unknow
                 onChange={(e) => setDateTo(e.target.value)}
                 className="text-sm border border-slate-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#00929C]"
               />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <label className="text-xs text-slate-500 font-medium whitespace-nowrap">Method</label>
+              <select
+                value={method}
+                onChange={(e) => setMethod(e.target.value)}
+                className="text-sm border border-slate-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#00929C] bg-white"
+              >
+                {METHOD_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
             </div>
             <input
               type="text"
