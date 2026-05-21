@@ -771,5 +771,106 @@ function summarizeMetadata(action: string, meta: Record<string, unknown>): strin
     }
     return parts.length > 0 ? parts.join(" · ") : null;
   }
+  if (action === "contract.customer_info_updated") {
+    return diffFieldsSummary(meta.before, meta.after);
+  }
+  if (action === "contract.notes_updated") {
+    return diffFieldsSummary(meta.before, meta.after);
+  }
+  if (action === "contract.assignment_updated") {
+    return diffFieldsSummary(meta.before, meta.after);
+  }
+  if (action === "contract.tax_settings_updated") {
+    const before = meta.before as { tax_rate?: number; tax_exempt?: boolean } | undefined;
+    const after = meta.after as { tax_rate?: number; tax_exempt?: boolean } | undefined;
+    const parts: string[] = [];
+    if (before && after) {
+      if (before.tax_rate !== after.tax_rate) {
+        parts.push(`rate ${((before.tax_rate ?? 0) * 100).toFixed(2)}% → ${((after.tax_rate ?? 0) * 100).toFixed(2)}%`);
+      }
+      if (before.tax_exempt !== after.tax_exempt) {
+        parts.push(`exempt ${before.tax_exempt ? "yes" : "no"} → ${after.tax_exempt ? "yes" : "no"}`);
+      }
+    }
+    const prevTotal = meta.previous_total as number | undefined;
+    const newTotal = meta.new_total as number | undefined;
+    if (prevTotal !== undefined && newTotal !== undefined && prevTotal !== newTotal) {
+      parts.push(`total ${formatCurrency(prevTotal)} → ${formatCurrency(newTotal)}`);
+    }
+    return parts.length > 0 ? parts.join(" · ") : null;
+  }
+  if (action === "contract.line_items_updated") {
+    const added = meta.added as Array<{ product_name: string; quantity: number }> | undefined;
+    const removed = meta.removed as Array<{ product_name: string; quantity: number }> | undefined;
+    const changed = meta.changed as Array<{ product_name: string }> | undefined;
+    const prevTotal = meta.previous_total as number | undefined;
+    const newTotal = meta.new_total as number | undefined;
+    const parts: string[] = [];
+    if (added && added.length > 0) {
+      parts.push(`+${added.length} added (${added.map((a) => a.product_name).join(", ")})`);
+    }
+    if (removed && removed.length > 0) {
+      parts.push(`−${removed.length} removed (${removed.map((r) => r.product_name).join(", ")})`);
+    }
+    if (changed && changed.length > 0) {
+      parts.push(`${changed.length} changed (${changed.map((c) => c.product_name).join(", ")})`);
+    }
+    if (prevTotal !== undefined && newTotal !== undefined && prevTotal !== newTotal) {
+      parts.push(`total ${formatCurrency(prevTotal)} → ${formatCurrency(newTotal)}`);
+    }
+    return parts.length > 0 ? parts.join(" · ") : null;
+  }
+  if (action === "contract.discounts_updated") {
+    const prevTotal = meta.previous_discount_total as number | undefined;
+    const newTotal = meta.new_discount_total as number | undefined;
+    const prevContractTotal = meta.previous_total as number | undefined;
+    const newContractTotal = meta.new_total as number | undefined;
+    const parts: string[] = [];
+    if (prevTotal !== undefined && newTotal !== undefined) {
+      parts.push(`discounts ${formatCurrency(prevTotal)} → ${formatCurrency(newTotal)}`);
+    }
+    if (prevContractTotal !== undefined && newContractTotal !== undefined && prevContractTotal !== newContractTotal) {
+      parts.push(`total ${formatCurrency(prevContractTotal)} → ${formatCurrency(newContractTotal)}`);
+    }
+    return parts.length > 0 ? parts.join(" · ") : null;
+  }
+  if (action === "contract.delivery_diagram_updated") {
+    const before = meta.before as Array<{ label?: string }> | { label?: string } | null | undefined;
+    const after = meta.after as Array<{ label?: string }> | { label?: string } | null | undefined;
+    const beforeCount = Array.isArray(before) ? before.length : before ? 1 : 0;
+    const afterCount = Array.isArray(after) ? after.length : after ? 1 : 0;
+    return `scenarios ${beforeCount} → ${afterCount}`;
+  }
   return null;
+}
+
+// Generic before/after diff: lists which fields changed and shows old → new.
+// Used for actions whose metadata is a flat before/after pair (customer info,
+// notes, assignment). Truncates long string values so the chip stays readable.
+function diffFieldsSummary(beforeRaw: unknown, afterRaw: unknown): string | null {
+  if (!beforeRaw || !afterRaw || typeof beforeRaw !== "object" || typeof afterRaw !== "object") return null;
+  const before = beforeRaw as Record<string, unknown>;
+  const after = afterRaw as Record<string, unknown>;
+  const keys = new Set<string>([...Object.keys(before), ...Object.keys(after)]);
+  const lines: string[] = [];
+  for (const k of keys) {
+    const b = before[k];
+    const a = after[k];
+    if (sameValue(b, a)) continue;
+    lines.push(`${k.replace(/_/g, " ")}: ${formatVal(b)} → ${formatVal(a)}`);
+  }
+  return lines.length > 0 ? lines.join(" · ") : null;
+}
+
+function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a == null && b == null) return true;
+  if (a == null || b == null) return false;
+  return String(a) === String(b);
+}
+
+function formatVal(v: unknown): string {
+  if (v === null || v === undefined || v === "") return "(empty)";
+  const s = String(v);
+  return s.length > 30 ? s.slice(0, 27) + "…" : s;
 }
