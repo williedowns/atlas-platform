@@ -17,24 +17,6 @@ import SalespersonFilter from "@/components/per-nat/SalespersonFilter";
 
 type Status = "active" | "completed" | "cancelled";
 
-interface LineItemMaybe {
-  product_name?: string;
-  name?: string;          // historical backfill writes `name`, current flow writes `product_name`
-  color?: string;
-  skirt?: string;
-  cabinet?: string;       // historical synonym for skirt
-  inventory_unit_id?: string;
-}
-
-// Strip the "[backfill 2026-05-19] source=..." prefix that the historical
-// importer wrote into contracts.notes. We surface the real customer-facing
-// comment from show_deal_overrides.comments instead — see overridesByContract.
-function cleanBackfillNotes(raw: string | null | undefined): string | null {
-  if (!raw) return null;
-  const cleaned = raw.replace(/\[backfill[^\]]*\][^\n]*/i, "").trim();
-  return cleaned.length > 0 ? cleaned : null;
-}
-
 export default async function PerNatPage({
   searchParams,
 }: {
@@ -63,97 +45,86 @@ export default async function PerNatPage({
     redirect("/dashboard");
   }
 
-  // ── Query contracts ─────────────────────────────────────────────────────
+  // ── Query per_nat_entries ───────────────────────────────────────────────
+  // Source of truth for the Per Nat list. Each entry optionally links to a
+  // contract; XLSX-imported entries with no matching contract have
+  // contract_id IS NULL but still render on the list.
   let query = supabase
-    .from("contracts")
+    .from("per_nat_entries")
     .select(`
       id,
-      contract_number,
-      status,
-      is_per_nat,
-      per_nat_reason,
-      delivery_timeframe,
-      total,
-      deposit_paid,
-      balance_due,
-      created_at,
+      contract_id,
+      source,
+      sale_date,
+      customer_name,
+      model,
+      color,
+      skirt,
+      serial_number,
+      salesperson_name,
+      timeframe_text,
       notes,
-      external_notes,
-      line_items,
-      financing,
-      customer:customers ( id, first_name, last_name, phone ),
-      sales_rep:profiles!contracts_sales_rep_id_fkey ( id, full_name ),
-      location:locations ( id, name )
+      fierce_notes,
+      status,
+      reason,
+      contract:contracts (
+        id,
+        contract_number,
+        status,
+        total,
+        deposit_paid,
+        balance_due,
+        delivery_timeframe,
+        customer:customers ( first_name, last_name ),
+        sales_rep:profiles!contracts_sales_rep_id_fkey ( id, full_name )
+      )
     `)
-    .order("delivery_timeframe", { ascending: true, nullsFirst: false })
-    .order("created_at", { ascending: true });
+    .eq("status", status)
+    .order("sale_date", { ascending: false, nullsFirst: false });
 
-  if (status === "active") {
-    query = query.eq("is_per_nat", true).not("status", "in", "(delivered,cancelled)");
-  } else if (status === "completed") {
-    query = query.eq("status", "delivered").or("is_per_nat.eq.true,delivery_timeframe.not.is.null");
-  } else {
-    query = query.eq("status", "cancelled").eq("is_per_nat", true);
-  }
-
+  // Salesperson filter — works on either the linked sales_rep_id or the
+  // denormalized salesperson_name text. UI sends the rep's profile id.
   if (salespersonId) {
-    query = query.eq("sales_rep_id", salespersonId);
+    // Two-pass: fetch contracts for that sales_rep first, then OR with
+    // matching entry.salesperson_name.
+    const { data: repRow } = await supabase
+      .from("profiles")
+      .select("full_name")
+      .eq("id", salespersonId)
+      .maybeSingle();
+    const repName = repRow?.full_name ?? null;
+    if (repName) {
+      query = query.or(
+        `salesperson_name.ilike.%${repName}%,contract.sales_rep_id.eq.${salespersonId}`
+      );
+    } else {
+      // Unknown rep id — fall back to id-only filter on the contract side.
+      query = query.eq("contract.sales_rep_id", salespersonId);
+    }
   }
 
-  const { data: contracts } = await query;
+  const { data: entries } = await query;
 
-  // ── Fetch open inventory_unit assignments ───────────────────────────────
-  const contractIds = (contracts ?? []).map((c) => c.id);
+  // ── Fetch open inventory_unit assignments for linked contracts ──────────
+  const contractIds = (entries ?? [])
+    .map((e) => e.contract_id)
+    .filter((id): id is string => !!id);
+
   const unitsByContract = new Map<string, {
-    inventory_unit_id: string;
     serial_number: string | null;
-    model: string | null;
     stock_assigned_at: string | null;
-  }>();
-  const overridesByContract = new Map<string, {
-    color: string | null;
-    cabinet: string | null;
-    serial_number: string | null;
-    comments: string | null;
-    approx_delivery_date: string | null;
   }>();
 
   if (contractIds.length > 0) {
-    const [unitsResult, overridesResult] = await Promise.all([
-      supabase
-        .from("inventory_units")
-        .select(`id, serial_number, contract_id, stock_assigned_at, product:products ( name )`)
-        .in("contract_id", contractIds),
-      // show_deal_overrides holds color/cabinet/serial#/comments for the
-      // historical backfilled rows (Lori's expo workbooks) — line_items
-      // doesn't carry those, so the Per Nat list needs the join to fill
-      // out the Color/Skirt/Serial columns for pre-Salta contracts.
-      supabase
-        .from("show_deal_overrides")
-        .select("contract_id, color, cabinet, serial_number, comments, approx_delivery_date")
-        .in("contract_id", contractIds),
-    ]);
-
-    for (const u of unitsResult.data ?? []) {
+    const { data: units } = await supabase
+      .from("inventory_units")
+      .select(`serial_number, contract_id, stock_assigned_at`)
+      .in("contract_id", contractIds);
+    for (const u of units ?? []) {
       if (!u.contract_id) continue;
-      const productAny = u.product as { name?: string } | { name?: string }[] | null | undefined;
-      const productName: string | null = Array.isArray(productAny)
-        ? (productAny[0]?.name ?? null)
-        : (productAny?.name ?? null);
       unitsByContract.set(u.contract_id, {
-        inventory_unit_id: u.id,
         serial_number: u.serial_number ?? null,
-        model: productName,
         stock_assigned_at: u.stock_assigned_at ?? null,
-      });
-    }
-    for (const o of overridesResult.data ?? []) {
-      overridesByContract.set(o.contract_id, {
-        color: o.color ?? null,
-        cabinet: o.cabinet ?? null,
-        serial_number: o.serial_number ?? null,
-        comments: o.comments ?? null,
-        approx_delivery_date: o.approx_delivery_date ?? null,
       });
     }
   }
@@ -166,10 +137,11 @@ export default async function PerNatPage({
     .order("full_name", { ascending: true });
   const repOptions = (reps ?? []).map((r) => ({ id: r.id, name: r.full_name ?? "—" }));
 
-  // ── Group rows by target month ──────────────────────────────────────────
+  // ── Build display rows ──────────────────────────────────────────────────
   type Row = {
-    contract_id: string;
-    contract_number: string;
+    entry_id: string;
+    contract_id: string | null;
+    contract_number: string | null;
     customer_name: string;
     sales_rep_name: string;
     model: string | null;
@@ -177,71 +149,74 @@ export default async function PerNatPage({
     skirt: string | null;
     timeframe_raw: string | null;
     notes: string | null;
-    external_notes: string | null;
-    created_at: string;
+    fierce_notes: string | null;
+    sale_date: string | null;
     is_low_deposit: boolean;
     has_stock_unit: boolean;
     serial_number: string | null;
     days_held: number | null;
-    per_nat_reason: string | null;
+    reason: string | null;
     bucket_key: string;
     bucket_label: string;
     bucket_sort: number;
+    balance_due: number;
     total: number;
     deposit_paid: number;
-    balance_due: number;
+    is_xlsx_only: boolean;
   };
 
-  const rows: Row[] = (contracts ?? []).map((c) => {
-    const firstLine: LineItemMaybe = Array.isArray(c.line_items) && c.line_items.length > 0
-      ? (c.line_items[0] as LineItemMaybe)
-      : {};
-    const unit = unitsByContract.get(c.id) ?? null;
-    const override = overridesByContract.get(c.id) ?? null;
-    // Timeframe falls back to overrides.approx_delivery_date so historical
-    // contracts can group under a real month instead of all bucketing as TBD.
-    const timeframeForBucket = c.delivery_timeframe ?? override?.approx_delivery_date ?? null;
-    const bucket = parseDeliveryTimeframeToBucket(timeframeForBucket);
-    const customerArr = c.customer as { first_name?: string; last_name?: string } | { first_name?: string; last_name?: string }[] | null | undefined;
-    const customer = Array.isArray(customerArr) ? customerArr[0] : customerArr;
-    const salesArr = c.sales_rep as { full_name?: string } | { full_name?: string }[] | null | undefined;
-    const salesRep = Array.isArray(salesArr) ? salesArr[0] : salesArr;
+  const rows: Row[] = (entries ?? []).map((e) => {
+    const contractAny = e.contract as
+      | { id?: string; contract_number?: string; status?: string; total?: number; deposit_paid?: number; balance_due?: number; delivery_timeframe?: string; customer?: { first_name?: string; last_name?: string } | { first_name?: string; last_name?: string }[] | null; sales_rep?: { id?: string; full_name?: string } | { id?: string; full_name?: string }[] | null }
+      | null
+      | undefined;
+    const contract = Array.isArray(contractAny) ? contractAny[0] : contractAny;
+    const customerJoin = contract?.customer;
+    const customer = Array.isArray(customerJoin) ? customerJoin[0] : customerJoin;
+    const salesJoin = contract?.sales_rep;
+    const salesRep = Array.isArray(salesJoin) ? salesJoin[0] : salesJoin;
+    const unit = e.contract_id ? unitsByContract.get(e.contract_id) ?? null : null;
 
-    // Multi-source resolution: prefer the structured field for current
-    // Salta-created contracts, fall back to overrides for historical rows,
-    // fall back to allocated inventory_unit as a last resort.
-    const model = firstLine.product_name ?? firstLine.name ?? unit?.model ?? null;
-    const color = firstLine.color ?? override?.color ?? null;
-    const skirt = firstLine.skirt ?? firstLine.cabinet ?? override?.cabinet ?? null;
-    const serial = unit?.serial_number ?? override?.serial_number ?? null;
-    const cleanedContractNotes = cleanBackfillNotes(c.notes);
-    const notes = override?.comments ?? cleanedContractNotes ?? c.external_notes ?? null;
+    // Pull customer name from the linked contract first, fall back to the
+    // XLSX-stored denormalized value.
+    const customerName = customer
+      ? `${customer.first_name ?? ""} ${customer.last_name ?? ""}`.trim()
+      : e.customer_name;
+
+    // Timeframe — prefer the entry's XLSX text ("Feb-April", "End of June?"),
+    // fall back to contract.delivery_timeframe.
+    const timeframeText = e.timeframe_text ?? contract?.delivery_timeframe ?? null;
+    const bucket = parseDeliveryTimeframeToBucket(timeframeText || e.sale_date);
+
+    // Serial — prefer live inventory_unit assignment, fall back to entry.serial_number.
+    const serial = unit?.serial_number ?? e.serial_number ?? null;
+    const hasStock = !!serial;
 
     return {
-      contract_id: c.id,
-      contract_number: c.contract_number,
-      customer_name: customer
-        ? `${customer.first_name ?? ""} ${customer.last_name ?? ""}`.trim()
-        : "—",
-      sales_rep_name: salesRep?.full_name ?? "—",
-      model,
-      color,
-      skirt,
-      timeframe_raw: c.delivery_timeframe ?? override?.approx_delivery_date ?? null,
-      notes,
-      external_notes: c.external_notes ?? null,
-      created_at: c.created_at,
-      is_low_deposit: c.per_nat_reason === "low_deposit",
-      has_stock_unit: !!unit || !!override?.serial_number,
+      entry_id: e.id,
+      contract_id: e.contract_id ?? null,
+      contract_number: contract?.contract_number ?? null,
+      customer_name: customerName || "—",
+      sales_rep_name: salesRep?.full_name ?? e.salesperson_name ?? "—",
+      model: e.model ?? null,
+      color: e.color ?? null,
+      skirt: e.skirt ?? null,
+      timeframe_raw: timeframeText,
+      notes: e.notes ?? null,
+      fierce_notes: e.fierce_notes ?? null,
+      sale_date: e.sale_date ?? null,
+      is_low_deposit: e.reason === "low_deposit",
+      has_stock_unit: hasStock,
       serial_number: serial,
       days_held: daysHeld(unit?.stock_assigned_at ?? null),
-      per_nat_reason: c.per_nat_reason ?? null,
+      reason: e.reason ?? null,
       bucket_key: bucket.key,
       bucket_label: bucket.label,
       bucket_sort: bucket.sortKey,
-      total: Number(c.total ?? 0),
-      deposit_paid: Number(c.deposit_paid ?? 0),
-      balance_due: Number(c.balance_due ?? 0),
+      balance_due: Number(contract?.balance_due ?? 0),
+      total: Number(contract?.total ?? 0),
+      deposit_paid: Number(contract?.deposit_paid ?? 0),
+      is_xlsx_only: !e.contract_id,
     };
   });
 
@@ -263,23 +238,10 @@ export default async function PerNatPage({
   };
 
   // ── Status tab counts ───────────────────────────────────────────────────
-  // Cheap: a single count() head query per tab.
   const [activeCount, completedCount, cancelledCount] = await Promise.all([
-    supabase
-      .from("contracts")
-      .select("id", { count: "exact", head: true })
-      .eq("is_per_nat", true)
-      .not("status", "in", "(delivered,cancelled)"),
-    supabase
-      .from("contracts")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "delivered")
-      .or("is_per_nat.eq.true,delivery_timeframe.not.is.null"),
-    supabase
-      .from("contracts")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "cancelled")
-      .eq("is_per_nat", true),
+    supabase.from("per_nat_entries").select("id", { count: "exact", head: true }).eq("status", "active"),
+    supabase.from("per_nat_entries").select("id", { count: "exact", head: true }).eq("status", "completed"),
+    supabase.from("per_nat_entries").select("id", { count: "exact", head: true }).eq("status", "cancelled"),
   ]);
 
   return (
@@ -294,10 +256,10 @@ export default async function PerNatPage({
     >
       <AppHeader
         title="Per Nat"
-        subtitle={`${rows.length} ${rows.length === 1 ? "contract" : "contracts"}`}
+        subtitle={`${rows.length} ${rows.length === 1 ? "deal" : "deals"}`}
       />
 
-      <main className="pb-28 max-w-7xl mx-auto w-full px-4">
+      <main className="pb-28 max-w-[1500px] mx-auto w-full px-4">
         {/* Tabs */}
         <div className="flex items-center gap-1 border-b border-slate-200 mb-4">
           {([
@@ -337,42 +299,43 @@ export default async function PerNatPage({
           <LegendChip className="bg-[#EAD1DC]" label="Stock unit assigned (pink)" />
           <LegendChip className="bg-amber-100" label="Held 60-89 days" />
           <LegendChip className="bg-red-100" label="Held 90+ days — 90-day rule violation" />
+          <LegendChip className="bg-slate-100" label="XLSX-only (no Salta contract yet)" />
         </div>
 
         {sortedBuckets.length === 0 ? (
           <div className="rounded-lg border border-slate-200 bg-white p-8 text-center text-slate-500">
-            No Per Nat contracts in this view.
+            No Per Nat deals in this view.
           </div>
         ) : (
           <div className="space-y-6">
             {sortedBuckets.map((b) => (
               <section key={b.label}>
-                {/* Month divider — matches the XLSX blue divider rows */}
                 <div className="bg-[#010F21] text-white px-4 py-2 rounded-t-lg font-semibold text-sm tracking-wide">
                   {b.label}
                   <span className="ml-2 text-white/70 font-normal">
-                    · {b.rows.length} {b.rows.length === 1 ? "contract" : "contracts"}
+                    · {b.rows.length} {b.rows.length === 1 ? "deal" : "deals"}
                   </span>
                 </div>
-                <div className="border border-slate-200 rounded-b-lg overflow-hidden">
+                <div className="border border-slate-200 rounded-b-lg overflow-hidden overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="bg-slate-50 text-slate-700">
                       <tr>
-                        <th className="text-left px-3 py-2 font-semibold">Sale date</th>
-                        <th className="text-left px-3 py-2 font-semibold">Timeframe</th>
-                        <th className="text-left px-3 py-2 font-semibold">Customer</th>
-                        <th className="text-left px-3 py-2 font-semibold">Serial / Order #</th>
-                        <th className="text-left px-3 py-2 font-semibold">Model</th>
-                        <th className="text-left px-3 py-2 font-semibold">Color</th>
-                        <th className="text-left px-3 py-2 font-semibold">Skirt</th>
-                        <th className="text-left px-3 py-2 font-semibold">Salesperson</th>
+                        <th className="text-left px-3 py-2 font-semibold whitespace-nowrap">Sale date</th>
+                        <th className="text-left px-3 py-2 font-semibold whitespace-nowrap">Timeframe</th>
+                        <th className="text-left px-3 py-2 font-semibold whitespace-nowrap">Customer</th>
+                        <th className="text-left px-3 py-2 font-semibold whitespace-nowrap">Serial / Order #</th>
+                        <th className="text-left px-3 py-2 font-semibold whitespace-nowrap">Model</th>
+                        <th className="text-left px-3 py-2 font-semibold whitespace-nowrap">Color</th>
+                        <th className="text-left px-3 py-2 font-semibold whitespace-nowrap">Skirt</th>
+                        <th className="text-left px-3 py-2 font-semibold whitespace-nowrap">Salesperson</th>
                         <th className="text-left px-3 py-2 font-semibold">Notes</th>
-                        <th className="text-right px-3 py-2 font-semibold">Balance</th>
+                        <th className="text-left px-3 py-2 font-semibold whitespace-nowrap">Fierce / Delivery</th>
+                        <th className="text-right px-3 py-2 font-semibold whitespace-nowrap">Balance</th>
                       </tr>
                     </thead>
                     <tbody>
                       {b.rows.map((r) => (
-                        <PerNatRow key={r.contract_id} row={r} />
+                        <PerNatRow key={r.entry_id} row={r} />
                       ))}
                     </tbody>
                   </table>
@@ -397,7 +360,9 @@ function LegendChip({ className, label }: { className: string; label: string }) 
 
 interface PerNatRowProps {
   row: {
-    contract_id: string;
+    entry_id: string;
+    contract_id: string | null;
+    contract_number: string | null;
     customer_name: string;
     sales_rep_name: string;
     model: string | null;
@@ -405,12 +370,14 @@ interface PerNatRowProps {
     skirt: string | null;
     timeframe_raw: string | null;
     notes: string | null;
-    created_at: string;
+    fierce_notes: string | null;
+    sale_date: string | null;
     is_low_deposit: boolean;
     has_stock_unit: boolean;
     serial_number: string | null;
     days_held: number | null;
     balance_due: number;
+    is_xlsx_only: boolean;
   };
 }
 
@@ -426,20 +393,34 @@ function PerNatRow({ row }: PerNatRowProps) {
       : "bg-slate-100 text-slate-700 border-slate-300";
 
   return (
-    <tr className="border-t border-slate-100 hover:bg-slate-50/60 transition-colors">
-      <td className="px-3 py-2 whitespace-nowrap">{formatDate(row.created_at)}</td>
+    <tr className={cn(
+      "border-t border-slate-100 hover:bg-slate-50/60 transition-colors",
+      row.is_xlsx_only && "bg-slate-50/40"
+    )}>
+      <td className="px-3 py-2 whitespace-nowrap">
+        {row.sale_date ? formatDate(row.sale_date) : "—"}
+      </td>
       <td className="px-3 py-2 whitespace-nowrap text-slate-700">{row.timeframe_raw ?? "—"}</td>
       <td className={cn("px-3 py-2 font-medium", customerCellBg)}>
-        <Link href={`/contracts/${row.contract_id}`} className="text-[#00929C] hover:underline">
-          {row.customer_name}
-        </Link>
+        {row.contract_id ? (
+          <Link href={`/contracts/${row.contract_id}`} className="text-[#00929C] hover:underline">
+            {row.customer_name}
+          </Link>
+        ) : (
+          <span className="text-slate-900">{row.customer_name}</span>
+        )}
         {row.is_low_deposit && (
           <span className="block text-[10px] font-bold uppercase tracking-wide text-orange-700 mt-0.5">
             Low deposit
           </span>
         )}
+        {row.is_xlsx_only && (
+          <span className="block text-[10px] font-bold uppercase tracking-wide text-slate-500 mt-0.5">
+            XLSX only
+          </span>
+        )}
       </td>
-      <td className={cn("px-3 py-2 whitespace-nowrap text-slate-700", serialCellBg)}>
+      <td className={cn("px-3 py-2 whitespace-nowrap text-slate-700 font-mono text-xs", serialCellBg)}>
         {row.serial_number ?? "—"}
         {row.has_stock_unit && row.days_held !== null && (
           <span className={cn("ml-2 text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border", heldChip)}>
@@ -447,15 +428,20 @@ function PerNatRow({ row }: PerNatRowProps) {
           </span>
         )}
       </td>
-      <td className="px-3 py-2">{row.model ?? "—"}</td>
-      <td className="px-3 py-2">{row.color ?? "—"}</td>
-      <td className="px-3 py-2">{row.skirt ?? "—"}</td>
-      <td className="px-3 py-2 text-slate-700">{row.sales_rep_name}</td>
-      <td className="px-3 py-2 text-slate-600 text-xs max-w-[200px] truncate" title={row.notes ?? ""}>
-        {row.notes ?? "—"}
+      <td className="px-3 py-2 whitespace-nowrap">{row.model ?? "—"}</td>
+      <td className="px-3 py-2 whitespace-nowrap">{row.color ?? "—"}</td>
+      <td className="px-3 py-2 whitespace-nowrap">{row.skirt ?? "—"}</td>
+      <td className="px-3 py-2 whitespace-nowrap text-slate-700">{row.sales_rep_name}</td>
+      <td className="px-3 py-2 text-slate-600 text-xs max-w-[280px]">
+        <div className="line-clamp-3 whitespace-pre-wrap" title={row.notes ?? ""}>
+          {row.notes ?? "—"}
+        </div>
+      </td>
+      <td className="px-3 py-2 text-cyan-700 text-xs max-w-[180px]" title={row.fierce_notes ?? ""}>
+        {row.fierce_notes ?? "—"}
       </td>
       <td className="px-3 py-2 text-right font-mono text-sm whitespace-nowrap">
-        {formatCurrency(row.balance_due)}
+        {row.balance_due > 0 ? formatCurrency(row.balance_due) : "—"}
       </td>
     </tr>
   );
