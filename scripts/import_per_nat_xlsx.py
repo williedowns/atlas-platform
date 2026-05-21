@@ -296,17 +296,14 @@ def main():
     print("Indexing existing contracts...")
     index = fetch_contracts_index(sb)
 
-    print("Clearing existing xlsx_import rows from per_nat_entries...")
-    delete_result = sb.table("per_nat_entries").delete().eq("source", "xlsx_import").execute()
-    print(f"  Cleared {len(delete_result.data or [])} prior xlsx_import rows")
+    # Wipe ALL prior per_nat_entries — XLSX is the source of truth now.
+    # contract_flag rows from migration 085's seed get replaced by xlsx_import
+    # rows that match them (proper section + notes) OR by a second pass below
+    # that re-adds contract_flag for is_per_nat=true contracts NOT in XLSX.
+    print("Wiping per_nat_entries (XLSX is source of truth)...")
+    sb.table("per_nat_entries").delete().neq("id", "00000000-0000-0000-0000-000000000000").execute()
 
     already_linked = set()
-    linked_result = (
-        sb.table("per_nat_entries").select("contract_id").not_.is_("contract_id", "null").execute()
-    )
-    for row in linked_result.data or []:
-        already_linked.add(row["contract_id"])
-    print(f"  {len(already_linked)} contracts already linked to non-xlsx entries")
 
     matched = 0
     unmatched = 0
@@ -362,7 +359,7 @@ def main():
     print(f"  Unmatched (XLSX-only): {unmatched}")
     print()
 
-    print(f"Inserting {len(inserts)} rows into per_nat_entries...")
+    print(f"Inserting {len(inserts)} XLSX rows into per_nat_entries...")
     batch_size = 100
     inserted = 0
     for i in range(0, len(inserts), batch_size):
@@ -371,8 +368,86 @@ def main():
         inserted += len(result.data or [])
         print(f"  Batch {i // batch_size + 1}: {len(result.data or [])} rows (total: {inserted})")
 
+    # ── Second pass: flagged-but-not-in-XLSX contracts ─────────────────────
+    # Some contracts are is_per_nat=true (low_deposit auto-flag, or flagged
+    # via the Modify Contract card) but never made it onto Natalie's XLSX.
+    # Add them as contract_flag rows so the Per Nat page reflects the full
+    # set, auto-assigned to a month section based on sale_date so they
+    # don't pile up under TBD.
     print()
-    print(f"=== Done: {inserted} entries imported ===")
+    print("Adding contract_flag entries for is_per_nat=true contracts not in XLSX...")
+    flagged_result = (
+        sb.table("contracts")
+        .select(
+            "id, status, total, deposit_paid, balance_due, "
+            "per_nat_reason, delivery_timeframe, created_at, notes, "
+            "customer:customers(first_name, last_name)"
+        )
+        .eq("is_per_nat", True)
+        .execute()
+    )
+    flagged = flagged_result.data or []
+    print(f"  {len(flagged)} contracts flagged is_per_nat=true")
+
+    months = ["January","February","March","April","May","June","July","August","September","October","November","December"]
+    pass2_inserts = []
+    skipped_already_linked = 0
+    for c in flagged:
+        if c["id"] in already_linked:
+            skipped_already_linked += 1
+            continue
+
+        # Status mapping
+        cstatus = c.get("status") or ""
+        if cstatus == "delivered":
+            entry_status = "completed"
+        elif cstatus == "cancelled":
+            entry_status = "cancelled"
+        else:
+            entry_status = "active"
+
+        # Auto-section by sale_date month so these rows don't land in TBD.
+        sale_date_str = (c.get("created_at") or "")[:10]
+        try:
+            y, mo, _ = sale_date_str.split("-")
+            section_label = f"{months[int(mo) - 1]} {y}"
+            section_order = int(y) * 12 + int(mo) - 1
+        except Exception:
+            section_label = "TBD"
+            section_order = 999999
+
+        # Strip [backfill] noise from notes.
+        raw_notes = c.get("notes") or ""
+        clean_notes = re.sub(r"\[backfill[^\]]*\][^\n]*", "", raw_notes).strip() or None
+
+        cust = c.get("customer") or {}
+        customer_name = f"{(cust.get('first_name') or '').strip()} {(cust.get('last_name') or '').strip()}".strip() or "—"
+
+        pass2_inserts.append({
+            "contract_id": c["id"],
+            "source": "contract_flag",
+            "sale_date": sale_date_str or None,
+            "customer_name": customer_name,
+            "status": entry_status,
+            "reason": c.get("per_nat_reason") or "manual",
+            "timeframe_text": c.get("delivery_timeframe"),
+            "notes": clean_notes,
+            "section_label": section_label,
+            "section_kind": "month",
+            "section_order": section_order,
+        })
+
+    print(f"  Skipped (already linked from XLSX): {skipped_already_linked}")
+    print(f"  Adding contract_flag rows: {len(pass2_inserts)}")
+    if pass2_inserts:
+        for i in range(0, len(pass2_inserts), batch_size):
+            chunk = pass2_inserts[i:i + batch_size]
+            sb.table("per_nat_entries").insert(chunk).execute()
+
+    print()
+    print(f"=== Done: {inserted + len(pass2_inserts)} entries total ===")
+    print(f"    XLSX rows:        {inserted}")
+    print(f"    contract_flag:    {len(pass2_inserts)} (flagged contracts not in XLSX)")
 
 
 if __name__ == "__main__":
