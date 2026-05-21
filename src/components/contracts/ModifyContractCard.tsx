@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -188,6 +188,16 @@ function PerNatSection({
   );
 }
 
+interface InventorySearchResult {
+  id: string;
+  serial_number: string | null;
+  order_number: string | null;
+  status: string | null;
+  model_code: string | null;
+  product: { id: string; name: string | null; model_code: string | null } | null;
+  location: { id: string; name: string | null } | null;
+}
+
 // ─── Inventory unit assign / release ─────────────────────────────────────────
 function InventoryUnitSection({
   contractId,
@@ -202,6 +212,11 @@ function InventoryUnitSection({
   const [errCode, setErrCode] = useState<string | null>(null);
   const [serialInput, setSerialInput] = useState("");
   const [releaseReason, setReleaseReason] = useState("");
+  const [results, setResults] = useState<InventorySearchResult[]>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
 
   const heldDays = daysHeld(currentUnit?.stock_assigned_at ?? null);
   const severity = holdSeverity(heldDays);
@@ -211,6 +226,60 @@ function InventoryUnitSection({
       : severity === "warn"
       ? "bg-amber-100 text-amber-800 border-amber-300"
       : "bg-slate-100 text-slate-700 border-slate-300";
+
+  useEffect(() => {
+    if (currentUnit) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    const q = serialInput.trim();
+    if (q.length === 0) {
+      abortRef.current?.abort();
+      setResults([]);
+      return;
+    }
+    debounceRef.current = setTimeout(async () => {
+      abortRef.current?.abort();
+      const ctrl = new AbortController();
+      abortRef.current = ctrl;
+      try {
+        const r = await fetch(`/api/inventory/search?q=${encodeURIComponent(q)}`, {
+          signal: ctrl.signal,
+        });
+        if (abortRef.current !== ctrl) return;
+        if (!r.ok) return;
+        const data = (await r.json()) as InventorySearchResult[];
+        if (abortRef.current !== ctrl) return;
+        setResults(Array.isArray(data) ? data : []);
+        setShowDropdown(true);
+      } catch (e) {
+        if ((e as { name?: string })?.name === "AbortError") return;
+      }
+    }, 200);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      abortRef.current?.abort();
+    };
+  }, [serialInput, currentUnit]);
+
+  useEffect(() => {
+    function onDocPointer(e: MouseEvent | TouchEvent) {
+      if (!wrapperRef.current) return;
+      if (!wrapperRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", onDocPointer);
+    document.addEventListener("touchstart", onDocPointer);
+    return () => {
+      document.removeEventListener("mousedown", onDocPointer);
+      document.removeEventListener("touchstart", onDocPointer);
+    };
+  }, []);
+
+  function pickResult(row: InventorySearchResult) {
+    if (row.serial_number) setSerialInput(row.serial_number);
+    setResults([]);
+    setShowDropdown(false);
+  }
 
   async function assign() {
     if (serialInput.trim().length === 0) return;
@@ -230,6 +299,8 @@ function InventoryUnitSection({
       return;
     }
     setSerialInput("");
+    setResults([]);
+    setShowDropdown(false);
     router.refresh();
   }
 
@@ -289,13 +360,45 @@ function InventoryUnitSection({
         ) : (
           <div className="space-y-2">
             <p className="text-sm text-slate-600">No inventory unit currently assigned.</p>
-            <div className="flex items-center gap-2">
-              <Input
-                value={serialInput}
-                onChange={(e) => setSerialInput(e.target.value)}
-                placeholder="Serial number (e.g. W246016)"
-                className="text-sm flex-1"
-              />
+            <div className="flex items-start gap-2" ref={wrapperRef}>
+              <div className="relative flex-1">
+                <Input
+                  value={serialInput}
+                  onChange={(e) => setSerialInput(e.target.value)}
+                  onFocus={() => { if (results.length > 0) setShowDropdown(true); }}
+                  placeholder="Serial number (e.g. W246016)"
+                  className="text-sm w-full"
+                  autoComplete="off"
+                />
+                {showDropdown && results.length > 0 && (
+                  <ul className="absolute z-50 left-0 right-0 mt-1 max-h-72 overflow-auto rounded-md border border-slate-200 bg-white shadow-lg">
+                    {results.map((row) => {
+                      const model = row.product?.name ?? row.model_code ?? row.product?.model_code ?? "—";
+                      const loc = row.location?.name ?? "—";
+                      const status = (row.status ?? "").replace(/_/g, " ");
+                      return (
+                        <li
+                          key={row.id}
+                          onMouseDown={(e) => { e.preventDefault(); pickResult(row); }}
+                          className="cursor-pointer px-3 py-2 hover:bg-slate-50 border-b border-slate-100 last:border-b-0"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-mono text-sm font-semibold text-slate-900">
+                              {row.serial_number ?? row.order_number ?? "(no serial)"}
+                            </span>
+                            <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border bg-slate-100 text-slate-700 border-slate-300">
+                              {status || "—"}
+                            </span>
+                          </div>
+                          <div className="text-xs text-slate-600 mt-0.5">
+                            {model} · {loc}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
               <Button variant="accent" size="sm" disabled={busy || !serialInput.trim()} onClick={assign}>
                 {busy ? "…" : "Assign unit"}
               </Button>
