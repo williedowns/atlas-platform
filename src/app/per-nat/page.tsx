@@ -17,6 +17,20 @@ import SalespersonFilter from "@/components/per-nat/SalespersonFilter";
 
 type Status = "active" | "completed" | "cancelled";
 
+// Section header colors mirror Natalie's XLSX so the page reads as the same
+// document:
+//   blue   = month divider (Jan-April 2026, May 2026, ...)
+//   orange = "Owner to Notifiy YYYY" (Natalie owns followup)
+//   black  = "List below that William wanted to mark as stock..."
+//   red    = "HOT ONES THAT WE CAN'T GET A HOLD OF..."
+const SECTION_HEADER_CLS: Record<"month" | "owner_notify" | "stock_held" | "hot" | "other", string> = {
+  month:        "bg-[#010F21] text-white",                // navy (matches our brand)
+  owner_notify: "bg-orange-600 text-white",
+  stock_held:   "bg-slate-900 text-white",                // near-black
+  hot:          "bg-red-700 text-white",
+  other:        "bg-slate-700 text-white",
+};
+
 export default async function PerNatPage({
   searchParams,
 }: {
@@ -67,6 +81,9 @@ export default async function PerNatPage({
       fierce_notes,
       status,
       reason,
+      section_label,
+      section_kind,
+      section_order,
       contract:contracts (
         id,
         contract_number,
@@ -80,6 +97,7 @@ export default async function PerNatPage({
       )
     `)
     .eq("status", status)
+    .order("section_order", { ascending: true, nullsFirst: false })
     .order("sale_date", { ascending: false, nullsFirst: false });
 
   // Salesperson filter — works on either the linked sales_rep_id or the
@@ -138,6 +156,7 @@ export default async function PerNatPage({
   const repOptions = (reps ?? []).map((r) => ({ id: r.id, name: r.full_name ?? "—" }));
 
   // ── Build display rows ──────────────────────────────────────────────────
+  type SectionKind = "month" | "owner_notify" | "stock_held" | "hot" | "other";
   type Row = {
     entry_id: string;
     contract_id: string | null;
@@ -156,9 +175,9 @@ export default async function PerNatPage({
     serial_number: string | null;
     days_held: number | null;
     reason: string | null;
-    bucket_key: string;
-    bucket_label: string;
-    bucket_sort: number;
+    section_label: string;
+    section_kind: SectionKind;
+    section_order: number;
     balance_due: number;
     total: number;
     deposit_paid: number;
@@ -177,20 +196,25 @@ export default async function PerNatPage({
     const salesRep = Array.isArray(salesJoin) ? salesJoin[0] : salesJoin;
     const unit = e.contract_id ? unitsByContract.get(e.contract_id) ?? null : null;
 
-    // Pull customer name from the linked contract first, fall back to the
-    // XLSX-stored denormalized value.
     const customerName = customer
       ? `${customer.first_name ?? ""} ${customer.last_name ?? ""}`.trim()
       : e.customer_name;
-
-    // Timeframe — prefer the entry's XLSX text ("Feb-April", "End of June?"),
-    // fall back to contract.delivery_timeframe.
     const timeframeText = e.timeframe_text ?? contract?.delivery_timeframe ?? null;
-    const bucket = parseDeliveryTimeframeToBucket(timeframeText || e.sale_date);
-
-    // Serial — prefer live inventory_unit assignment, fall back to entry.serial_number.
     const serial = unit?.serial_number ?? e.serial_number ?? null;
     const hasStock = !!serial;
+
+    // Fall back to a parsed-month bucket only when the entry has no XLSX
+    // section assigned (entries created via the Modify Contract card go this
+    // path so they don't get dropped on the floor).
+    let sectionLabel = e.section_label as string | null;
+    let sectionKind = (e.section_kind ?? null) as SectionKind | null;
+    let sectionOrder = (e.section_order ?? null) as number | null;
+    if (!sectionLabel) {
+      const fallback = parseDeliveryTimeframeToBucket(timeframeText || e.sale_date);
+      sectionLabel = fallback.label;
+      sectionKind = "month";
+      sectionOrder = 9000 + fallback.sortKey; // sort after XLSX-assigned sections
+    }
 
     return {
       entry_id: e.id,
@@ -210,9 +234,9 @@ export default async function PerNatPage({
       serial_number: serial,
       days_held: daysHeld(unit?.stock_assigned_at ?? null),
       reason: e.reason ?? null,
-      bucket_key: bucket.key,
-      bucket_label: bucket.label,
-      bucket_sort: bucket.sortKey,
+      section_label: sectionLabel,
+      section_kind: (sectionKind ?? "other") as SectionKind,
+      section_order: sectionOrder ?? 99999,
       balance_due: Number(contract?.balance_due ?? 0),
       total: Number(contract?.total ?? 0),
       deposit_paid: Number(contract?.deposit_paid ?? 0),
@@ -220,14 +244,15 @@ export default async function PerNatPage({
     };
   });
 
-  // Group by bucket
-  const buckets = new Map<string, { label: string; sort: number; rows: Row[] }>();
+  // Group by section in XLSX source order
+  const sections = new Map<string, { label: string; kind: SectionKind; sort: number; rows: Row[] }>();
   for (const r of rows) {
-    const b = buckets.get(r.bucket_key) ?? { label: r.bucket_label, sort: r.bucket_sort, rows: [] };
-    b.rows.push(r);
-    buckets.set(r.bucket_key, b);
+    const key = `${r.section_order}::${r.section_label}`;
+    const s = sections.get(key) ?? { label: r.section_label, kind: r.section_kind, sort: r.section_order, rows: [] };
+    s.rows.push(r);
+    sections.set(key, s);
   }
-  const sortedBuckets = [...buckets.values()].sort((a, b) => a.sort - b.sort);
+  const sortedSections = [...sections.values()].sort((a, b) => a.sort - b.sort);
 
   // ── Tab links ───────────────────────────────────────────────────────────
   const tabHref = (s: Status) => {
@@ -302,17 +327,20 @@ export default async function PerNatPage({
           <LegendChip className="bg-slate-100" label="XLSX-only (no Salta contract yet)" />
         </div>
 
-        {sortedBuckets.length === 0 ? (
+        {sortedSections.length === 0 ? (
           <div className="rounded-lg border border-slate-200 bg-white p-8 text-center text-slate-500">
             No Per Nat deals in this view.
           </div>
         ) : (
           <div className="space-y-6">
-            {sortedBuckets.map((b) => (
-              <section key={b.label}>
-                <div className="bg-[#010F21] text-white px-4 py-2 rounded-t-lg font-semibold text-sm tracking-wide">
+            {sortedSections.map((b) => (
+              <section key={`${b.sort}::${b.label}`}>
+                <div className={cn(
+                  "px-4 py-2 rounded-t-lg font-semibold text-sm tracking-wide",
+                  SECTION_HEADER_CLS[b.kind]
+                )}>
                   {b.label}
-                  <span className="ml-2 text-white/70 font-normal">
+                  <span className="ml-2 opacity-70 font-normal">
                     · {b.rows.length} {b.rows.length === 1 ? "deal" : "deals"}
                   </span>
                 </div>
