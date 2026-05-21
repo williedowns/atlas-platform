@@ -1,6 +1,30 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
+// Format buyer name as "First Last" or "First Last & CoFirst CoLast"
+// when both co-buyer fields are present. Used across all bookkeeper reports.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function formatBuyerName(customer: any): string {
+  if (!customer) return "—";
+  const primary = `${customer.first_name ?? ""} ${customer.last_name ?? ""}`.trim();
+  const coFirst = (customer.co_buyer_first_name ?? "").trim();
+  const coLast = (customer.co_buyer_last_name ?? "").trim();
+  if (coFirst && coLast) return `${primary} & ${coFirst} ${coLast}`;
+  return primary || "—";
+}
+
+// Bookkeeper reports show only the main product (line_items[0]) — convention
+// matches lib/show-sales/contract-mapper.ts. Add-ons (HT Delivery, HT Steps,
+// covers) and auto-added site-prep (linked_spa_product_id) are intentionally
+// hidden so Lori can scan contracts by spa model.
+function mainProductLabel(lineItems: Array<{ product_name?: string; quantity?: number }>): string {
+  const primary = lineItems[0];
+  if (!primary?.product_name) return "—";
+  return primary.quantity && primary.quantity > 1
+    ? `${primary.product_name} (x${primary.quantity})`
+    : primary.product_name;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function extractContractFields(p: any) {
   const contract = Array.isArray(p.contract) ? p.contract[0] : p.contract;
@@ -8,16 +32,14 @@ function extractContractFields(p: any) {
   const show = Array.isArray(contract?.show) ? contract.show[0] : contract?.show;
   const location = Array.isArray(contract?.location) ? contract.location[0] : contract?.location;
   const lineItems = Array.isArray(contract?.line_items) ? contract.line_items : [];
-  const productSummary = lineItems
-    .map((li: { product_name: string; quantity?: number }) =>
-      li.quantity && li.quantity > 1 ? `${li.product_name} (x${li.quantity})` : li.product_name
-    )
-    .join(", ");
+  const productSummary = mainProductLabel(lineItems);
   const salesLocation = show?.name ?? location?.name ?? "—";
+  const venueName: string | null = show?.venue_name ? String(show.venue_name) : null;
+  const buyerName = formatBuyerName(customer);
   const isFullPayment = contract
     ? Math.abs((contract.deposit_paid ?? 0) - contract.total) < 0.01
     : false;
-  return { contract, customer, salesLocation, productSummary, isFullPayment };
+  return { contract, customer, salesLocation, venueName, buyerName, productSummary, isFullPayment };
 }
 
 export async function GET(req: Request) {
@@ -39,33 +61,25 @@ export async function GET(req: Request) {
   const dateFrom = searchParams.get("dateFrom") ?? new Date().toISOString().split("T")[0];
   const dateTo = searchParams.get("dateTo") ?? new Date().toISOString().split("T")[0];
   const search = (searchParams.get("search") ?? "").toLowerCase().trim();
+  const method = (searchParams.get("method") ?? "all").toLowerCase().trim();
 
   const contractSelect = `
     id, contract_number, total, deposit_paid,
     line_items, financing,
-    customer:customers(first_name, last_name),
-    show:shows(name),
+    customer:customers(first_name, last_name, co_buyer_first_name, co_buyer_last_name),
+    show:shows(name, venue_name),
     location:locations(name)
   `;
 
-  // Scope every source below to contracts created through Salta (idempotency_key
-  // is set on insert by the Salta contract-creation flow — historical/imported
-  // records have NULL). Mirrors the bookkeeper page filter so the deposit
-  // reconciliation only reflects payments tied to Salta-originated contracts.
-  const { data: systemContractsList, error: scError } = await supabase
-    .from("contracts")
-    .select("id")
-    .not("idempotency_key", "is", null);
-
-  if (scError) return NextResponse.json({ error: scError.message }, { status: 500 });
-  const systemContractIds = (systemContractsList ?? []).map((c) => c.id);
-
   // ── All payments — include every status so nothing is silently dropped ──
+  // !inner join + idempotency_key not null filter drops payments whose contract
+  // is a historical XLSX backfill (those rows have NULL idempotency_key). Salta-
+  // flow contracts always have idempotency_key set at insert time.
   const { data: allPayments, error: paymentsError } = await supabase
     .from("payments")
-    .select(`id, amount, method, card_brand, card_last4, processed_at, created_at, status, contract:contracts(${contractSelect})`)
+    .select(`id, amount, method, card_brand, card_last4, processed_at, created_at, status, contract:contracts!inner(${contractSelect})`)
     .not("status", "eq", "failed")
-    .in("contract_id", systemContractIds.length > 0 ? systemContractIds : ["00000000-0000-0000-0000-000000000000"])
+    .not("contract.idempotency_key", "is", null)
     .order("created_at", { ascending: true });
 
   if (paymentsError) return NextResponse.json({ error: paymentsError.message }, { status: 500 });
@@ -74,8 +88,8 @@ export async function GET(req: Request) {
   const { data: financedContracts, error: fcError } = await supabase
     .from("contracts")
     .select(`id, contract_number, total, deposit_paid, line_items, financing, created_at,
-      customer:customers(first_name, last_name),
-      show:shows(name),
+      customer:customers(first_name, last_name, co_buyer_first_name, co_buyer_last_name),
+      show:shows(name, venue_name),
       location:locations(name)
     `)
     .not("financing", "is", null)
@@ -93,6 +107,7 @@ export async function GET(req: Request) {
     customer_name: string;
     product_size: string;
     sales_location: string;
+    venue_name: string | null;
     payment_type: string;
     amount: number;
     method_type: string;
@@ -124,7 +139,7 @@ export async function GET(req: Request) {
     const effectiveDate: string = p.processed_at ?? p.created_at;
     if (!effectiveDate || effectiveDate < fromTs || effectiveDate > toTs) continue;
 
-    const { customer, salesLocation, productSummary, isFullPayment } = extractContractFields(p);
+    const { salesLocation, venueName, buyerName, productSummary, isFullPayment } = extractContractFields(p);
     const contract = Array.isArray(p.contract) ? p.contract[0] : p.contract;
 
     // For financing payments, pull provider from contract's financing JSONB array
@@ -141,9 +156,10 @@ export async function GET(req: Request) {
       payment_id: p.id,
       contract_id: contract?.id ?? "",
       date: effectiveDate,
-      customer_name: customer ? `${customer.first_name} ${customer.last_name}` : "—",
+      customer_name: buyerName,
       product_size: productSummary || "—",
       sales_location: salesLocation,
+      venue_name: venueName,
       payment_type: isFullPayment ? "Paid in Full" : "Down Payment",
       amount: p.amount,
       method_type: METHOD_LABEL[p.method] ?? p.method ?? "Unknown",
@@ -162,12 +178,10 @@ export async function GET(req: Request) {
     const show = Array.isArray(c.show) ? c.show[0] : c.show;
     const location = Array.isArray(c.location) ? c.location[0] : c.location;
     const salesLocation = show?.name ?? location?.name ?? "—";
+    const venueName: string | null = show?.venue_name ? String(show.venue_name) : null;
+    const buyerName = formatBuyerName(customer);
     const lineItems = Array.isArray(c.line_items) ? c.line_items : [];
-    const productSummary = lineItems
-      .map((li: { product_name: string; quantity?: number }) =>
-        li.quantity && li.quantity > 1 ? `${li.product_name} (x${li.quantity})` : li.product_name
-      )
-      .join(", ");
+    const productSummary = mainProductLabel(lineItems);
 
     const financingEntries = Array.isArray(c.financing) ? c.financing : [];
     for (const f of financingEntries) {
@@ -183,9 +197,10 @@ export async function GET(req: Request) {
         payment_id: `fin-${c.id}-${f.financer_name ?? "unknown"}`,
         contract_id: c.id,
         date: f.applied_at ?? c.created_at,
-        customer_name: customer ? `${customer.first_name} ${customer.last_name}` : "—",
+        customer_name: buyerName,
         product_size: productSummary || "—",
         sales_location: salesLocation,
+        venue_name: venueName,
         payment_type: "Financing",
         amount: f.financed_amount,
         method_type: "Financing",
@@ -204,8 +219,8 @@ export async function GET(req: Request) {
     .select(`
       id, contract_number, tax_refund_amount, tax_refund_issued_at, tax_refund_notes,
       line_items,
-      customer:customers(first_name, last_name),
-      show:shows(name),
+      customer:customers(first_name, last_name, co_buyer_first_name, co_buyer_last_name),
+      show:shows(name, venue_name),
       location:locations(name)
     `)
     .not("tax_refund_amount", "is", null)
@@ -219,19 +234,18 @@ export async function GET(req: Request) {
     const show = Array.isArray(c.show) ? c.show[0] : c.show;
     const location = Array.isArray(c.location) ? c.location[0] : c.location;
     const salesLocation = show?.name ?? location?.name ?? "—";
+    const venueName: string | null = show?.venue_name ? String(show.venue_name) : null;
+    const buyerName = formatBuyerName(customer);
     const lineItems = Array.isArray(c.line_items) ? c.line_items : [];
-    const productSummary = lineItems
-      .map((li: { product_name: string; quantity?: number }) =>
-        li.quantity && li.quantity > 1 ? `${li.product_name} (x${li.quantity})` : li.product_name
-      )
-      .join(", ");
+    const productSummary = mainProductLabel(lineItems);
     rows.push({
       payment_id: `refund-${c.id}`,
       contract_id: c.id,
       date: c.tax_refund_issued_at,
-      customer_name: customer ? `${customer.first_name} ${customer.last_name}` : "—",
+      customer_name: buyerName,
       product_size: productSummary || "—",
       sales_location: salesLocation,
+      venue_name: venueName,
       payment_type: "Tax Refund",
       amount: -(c.tax_refund_amount as number),
       method_type: "Tax Refund",
@@ -246,9 +260,23 @@ export async function GET(req: Request) {
   // Sort all rows by date ascending
   rows.sort((a, b) => a.date.localeCompare(b.date));
 
+  // Apply method filter (Lori wants per-payment-type reports)
+  // method query: "all" (default) or one of credit_card | debit_card | ach | financing | cash | check
+  const METHOD_LABEL_TO_KEY: Record<string, string> = {
+    "Credit Card": "credit_card",
+    "Debit Card":  "debit_card",
+    "ACH":         "ach",
+    "Financing":   "financing",
+    "Cash":        "cash",
+    "Check":       "check",
+  };
+  const methodFiltered = method && method !== "all"
+    ? rows.filter((r) => (METHOD_LABEL_TO_KEY[r.method_type] ?? r.method_type.toLowerCase()) === method)
+    : rows;
+
   // Apply search filter
   const filtered = search
-    ? rows.filter((r) =>
+    ? methodFiltered.filter((r) =>
         r.customer_name.toLowerCase().includes(search) ||
         r.contract_number.toLowerCase().includes(search) ||
         r.sales_location.toLowerCase().includes(search) ||
@@ -258,7 +286,7 @@ export async function GET(req: Request) {
         r.amount.toFixed(2).includes(search) ||
         r.amount.toString().includes(search)
       )
-    : rows;
+    : methodFiltered;
 
   const total = filtered.reduce((sum, r) => sum + r.amount, 0);
 
