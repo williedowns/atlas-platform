@@ -72,6 +72,10 @@ export async function POST(req: Request) {
       status: "quote",
       customer_id: customerId,
       sales_rep_id: user.id,
+      // Marks the quote as Salta-originated so it appears in the /contracts
+      // list (the list filter scopes to idempotency_key IS NOT NULL).
+      // Server-generated per save so Step7's draft key stays distinct.
+      idempotency_key: crypto.randomUUID(),
       // Guard: synthetic "store-{uuid}" IDs must not be persisted as FKs
       show_id: (show_id && !show_id.startsWith("store-")) ? show_id : null,
       location_id: location_id ?? null,
