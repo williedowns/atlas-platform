@@ -40,6 +40,13 @@ const ACTION_LABELS: Record<AuditAction, { label: string; variant: "default" | "
   "contract.inventory_unit_assigned": { label: "Unit Assigned",   variant: "accent" },
   "contract.inventory_unit_released": { label: "Unit Released",   variant: "warning" },
   "contract.financing_added":  { label: "Financing Added",        variant: "accent" },
+  "contract.customer_info_updated": { label: "Customer Info Edited", variant: "warning" },
+  "contract.line_items_updated":    { label: "Products Edited",      variant: "warning" },
+  "contract.discounts_updated":     { label: "Discounts Edited",     variant: "warning" },
+  "contract.notes_updated":         { label: "Notes Edited",         variant: "secondary" },
+  "contract.assignment_updated":    { label: "Show / Rep Changed",   variant: "warning" },
+  "contract.tax_settings_updated":  { label: "Tax Settings Edited",  variant: "warning" },
+  "contract.delivery_diagram_updated": { label: "Diagram Edited",    variant: "secondary" },
   "lead.created":              { label: "Lead Created",           variant: "accent" },
   "lead.status_changed":       { label: "Lead Status",            variant: "secondary" },
 };

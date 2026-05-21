@@ -677,6 +677,13 @@ const ACTION_LABEL: Record<string, string> = {
   "contract.cancelled": "Contract cancelled",
   "contract.refund_marked": "Refund marked",
   "contract.tax_refund_issued": "Tax refund issued",
+  "contract.customer_info_updated": "Customer info edited",
+  "contract.line_items_updated": "Products edited",
+  "contract.discounts_updated": "Discounts edited",
+  "contract.notes_updated": "Notes edited",
+  "contract.assignment_updated": "Show / location / rep changed",
+  "contract.tax_settings_updated": "Tax settings edited",
+  "contract.delivery_diagram_updated": "Delivery diagram edited",
 };
 
 function AuditLogSection({ entries }: { entries: AuditEntry[] }) {
