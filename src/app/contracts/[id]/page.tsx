@@ -44,6 +44,19 @@ const STATUS_COLORS: Record<string, "default" | "success" | "warning" | "destruc
   cancelled: "destructive",
 };
 
+function formatAuditValue(v: unknown): string {
+  if (v === null || v === undefined) return "—";
+  if (typeof v === "object") {
+    try {
+      const json = JSON.stringify(v);
+      return json.length > 200 ? json.slice(0, 197) + "…" : json;
+    } catch {
+      return String(v);
+    }
+  }
+  return String(v);
+}
+
 export default async function ContractDetailPage({
   params,
 }: {
@@ -183,18 +196,38 @@ export default async function ContractDetailPage({
       };
     }
   }
+  const MODIFY_ACTIONS = new Set([
+    "contract.delivery_timeframe_updated",
+    "contract.per_nat_flagged",
+    "contract.per_nat_unflagged",
+    "contract.inventory_unit_assigned",
+    "contract.inventory_unit_released",
+    "contract.financing_added",
+    "contract.cancelled",
+    "contract.refund_marked",
+    "contract.tax_refund_issued",
+    "contract.customer_info_updated",
+    "contract.line_items_updated",
+    "contract.discounts_updated",
+    "contract.notes_updated",
+    "contract.assignment_updated",
+    "contract.tax_settings_updated",
+    "contract.delivery_diagram_updated",
+  ]);
   const modifyAuditEntries = canModifyContract
-    ? (auditLogs as Array<{ id: string; action: string; created_at: string; user?: { full_name?: string } | { full_name?: string }[] | null; metadata: Record<string, unknown> }>).map((e) => {
-        const userAny = e.user;
-        const userObj = Array.isArray(userAny) ? userAny[0] : userAny;
-        return {
-          id: e.id,
-          action: e.action,
-          created_at: e.created_at,
-          actor_name: userObj?.full_name ?? null,
-          metadata: e.metadata ?? {},
-        };
-      })
+    ? (auditLogs as Array<{ id: string; action: string; created_at: string; user?: { full_name?: string } | { full_name?: string }[] | null; metadata: Record<string, unknown> }>)
+        .filter((e) => MODIFY_ACTIONS.has(e.action))
+        .map((e) => {
+          const userAny = e.user;
+          const userObj = Array.isArray(userAny) ? userAny[0] : userAny;
+          return {
+            id: e.id,
+            action: e.action,
+            created_at: e.created_at,
+            actor_name: userObj?.full_name ?? null,
+            metadata: e.metadata ?? {},
+          };
+        })
     : [];
 
   const lineItems = Array.isArray(contract.line_items) ? contract.line_items : [];
@@ -1066,9 +1099,9 @@ export default async function ContractDetailPage({
                           {log.ip_address ? ` from ${log.ip_address}` : ""}
                         </p>
                         {log.metadata && Object.keys(log.metadata).length > 0 && (
-                          <p className="text-xs text-slate-400 mt-1">
+                          <p className="text-xs text-slate-400 mt-1 whitespace-pre-wrap break-words">
                             {Object.entries(log.metadata)
-                              .map(([k, v]) => `${k.replace(/_/g, " ")}: ${v}`)
+                              .map(([k, v]) => `${k.replace(/_/g, " ")}: ${formatAuditValue(v)}`)
                               .join(" | ")}
                           </p>
                         )}
