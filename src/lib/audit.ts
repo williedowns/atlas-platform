@@ -27,6 +27,13 @@ export type AuditAction =
   | "contract.inventory_unit_assigned"
   | "contract.inventory_unit_released"
   | "contract.financing_added"
+  | "contract.customer_info_updated"
+  | "contract.line_items_updated"
+  | "contract.discounts_updated"
+  | "contract.notes_updated"
+  | "contract.assignment_updated"
+  | "contract.tax_settings_updated"
+  | "contract.delivery_diagram_updated"
   | "lead.created"
   | "lead.status_changed";
 

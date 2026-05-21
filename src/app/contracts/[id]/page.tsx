@@ -21,6 +21,13 @@ import ReadinessChecklist from "@/components/contracts/ReadinessChecklist";
 import { evaluateReadiness, blockerLabels } from "@/lib/readiness";
 import FinancingDetailsCard from "@/components/contracts/FinancingDetailsCard";
 import ModifyContractCard from "@/components/contracts/ModifyContractCard";
+import CustomerInfoEditor from "@/components/contracts/CustomerInfoEditor";
+import LineItemsEditor from "@/components/contracts/LineItemsEditor";
+import DiscountsEditor from "@/components/contracts/DiscountsEditor";
+import NotesEditor from "@/components/contracts/NotesEditor";
+import AssignmentEditor from "@/components/contracts/AssignmentEditor";
+import TaxSettingsEditor from "@/components/contracts/TaxSettingsEditor";
+import DeliveryDiagramEditor from "@/components/contracts/DeliveryDiagramEditor";
 import { LowDepositBadge } from "@/components/contracts/LowDepositBadge";
 import { lowDepositInfo } from "@/lib/low-deposit";
 import { AppHeader } from "@/components/ui/AppHeader";
@@ -391,6 +398,24 @@ export default async function ContractDetailPage({
           </div>
         </SectionCard>
 
+        {canModifyContract && contract.customer && (
+          <CustomerInfoEditor
+            contractId={contract.id}
+            customer={{
+              id: contract.customer.id,
+              first_name: contract.customer.first_name ?? "",
+              last_name: contract.customer.last_name ?? "",
+              email: contract.customer.email ?? "",
+              phone: contract.customer.phone ?? "",
+              address: contract.customer.address ?? null,
+              city: contract.customer.city ?? null,
+              state: contract.customer.state ?? null,
+              zip: contract.customer.zip ?? null,
+            }}
+            canEdit={canModifyContract}
+          />
+        )}
+
         {/* Context */}
         <Card>
           <CardContent className="p-4 flex justify-between text-sm">
@@ -404,6 +429,19 @@ export default async function ContractDetailPage({
             </div>
           </CardContent>
         </Card>
+
+        {canModifyContract && (
+          <AssignmentEditor
+            contractId={contract.id}
+            currentShowId={contract.show_id ?? null}
+            currentShowName={(contract.show as { name?: string } | null)?.name ?? null}
+            currentLocationId={contract.location_id ?? null}
+            currentLocationName={(contract.location as { name?: string } | null)?.name ?? null}
+            currentSalesRepId={contract.sales_rep_id ?? null}
+            currentSalesRepName={(contract.sales_rep as { full_name?: string } | null)?.full_name ?? null}
+            canEdit={canModifyContract}
+          />
+        )}
 
         {/* Line Items */}
         <Card>
@@ -446,6 +484,22 @@ export default async function ContractDetailPage({
             </table>
           </CardContent>
         </Card>
+
+        {canModifyContract && (
+          <LineItemsEditor
+            contractId={contract.id}
+            lineItems={lineItems}
+            canEdit={canModifyContract}
+          />
+        )}
+
+        {canModifyContract && (
+          <DiscountsEditor
+            contractId={contract.id}
+            discounts={discounts as Array<{ label: string; amount: number }>}
+            canEdit={canModifyContract}
+          />
+        )}
 
         {/* Financial Summary */}
         <Card>
@@ -581,6 +635,15 @@ export default async function ContractDetailPage({
           </CardContent>
         </Card>
 
+        {canModifyContract && (
+          <TaxSettingsEditor
+            contractId={contract.id}
+            taxRate={Number(contract.tax_rate ?? 0)}
+            taxExempt={!!contract.tax_exempt}
+            canEdit={canModifyContract}
+          />
+        )}
+
         {/* Payments */}
         {payments && payments.length > 0 && (
           <Card>
@@ -714,6 +777,15 @@ export default async function ContractDetailPage({
           </Card>
         )}
 
+        {canModifyContract && (
+          <NotesEditor
+            contractId={contract.id}
+            notes={contract.notes ?? null}
+            externalNotes={contract.external_notes ?? null}
+            canEdit={canModifyContract}
+          />
+        )}
+
         {/* Spa Delivery Diagram — only shown when delivery_diagram is set */}
         {contract.delivery_diagram && (
           <Card>
@@ -769,6 +841,18 @@ export default async function ContractDetailPage({
             </CardContent>
           </Card>
         )}
+
+        {canModifyContract && (() => {
+          const raw = contract.delivery_diagram as { scenario_id?: number; label?: string; fields?: Record<string, string> } | Array<{ scenario_id?: number; label?: string; fields?: Record<string, string> }> | null;
+          const items = Array.isArray(raw) ? raw : raw ? [raw] : [];
+          return (
+            <DeliveryDiagramEditor
+              contractId={contract.id}
+              deliveryDiagram={items}
+              canEdit={canModifyContract}
+            />
+          );
+        })()}
 
         {/* Delivery readiness checklist — proactive view of what's needed before scheduling */}
         {!["cancelled", "delivered"].includes(contract.status) && (
