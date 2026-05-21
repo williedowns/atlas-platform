@@ -389,7 +389,18 @@ def main():
     flagged = flagged_result.data or []
     print(f"  {len(flagged)} contracts flagged is_per_nat=true")
 
-    months = ["January","February","March","April","May","June","July","August","September","October","November","December"]
+    # Fold flagged contracts into the matching XLSX "Owner to Notifiy YYYY"
+    # section by year — keeps the page identical to the XLSX layout (no new
+    # auto-generated month dividers below HOT).
+    def section_for_year(year: int):
+        if year >= 2026:
+            return ("Owner to Notifiy 2026", "owner_notify", 14)
+        if year == 2025:
+            return ("Owner to Notifiy 2025", "owner_notify", 15)
+        if year in (2023, 2024):
+            return ("Owner to Notifiy 2023-2024", "owner_notify", 16)
+        return ("Owner to Notify 2020-2022", "owner_notify", 17)
+
     pass2_inserts = []
     skipped_already_linked = 0
     for c in flagged:
@@ -406,15 +417,12 @@ def main():
         else:
             entry_status = "active"
 
-        # Auto-section by sale_date month so these rows don't land in TBD.
         sale_date_str = (c.get("created_at") or "")[:10]
         try:
-            y, mo, _ = sale_date_str.split("-")
-            section_label = f"{months[int(mo) - 1]} {y}"
-            section_order = int(y) * 12 + int(mo) - 1
+            year = int(sale_date_str.split("-")[0])
         except Exception:
-            section_label = "TBD"
-            section_order = 999999
+            year = 2020
+        section_label, section_kind, section_order = section_for_year(year)
 
         # Strip [backfill] noise from notes.
         raw_notes = c.get("notes") or ""
@@ -433,7 +441,7 @@ def main():
             "timeframe_text": c.get("delivery_timeframe"),
             "notes": clean_notes,
             "section_label": section_label,
-            "section_kind": "month",
+            "section_kind": section_kind,
             "section_order": section_order,
         })
 
