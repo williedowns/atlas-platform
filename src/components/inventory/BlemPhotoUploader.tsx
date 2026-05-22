@@ -88,6 +88,12 @@ export function BlemPhotoUploader({
       return;
     }
     const accepted = Array.from(files).slice(0, remaining);
+    // Accumulate locally across the loop. `photos` is closure-captured at
+    // the start of handleFiles and onChange doesn't update it synchronously,
+    // so iteration N+1 must build on N's working state — not on the
+    // original prop, which would clobber prior additions. Same hazard
+    // applies on upload completion when a second select happens mid-flight.
+    let working: BlemPhoto[] = [...photos];
     for (const f of accepted) {
       if (f.size > MAX_BYTES) {
         setError(`${f.name} exceeds 10 MB.`);
@@ -101,11 +107,11 @@ export function BlemPhotoUploader({
         client_key,
         photo_url: dataUrl,
         caption: "",
-        sort_order: photos.length,
+        sort_order: working.length,
         uploading: !stageOnly && uploadImmediately,
       };
-      const nextOptimistic = [...photos, optimistic];
-      onChange(nextOptimistic);
+      working = [...working, optimistic];
+      onChange(working);
 
       if (stageOnly) {
         // Keep as data URL; parent will upload after creating the parent unit.
@@ -114,20 +120,18 @@ export function BlemPhotoUploader({
       if (uploadImmediately) {
         try {
           const url = await uploadOne(f, client_key);
-          // Re-look up because the parent prop could have been swapped
-          // out while the upload was running; using the prop directly
-          // would clobber concurrent uploads.
-          const settled = nextOptimistic.map((p) =>
+          working = working.map((p) =>
             p.client_key === client_key
               ? { ...p, photo_url: url, uploading: false }
               : p
           );
-          onChange(settled);
+          onChange(working);
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : "Upload failed";
           setError(errMsg);
           // Remove the optimistic entry on failure so the rep can retry.
-          onChange(nextOptimistic.filter((p) => p.client_key !== client_key));
+          working = working.filter((p) => p.client_key !== client_key);
+          onChange(working);
         }
       }
     }
