@@ -183,10 +183,15 @@ export default function FinancingDetailsCard({ contractId, financing }: Props) {
                     <p className="text-[10px] uppercase tracking-wide text-slate-500 font-bold mb-2">Draw History</p>
                     <div className="space-y-1">
                       {(draws as Array<{ amount: number; reference?: string | null; notes?: string | null; drawn_at: string }>).map((d, di) => (
-                        <div key={di} className="flex items-center justify-between text-xs gap-2">
-                          <span className="text-slate-700 whitespace-nowrap">{formatDate(d.drawn_at)}</span>
-                          {d.reference && <span className="text-slate-400 font-mono truncate flex-1">Ref {d.reference}</span>}
-                          <span className="font-semibold text-emerald-700 whitespace-nowrap">{formatCurrency(d.amount)}</span>
+                        <div key={di} className="text-xs">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-slate-700 whitespace-nowrap">{formatDate(d.drawn_at)}</span>
+                            {d.reference && <span className="text-slate-400 font-mono truncate flex-1">Ref {d.reference}</span>}
+                            <span className="font-semibold text-emerald-700 whitespace-nowrap">{formatCurrency(d.amount)}</span>
+                          </div>
+                          {d.notes && d.notes.trim() && (
+                            <p className="mt-0.5 text-slate-500 break-words whitespace-pre-wrap">{d.notes}</p>
+                          )}
                         </div>
                       ))}
                     </div>
