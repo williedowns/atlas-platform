@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 
+// Cache-bust marker: 2026-05-22 — Vercel Production build cache poisoned, forcing rebuild
 const nextConfig: NextConfig = {
   // Reduce JS bundle size by tree-shaking large package imports
   experimental: {
