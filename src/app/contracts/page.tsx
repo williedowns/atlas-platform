@@ -98,6 +98,12 @@ export default async function ContractsPage({
   );
   const contracts = pageResults.flatMap((r) => r.data ?? []);
   const activeShow = await getActiveShow();
+  // Only pre-filter to the active show when at least one contract actually
+  // belongs to it. Otherwise the list silently hides every row and looks blank.
+  const initialShowId =
+    activeShow?.id && contracts.some((c) => c.show_id === activeShow.id)
+      ? activeShow.id
+      : null;
 
   return (
     <AppShell
@@ -126,7 +132,7 @@ export default async function ContractsPage({
         <ContractsList
           contracts={(contracts ?? []) as any[]}
           initialFilter={initialFilter}
-          initialShowId={activeShow?.id ?? null}
+          initialShowId={initialShowId}
         />
       </main>
 
