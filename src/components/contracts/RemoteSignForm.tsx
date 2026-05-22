@@ -9,8 +9,10 @@ import { formatCurrency } from "@/lib/utils";
 import {
   TERMS_AND_CONDITIONS,
   REQUIRED_ACKNOWLEDGMENTS,
+  BLEM_ACKNOWLEDGMENT,
   type AcknowledgmentClause,
 } from "@/lib/contract-terms";
+import { BlemConfirmationDialog } from "@/components/contracts/BlemConfirmationDialog";
 
 // react-signature-canvas types are incompatible with Next.js dynamic — cast to any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -32,6 +34,14 @@ const SignatureCanvas = dynamic(() => import("react-signature-canvas"), {
 
 type AckKey = AcknowledgmentClause["key"];
 
+export interface RemoteSignBlemLine {
+  blem_line_id: string;
+  product_name: string;
+  serial_number: string | null;
+  description: string;
+  photo_urls: string[];
+}
+
 interface RemoteSignFormProps {
   token: string;
   contractNumber: string;
@@ -40,6 +50,8 @@ interface RemoteSignFormProps {
   productNames: string[];
   total: number;
   depositAmount: number;
+  // Blem summaries from contract.line_items. Empty array when no blem items.
+  blemLines?: RemoteSignBlemLine[];
 }
 
 export default function RemoteSignForm({
@@ -50,12 +62,20 @@ export default function RemoteSignForm({
   productNames,
   total,
   depositAmount,
+  blemLines = [],
 }: RemoteSignFormProps) {
   const sigCanvasRef = useRef<any>(null);
+
+  const hasBlemItems = blemLines.length > 0;
+  const activeAcknowledgments: AcknowledgmentClause[] = hasBlemItems
+    ? [...REQUIRED_ACKNOWLEDGMENTS, BLEM_ACKNOWLEDGMENT]
+    : REQUIRED_ACKNOWLEDGMENTS;
+
   const initialsRefs = useRef<Record<AckKey, any>>({
     sales_final: null,
     cancellation_forfeit: null,
     rx_30_day: null,
+    blem_acknowledgment: null,
   });
 
   const [printedName, setPrintedName] = useState(`${customerFirstName} ${customerLastName}`.trim());
@@ -65,13 +85,23 @@ export default function RemoteSignForm({
     sales_final: null,
     cancellation_forfeit: null,
     rx_30_day: null,
+    blem_acknowledgment: null,
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<{ contract_number: string } | null>(null);
 
-  const allAcked = REQUIRED_ACKNOWLEDGMENTS.every((a) => !!initialsUrls[a.key]);
-  const missingAcks = REQUIRED_ACKNOWLEDGMENTS.filter((a) => !initialsUrls[a.key]);
+  // Per-blem-line photo-viewed timestamps captured by tap-through gate.
+  const [blemPhotosViewedAt, setBlemPhotosViewedAt] = useState<Record<string, string>>({});
+  // Currently-open dialog payload (one at a time).
+  const [reviewingBlemId, setReviewingBlemId] = useState<string | null>(null);
+  const reviewingBlem = blemLines.find((b) => b.blem_line_id === reviewingBlemId) ?? null;
+
+  const allBlemReviewed = blemLines.every(
+    (b) => !!blemPhotosViewedAt[b.blem_line_id]
+  );
+  const allAcked = activeAcknowledgments.every((a) => !!initialsUrls[a.key]);
+  const missingAcks = activeAcknowledgments.filter((a) => !initialsUrls[a.key]);
   const canSubmit = hasSigned && printedName.trim().length > 0 && hasConsented && allAcked && !isSubmitting;
 
   const handleSignEnd = useCallback(() => {
@@ -120,6 +150,12 @@ export default function RemoteSignForm({
             sales_final: initialsUrls.sales_final,
             cancellation_forfeit: initialsUrls.cancellation_forfeit,
             rx_30_day: initialsUrls.rx_30_day,
+            ...(hasBlemItems
+              ? {
+                  blem_acknowledgment: initialsUrls.blem_acknowledgment,
+                  blem_photos_viewed_at: blemPhotosViewedAt,
+                }
+              : {}),
           },
         }),
       });
@@ -196,6 +232,53 @@ export default function RemoteSignForm({
         </CardContent>
       </Card>
 
+      {/* Blem review — only rendered when blem line items exist on the
+          contract. Each line gets its own card; customer must tap "Review
+          photos" and complete the dialog gate before the blem acknowledgment
+          pad below enables. */}
+      {hasBlemItems && (
+        <Card className="border-2 border-red-300 bg-red-50/40">
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-red-600 text-white text-xs font-bold">!</span>
+              <CardTitle className="text-lg text-red-900">Important — As-Is Blemishes</CardTitle>
+            </div>
+            <p className="text-xs text-red-800/80 mt-1">
+              Your purchase includes one or more units sold AS-IS with the damage shown. Please review the photos for each before signing.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {blemLines.map((b) => {
+              const reviewed = !!blemPhotosViewedAt[b.blem_line_id];
+              return (
+                <div
+                  key={b.blem_line_id}
+                  className={`rounded-xl border p-3 ${reviewed ? "border-emerald-300 bg-white" : "border-red-300 bg-white"}`}
+                >
+                  <p className="text-sm font-semibold text-red-900">
+                    {b.product_name}
+                    {b.serial_number && (
+                      <span className="text-xs font-normal text-slate-500"> · Serial {b.serial_number}</span>
+                    )}
+                  </p>
+                  {b.description && (
+                    <p className="text-xs text-slate-800 mt-1 whitespace-pre-wrap">{b.description}</p>
+                  )}
+                  <Button
+                    variant={reviewed ? "outline" : "accent"}
+                    size="sm"
+                    className="mt-2"
+                    onClick={() => setReviewingBlemId(b.blem_line_id)}
+                  >
+                    {reviewed ? "✓ Photos Reviewed — Review Again" : `Review ${b.photo_urls.length} Photo${b.photo_urls.length === 1 ? "" : "s"}`}
+                  </Button>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Terms & Conditions */}
       <Card>
         <CardHeader className="pb-2">
@@ -224,25 +307,36 @@ export default function RemoteSignForm({
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-xs text-amber-800">
-            Please initial each of the three clauses below to acknowledge you understand them.
+            Please initial each of the {activeAcknowledgments.length} clauses below to acknowledge you understand them.
           </p>
-          {REQUIRED_ACKNOWLEDGMENTS.map((a) => {
+          {activeAcknowledgments.map((a) => {
             const url = initialsUrls[a.key];
+            const isBlemClause = a.key === "blem_acknowledgment";
+            const blemGateBlocked = isBlemClause && !allBlemReviewed;
             return (
               <div
                 key={a.key}
                 className={`rounded-lg border-2 px-3 py-2.5 transition-colors ${
-                  url ? "border-emerald-300 bg-white" : "border-amber-300 bg-white"
+                  isBlemClause
+                    ? url ? "border-emerald-300 bg-red-50/40" : "border-red-300 bg-red-50/40"
+                    : url ? "border-emerald-300 bg-white" : "border-amber-300 bg-white"
                 }`}
               >
-                <p className="text-sm font-bold text-slate-900">{a.label}</p>
+                <p className={`text-sm font-bold ${isBlemClause ? "text-red-900" : "text-slate-900"}`}>
+                  {isBlemClause ? "⚠ " : ""}{a.label}
+                </p>
                 <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">{a.text}</p>
+                {blemGateBlocked && (
+                  <p className="text-[11px] mt-1.5 font-semibold text-red-700">
+                    Please tap "Review Photos" above for every blem unit before initialing.
+                  </p>
+                )}
                 <div className="mt-2">
                   <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Your Initials</p>
                   <div className="relative">
                     <div
                       className={`w-full rounded border-2 bg-slate-50 overflow-hidden ${
-                        url ? "border-emerald-400" : "border-dashed border-amber-400"
+                        url ? "border-emerald-400" : blemGateBlocked ? "border-red-300 opacity-60" : "border-dashed border-amber-400"
                       }`}
                     >
                       <SignatureCanvas
@@ -251,15 +345,20 @@ export default function RemoteSignForm({
                         }}
                         penColor="#0f172a"
                         canvasProps={{
-                          className: "w-full touch-manipulation",
+                          className: `w-full touch-manipulation ${blemGateBlocked ? "pointer-events-none" : ""}`,
                           style: { width: "100%", height: "80px" },
                         }}
                         onEnd={handleInitialsEnd(a.key)}
                       />
                     </div>
-                    {!url && (
+                    {!url && !blemGateBlocked && (
                       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <span className="text-amber-300 text-sm italic">Initial here</span>
+                        <span className={`${isBlemClause ? "text-red-300" : "text-amber-300"} text-sm italic`}>Initial here</span>
+                      </div>
+                    )}
+                    {blemGateBlocked && (
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none bg-red-50/70">
+                        <span className="text-red-600 text-xs font-bold uppercase tracking-wide">Locked</span>
                       </div>
                     )}
                   </div>
@@ -352,6 +451,24 @@ export default function RemoteSignForm({
           </Button>
         </CardContent>
       </Card>
+
+      {/* Blem photo-viewing dialog. Locks the matching initial pad until
+          the customer taps through every photo. */}
+      <BlemConfirmationDialog
+        open={!!reviewingBlem}
+        payload={reviewingBlem ? {
+          unitLabel: `${reviewingBlem.product_name}${reviewingBlem.serial_number ? ` · Serial ${reviewingBlem.serial_number}` : ""}`,
+          blem_description: reviewingBlem.description,
+          blem_photo_urls: reviewingBlem.photo_urls,
+        } : null}
+        onConfirm={(viewedAt) => {
+          if (!reviewingBlem) return;
+          setBlemPhotosViewedAt((prev) => ({ ...prev, [reviewingBlem.blem_line_id]: viewedAt }));
+          setReviewingBlemId(null);
+        }}
+        onCancel={() => setReviewingBlemId(null)}
+        kioskMode
+      />
     </div>
   );
 }

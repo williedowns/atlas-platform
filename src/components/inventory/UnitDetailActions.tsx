@@ -5,14 +5,23 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { INVENTORY_STATUSES, UNIT_TYPES, SHELL_COLORS, CABINET_COLORS, WRAP_STATUSES, SUB_LOCATIONS } from "@/lib/inventory-constants";
+import { BlemPhotoUploader, type BlemPhoto } from "@/components/inventory/BlemPhotoUploader";
 
 interface Location { id: string; name: string; city: string; state: string; }
 interface Show { id: string; name: string; venue_name: string; }
+
+export interface ExistingBlemPhoto {
+  id: string;
+  photo_url: string;
+  caption?: string | null;
+  sort_order?: number | null;
+}
 
 export function UnitDetailActions({
   unit,
   locations,
   shows,
+  initialBlemPhotos = [],
 }: {
   unit: {
     id: string; status: string; location_id?: string | null; show_id?: string | null;
@@ -21,9 +30,11 @@ export function UnitDetailActions({
     serial_number?: string | null; order_number?: string | null; notes?: string | null;
     delivery_team?: string | null; customer_name?: string | null; fin_balance?: string | null;
     delivery_info?: string | null; foundation_financing?: boolean; scheduled_owes?: boolean;
+    blem_description?: string | null;
   };
   locations: Location[];
   shows: Show[];
+  initialBlemPhotos?: ExistingBlemPhoto[];
 }) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
@@ -48,7 +59,16 @@ export function UnitDetailActions({
     delivery_info: unit.delivery_info ?? "",
     foundation_financing: unit.foundation_financing ?? false,
     scheduled_owes: unit.scheduled_owes ?? false,
+    blem_description: unit.blem_description ?? "",
   });
+
+  // Existing persisted photos render as a parallel list with delete buttons.
+  // New photos added through the uploader are kept in newBlemPhotos (data
+  // URLs) and uploaded on Save Changes via the /blem-photos endpoint.
+  const [existingPhotos, setExistingPhotos] = useState<ExistingBlemPhoto[]>(initialBlemPhotos);
+  const [newBlemPhotos, setNewBlemPhotos] = useState<BlemPhoto[]>([]);
+
+  const isBlem = form.unit_type === "blem";
 
   const [transferNotes, setTransferNotes] = useState("");
   const [toLocationId, setToLocationId] = useState("");
@@ -58,7 +78,26 @@ export function UnitDetailActions({
     setForm((f) => ({ ...f, [field]: value }));
   }
 
+  async function handleDeletePhoto(photoId: string) {
+    if (!confirm("Remove this photo? The image stays archived so contracts that already reference it remain valid.")) return;
+    try {
+      const res = await fetch(`/api/inventory/blem-photos/${photoId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error((await res.json())?.error ?? "Failed to remove photo");
+      setExistingPhotos((arr) => arr.filter((p) => p.id !== photoId));
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }
+
   async function handleSave() {
+    if (isBlem && !form.blem_description.trim()) {
+      setError("Blem units require a damage description so the customer knows what they're buying.");
+      return;
+    }
+    if (isBlem && existingPhotos.length === 0 && newBlemPhotos.length === 0) {
+      setError("Blem units require at least one photo of the damage.");
+      return;
+    }
     setSaving(true); setError(null);
     try {
       const res = await fetch(`/api/inventory/${unit.id}`, {
@@ -80,9 +119,33 @@ export function UnitDetailActions({
           delivery_info: form.delivery_info || null,
           foundation_financing: form.foundation_financing,
           scheduled_owes: form.scheduled_owes,
+          blem_description: isBlem ? form.blem_description : null,
         }),
       });
       if (!res.ok) throw new Error((await res.json())?.error ?? "Failed");
+
+      // Persist any newly-added photos.
+      if (isBlem && newBlemPhotos.length > 0) {
+        const startIndex = existingPhotos.length;
+        const photoRes = await fetch(`/api/inventory/${unit.id}/blem-photos`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            photos: newBlemPhotos.map((p, i) => ({
+              photo_url: p.photo_url,
+              caption: p.caption ?? null,
+              sort_order: startIndex + i,
+            })),
+          }),
+        });
+        if (!photoRes.ok) {
+          // Soft fail — the unit edits succeeded; surface the photo error
+          // so the rep knows to retry the upload from this page.
+          const body = await photoRes.json().catch(() => null);
+          throw new Error(body?.error ?? "Photos failed to upload");
+        }
+        setNewBlemPhotos([]);
+      }
       router.refresh();
     } catch (e: any) { setError(e.message); }
     finally { setSaving(false); }
@@ -232,6 +295,71 @@ export function UnitDetailActions({
               <textarea value={form.notes} onChange={(e) => set("notes", e.target.value)}
                 rows={2} className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm resize-none" />
             </div>
+
+            {isBlem && (
+              <div className="rounded-xl border border-red-200 bg-red-50/40 p-3 space-y-3">
+                <div className="flex items-start gap-2">
+                  <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-red-600 text-white text-xs font-bold flex-shrink-0">!</span>
+                  <div>
+                    <p className="text-sm font-semibold text-red-900">Blem Details</p>
+                    <p className="text-xs text-red-700/80">Customer-visible at sale and on the printed contract.</p>
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-slate-700">Damage Description</label>
+                  <textarea
+                    value={form.blem_description}
+                    onChange={(e) => set("blem_description", e.target.value)}
+                    rows={3}
+                    maxLength={1000}
+                    placeholder="Describe the location and nature of the damage in plain language."
+                    className="w-full px-3 py-2 rounded-xl border border-red-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-red-300 resize-none"
+                  />
+                  <p className="text-[11px] text-slate-400 text-right">
+                    {form.blem_description.length} / 1000
+                  </p>
+                </div>
+
+                {existingPhotos.length > 0 && (
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-medium text-slate-700">Existing Photos</p>
+                    <ul className="grid grid-cols-3 gap-2">
+                      {existingPhotos.map((p) => (
+                        <li key={p.id} className="relative rounded-lg overflow-hidden border border-slate-200 bg-white">
+                          <div className="aspect-square bg-slate-100">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={p.photo_url} alt={p.caption ?? ""} className="w-full h-full object-cover" />
+                          </div>
+                          {p.caption && (
+                            <p className="text-[10px] text-slate-600 px-1.5 py-1 truncate" title={p.caption}>{p.caption}</p>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleDeletePhoto(p.id)}
+                            className="absolute top-1 right-1 w-6 h-6 rounded-full bg-white/95 text-red-600 hover:bg-red-50 shadow flex items-center justify-center"
+                            aria-label="Remove photo"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <p className="text-xs font-medium text-slate-700">Add Photos</p>
+                  <BlemPhotoUploader
+                    photos={newBlemPhotos}
+                    onChange={setNewBlemPhotos}
+                    stageOnly
+                  />
+                </div>
+              </div>
+            )}
+
             <Button onClick={handleSave} disabled={saving} variant="accent" size="lg" className="w-full">
               {saving ? "Saving…" : "Save Changes"}
             </Button>

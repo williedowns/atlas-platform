@@ -42,6 +42,7 @@ function matchesSearch(u: Unit, q: string): boolean {
     locationName,
     (u.product as any)?.category,
     (u.product as any)?.line,
+    u.blem_description,
   ].some((val) => val?.toString().toLowerCase().includes(s));
 }
 
@@ -149,9 +150,19 @@ export function InventorySearchTable({ units }: Props) {
                   return (
                     <tr key={unit.id} className="hover:bg-slate-50">
                       <td className="py-3 px-4">
-                        <p className="font-medium text-slate-900 truncate max-w-[180px]">
-                          {product?.name ?? getModelDisplayName(u.model_code)}
-                        </p>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className="font-medium text-slate-900 truncate max-w-[180px]">
+                            {product?.name ?? getModelDisplayName(u.model_code)}
+                          </p>
+                          {unit.unit_type === "blem" && (
+                            <span
+                              className="text-[10px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wide bg-red-100 text-red-700 border border-red-300"
+                              title={u.blem_description ?? "Blem — see Edit Details"}
+                            >
+                              Blem
+                            </span>
+                          )}
+                        </div>
                         <p className="text-xs text-slate-400">{getUnitTypeLabel(unit.unit_type)}</p>
                       </td>
                       <td className="py-3 px-4 font-mono text-sm text-slate-700">

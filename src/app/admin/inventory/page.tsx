@@ -39,7 +39,7 @@ export default async function AdminInventoryPage({
         id, serial_number, order_number, status, unit_type,
         shell_color, cabinet_color, sub_location, wrap_status, notes,
         model_code, delivery_team, customer_name, fin_balance,
-        contract_id, stock_assigned_at,
+        contract_id, stock_assigned_at, blem_description,
         product:products(id, name, category, line, model_code),
         location:locations(id, name),
         show:shows(id, name),

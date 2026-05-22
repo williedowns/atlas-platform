@@ -11,6 +11,7 @@ import { createClient } from "@/lib/supabase/client";
 import {
   TERMS_AND_CONDITIONS,
   REQUIRED_ACKNOWLEDGMENTS,
+  BLEM_ACKNOWLEDGMENT,
   type AcknowledgmentClause,
 } from "@/lib/contract-terms";
 
@@ -49,6 +50,19 @@ export default function Step7Sign({ onNext }: Step7SignProps) {
     setInitialUrl,
   } = useContractStore();
   const sigCanvasRef = useRef<any>(null);
+
+  // Conditional blem acknowledgment: only required when at least one line
+  // item is a blem. The Show-to-Customer photo-viewing gate must have been
+  // completed for every blem line before the initial pad enables.
+  const blemLines = draft.line_items.filter((li) => li.unit_type === "blem");
+  const hasBlemItems = blemLines.length > 0;
+  const allBlemPhotosViewed = blemLines.every(
+    (li) => !!(li.blem_line_id && draft.blem_photos_viewed_at?.[li.blem_line_id])
+  );
+  const activeAcknowledgments: AcknowledgmentClause[] = hasBlemItems
+    ? [...REQUIRED_ACKNOWLEDGMENTS, BLEM_ACKNOWLEDGMENT]
+    : REQUIRED_ACKNOWLEDGMENTS;
+
   // Per-clause initials pads — one mini SignatureCanvas per acknowledgment.
   // Customer hand-draws their initials in each box. The captured ink is
   // stored as a data URL in `initialsUrls` and embedded into the generated
@@ -59,6 +73,7 @@ export default function Step7Sign({ onNext }: Step7SignProps) {
     sales_final: null,
     cancellation_forfeit: null,
     rx_30_day: null,
+    blem_acknowledgment: null,
   });
 
   // Hydrate from persisted draft so a reload mid-signing brings everything
@@ -72,9 +87,10 @@ export default function Step7Sign({ onNext }: Step7SignProps) {
     sales_final: draft.initials_urls?.sales_final ?? null,
     cancellation_forfeit: draft.initials_urls?.cancellation_forfeit ?? null,
     rx_30_day: draft.initials_urls?.rx_30_day ?? null,
+    blem_acknowledgment: draft.initials_urls?.blem_acknowledgment ?? null,
   });
-  const allAcked = REQUIRED_ACKNOWLEDGMENTS.every((a) => !!initialsUrls[a.key]);
-  const missingAcks = REQUIRED_ACKNOWLEDGMENTS.filter((a) => !initialsUrls[a.key]);
+  const allAcked = activeAcknowledgments.every((a) => !!initialsUrls[a.key]);
+  const missingAcks = activeAcknowledgments.filter((a) => !initialsUrls[a.key]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -86,7 +102,7 @@ export default function Step7Sign({ onNext }: Step7SignProps) {
     if (draft.signature_data_url && sigCanvasRef.current?.fromDataURL) {
       try { sigCanvasRef.current.fromDataURL(draft.signature_data_url); } catch { /* canvas not ready yet */ }
     }
-    REQUIRED_ACKNOWLEDGMENTS.forEach((a) => {
+    activeAcknowledgments.forEach((a) => {
       const url = draft.initials_urls?.[a.key];
       const ref = initialsRefs.current[a.key];
       if (url && ref?.fromDataURL) {
@@ -221,6 +237,16 @@ export default function Step7Sign({ onNext }: Step7SignProps) {
             cancellation_forfeit_initials_url: initialsUrls.cancellation_forfeit ?? null,
             rx_30_day: !!initialsUrls.rx_30_day,
             rx_30_day_initials_url: initialsUrls.rx_30_day ?? null,
+            // Blem-only fields — present alongside the photo-viewed
+            // timestamps so legal can prove the customer reviewed AND
+            // initialed.
+            ...(hasBlemItems
+              ? {
+                  blem_acknowledgment: !!initialsUrls.blem_acknowledgment,
+                  blem_acknowledgment_initials_url: initialsUrls.blem_acknowledgment ?? null,
+                  blem_photos_viewed_at: draft.blem_photos_viewed_at ?? {},
+                }
+              : {}),
             acknowledged_at: nowIso,
           },
         }),
@@ -404,27 +430,41 @@ export default function Step7Sign({ onNext }: Step7SignProps) {
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-xs text-amber-800">
-            Please initial each clause below. The customer must initial all three boxes to proceed.
+            Please initial each clause below. The customer must initial all {activeAcknowledgments.length} boxes to proceed.
           </p>
-          {REQUIRED_ACKNOWLEDGMENTS.map((a) => {
+          {activeAcknowledgments.map((a) => {
             const url = initialsUrls[a.key];
+            const isBlemClause = a.key === "blem_acknowledgment";
+            // Blem clause is GATED on Show-to-Customer tap-through being
+            // complete for every blem line item. Disable the pad until
+            // every photo has been reviewed.
+            const blemGateBlocked = isBlemClause && !allBlemPhotosViewed;
             return (
               <div
                 key={a.key}
                 className={`rounded-lg border-2 px-3 py-2.5 transition-colors ${
-                  url ? "border-emerald-300 bg-white" : "border-amber-300 bg-white"
+                  isBlemClause
+                    ? url ? "border-emerald-300 bg-red-50/40" : blemGateBlocked ? "border-red-300 bg-red-50/40" : "border-red-300 bg-red-50/40"
+                    : url ? "border-emerald-300 bg-white" : "border-amber-300 bg-white"
                 }`}
               >
                 <div className="flex flex-col md:flex-row gap-3">
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-slate-900">{a.label}</p>
+                    <p className={`text-sm font-bold ${isBlemClause ? "text-red-900" : "text-slate-900"}`}>
+                      {isBlemClause ? "⚠ " : ""}{a.label}
+                    </p>
                     <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">{a.text}</p>
+                    {blemGateBlocked && (
+                      <p className="text-[11px] mt-1.5 font-semibold text-red-700">
+                        Please review the blem photos in the previous step before initialing.
+                      </p>
+                    )}
                   </div>
                   <div className="flex flex-col gap-1.5 md:w-44 flex-shrink-0">
                     <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Initials</p>
                     <div className="relative">
                       <div className={`w-full rounded border-2 bg-slate-50 overflow-hidden ${
-                        url ? "border-emerald-400" : "border-dashed border-amber-400"
+                        url ? "border-emerald-400" : blemGateBlocked ? "border-red-300 opacity-60" : "border-dashed border-amber-400"
                       }`}>
                         <SignatureCanvas
                           ref={(el: any) => {
@@ -432,15 +472,20 @@ export default function Step7Sign({ onNext }: Step7SignProps) {
                           }}
                           penColor="#0f172a"
                           canvasProps={{
-                            className: "w-full touch-manipulation",
+                            className: `w-full touch-manipulation ${blemGateBlocked ? "pointer-events-none" : ""}`,
                             style: { width: "100%", height: "70px" },
                           }}
                           onEnd={handleInitialsEnd(a.key)}
                         />
                       </div>
-                      {!url && (
+                      {!url && !blemGateBlocked && (
                         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                          <span className="text-amber-300 text-sm italic">Initial here</span>
+                          <span className={`${isBlemClause ? "text-red-300" : "text-amber-300"} text-sm italic`}>Initial here</span>
+                        </div>
+                      )}
+                      {blemGateBlocked && (
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none bg-red-50/70">
+                          <span className="text-red-600 text-xs font-bold uppercase tracking-wide">Locked</span>
                         </div>
                       )}
                     </div>

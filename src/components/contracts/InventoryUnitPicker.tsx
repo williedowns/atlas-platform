@@ -1,9 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { getStatusColor, getUnitTypeLabel, getCabinetName, getModelDisplayName, getValidShellColors, getValidCabinets } from "@/lib/inventory-constants";
+import { getUnitTypeLabel, getCabinetName, getModelDisplayName, getValidShellColors, getValidCabinets } from "@/lib/inventory-constants";
+import { createClient } from "@/lib/supabase/client";
+import { BlemConfirmationDialog, type BlemDialogPayload } from "@/components/contracts/BlemConfirmationDialog";
+
+interface BlemPhotoRow {
+  id?: string;
+  photo_url: string;
+  caption?: string | null;
+  sort_order?: number | null;
+}
 
 interface InventoryUnit {
   id: string;
@@ -15,19 +23,47 @@ interface InventoryUnit {
   cabinet_color?: string | null;
   sub_location?: string | null;
   model_code?: string | null;
+  blem_description?: string | null;
+  blem_photos?: BlemPhotoRow[];
+  blem_photo_count?: number;
   product?: { id: string; name: string; category: string; model_code?: string } | null;
   location?: { name: string; city?: string; state?: string } | null;
   show?: { name: string } | null;
 }
 
+// Extra payload passed to onSelect so the parent can call
+// addLineItemWithUnit() with the blem snapshot fields already captured.
+export interface PickerSelectExtras {
+  blem_description?: string;
+  blem_photo_urls?: string[];
+  // Pre-completed Show-to-Customer gate timestamp — written into the
+  // contract store under blem_photos_viewed_at[blem_line_id] after the
+  // line item is added so Step7Sign knows the gate has been satisfied.
+  blem_photos_viewed_at?: string;
+}
+
+// Payload for the sale-time blem path (no inventory unit selected).
+export interface OffInventoryBlemPayload {
+  description: string;
+  photo_urls: string[];
+  shell_color?: string;
+  cabinet_color?: string;
+  // Same purpose as PickerSelectExtras.blem_photos_viewed_at.
+  blem_photos_viewed_at: string;
+}
+
 interface InventoryUnitPickerProps {
-  productId: string;           // exact product UUID — filters linked units to this model
-  productCategory: string;     // category fallback (last resort, no product_id or model_code)
-  productModelCode?: string;   // model_code (e.g. "TS 8.25") — matches legacy units imported without product_id
+  productId: string;
+  productCategory: string;
+  productModelCode?: string;
   showId?: string | null;
   locationId?: string | null;
-  onSelect: (unit: InventoryUnit) => void;
+  onSelect: (unit: InventoryUnit, extras?: PickerSelectExtras) => void;
   onSkip: (shell?: string, cabinet?: string) => void;
+  // Optional callback wired up only when the parent supports the sale-time
+  // blem fallback. When omitted, the picker still shows the toggle but
+  // disables it.
+  onAddOffInventoryBlem?: (payload: OffInventoryBlemPayload) => void;
   onClose: () => void;
 }
 
@@ -47,6 +83,7 @@ export function InventoryUnitPicker({
   locationId,
   onSelect,
   onSkip,
+  onAddOffInventoryBlem,
   onClose,
 }: InventoryUnitPickerProps) {
   const [units, setUnits] = useState<InventoryUnit[]>([]);
@@ -58,6 +95,18 @@ export function InventoryUnitPicker({
   const [showColorCapture, setShowColorCapture] = useState(false);
   const [skipShell, setSkipShell] = useState("");
   const [skipCabinet, setSkipCabinet] = useState("");
+  // Sale-time blem toggle inside the color-capture sheet
+  const [skipIsBlem, setSkipIsBlem] = useState(false);
+  const [skipBlemDescription, setSkipBlemDescription] = useState("");
+  // Photos selected for the sale-time blem path. Uploaded to the bucket
+  // when the rep confirms — see handleSkipBlemConfirm().
+  const [skipBlemFiles, setSkipBlemFiles] = useState<File[]>([]);
+  const [skipBlemError, setSkipBlemError] = useState<string | null>(null);
+
+  // Blem confirmation dialog state — fired when the rep selects a blem
+  // unit (the inventory-marked path). The customer must tap through every
+  // photo before "I have reviewed all photos" enables.
+  const [pendingBlem, setPendingBlem] = useState<{ unit: InventoryUnit; payload: BlemDialogPayload } | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -68,8 +117,6 @@ export function InventoryUnitPicker({
           product_id: productId,
           category: productCategory,
         });
-        // model_code narrows legacy units (imported without product_id) to the exact
-        // model — e.g. "TS 8.25" vs "TS 7.2" vs "TS 240X" which all share category.
         if (productModelCode) params.set("model_code", productModelCode);
         if (allLocations) {
           params.set("all_locations", "true");
@@ -99,27 +146,123 @@ export function InventoryUnitPicker({
       u.model_code?.toLowerCase().includes(q) ||
       u.product?.model_code?.toLowerCase().includes(q) ||
       u.product?.name?.toLowerCase().includes(q) ||
-      u.location?.name?.toLowerCase().includes(q)
+      u.location?.name?.toLowerCase().includes(q) ||
+      u.blem_description?.toLowerCase().includes(q)
     );
   });
 
-  // Resolve a clean model name for display
   function resolveModelName(unit: InventoryUnit): string {
     if (unit.product?.name) return unit.product.name;
     return getModelDisplayName(unit.model_code ?? unit.product?.model_code);
+  }
+
+  function handleUnitTap(unit: InventoryUnit) {
+    if (unit.unit_type === "blem") {
+      // Open the dialog gate; onConfirm finalizes the selection.
+      const photos = (unit.blem_photos ?? [])
+        .filter((p) => !!p?.photo_url)
+        .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+      setPendingBlem({
+        unit,
+        payload: {
+          unitLabel: `${resolveModelName(unit)} · ${unit.serial_number ?? unit.order_number ?? "No ID"}`,
+          blem_description: unit.blem_description ?? "",
+          blem_photo_urls: photos.map((p) => p.photo_url),
+          captions: photos.map((p) => p.caption ?? null),
+        },
+      });
+    } else {
+      onSelect(unit);
+    }
+  }
+
+  function handleBlemConfirm(viewedAt: string) {
+    if (!pendingBlem) return;
+    onSelect(pendingBlem.unit, {
+      blem_description: pendingBlem.payload.blem_description,
+      blem_photo_urls: pendingBlem.payload.blem_photo_urls,
+      blem_photos_viewed_at: viewedAt,
+    });
+    setPendingBlem(null);
+  }
+
+  async function uploadSaleTimeBlemFiles(): Promise<string[]> {
+    const supabase = createClient();
+    const urls: string[] = [];
+    for (const f of skipBlemFiles) {
+      const ext = (f.name.split(".").pop() ?? "jpg").toLowerCase();
+      const key = `sale-time/${crypto.randomUUID()}.${ext}`;
+      const { error: upErr } = await supabase.storage
+        .from("blem-photos")
+        .upload(key, f, { upsert: false, contentType: f.type });
+      if (upErr) throw new Error(upErr.message);
+      const { data: pub } = supabase.storage.from("blem-photos").getPublicUrl(key);
+      urls.push(pub.publicUrl);
+    }
+    return urls;
+  }
+
+  async function handleSkipBlemConfirm() {
+    if (!skipBlemDescription.trim()) {
+      setSkipBlemError("Please describe the damage before continuing.");
+      return;
+    }
+    if (skipBlemFiles.length === 0) {
+      setSkipBlemError("Please attach at least one photo of the damage.");
+      return;
+    }
+    if (!onAddOffInventoryBlem) {
+      setSkipBlemError("Sale-time blem path is not configured.");
+      return;
+    }
+    setSkipBlemError(null);
+    try {
+      const urls = await uploadSaleTimeBlemFiles();
+      // Show the customer the photos before locking them onto the contract.
+      const captions = skipBlemFiles.map((f) => f.name);
+      setPendingSaleTimeBlem({
+        urls,
+        captions,
+        shell: skipShell || undefined,
+        cabinet: skipCabinet || undefined,
+      });
+    } catch (err) {
+      setSkipBlemError(err instanceof Error ? err.message : "Upload failed");
+    }
+  }
+
+  // After upload, we hand the iPad to the customer with the same dialog
+  // used for inventory-marked blem selections.
+  const [pendingSaleTimeBlem, setPendingSaleTimeBlem] = useState<{
+    urls: string[];
+    captions: string[];
+    shell?: string;
+    cabinet?: string;
+  } | null>(null);
+
+  function finalizeSaleTimeBlem(viewedAt: string) {
+    if (!pendingSaleTimeBlem || !onAddOffInventoryBlem) return;
+    onAddOffInventoryBlem({
+      description: skipBlemDescription.trim(),
+      photo_urls: pendingSaleTimeBlem.urls,
+      shell_color: pendingSaleTimeBlem.shell,
+      cabinet_color: pendingSaleTimeBlem.cabinet,
+      blem_photos_viewed_at: viewedAt,
+    });
+    setPendingSaleTimeBlem(null);
   }
 
   if (showColorCapture) {
     return (
       <div className="fixed inset-0 z-50 flex flex-col bg-black/60" onClick={onClose}>
         <div
-          className="mt-auto bg-white rounded-t-2xl"
+          className="mt-auto bg-white rounded-t-2xl max-h-[92vh] overflow-y-auto"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
             <div>
-              <h2 className="text-lg font-bold text-slate-900">Colors (Optional)</h2>
-              <p className="text-xs text-slate-500 mt-0.5">Specify shell and cabinet colors for the contract</p>
+              <h2 className="text-lg font-bold text-slate-900">Add Without Selecting a Unit</h2>
+              <p className="text-xs text-slate-500 mt-0.5">Specify colors and (if applicable) blem details</p>
             </div>
             <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100">
               <svg className="w-5 h-5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -154,26 +297,101 @@ export function InventoryUnitPicker({
                 ))}
               </select>
             </div>
+
+            {/* Sale-time blem toggle */}
+            <label className="flex items-start gap-3 px-3 py-2.5 rounded-xl border border-red-200 bg-red-50/40 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={skipIsBlem}
+                onChange={(e) => setSkipIsBlem(e.target.checked)}
+                className="mt-0.5 h-4 w-4 accent-red-600"
+              />
+              <div className="text-sm text-red-900">
+                <p className="font-semibold">This unit has blemishes / damage</p>
+                <p className="text-xs text-red-700/80">
+                  Toggle on if you're selling a unit not in inventory that has visible damage (e.g. floor model, off-spec unit). You'll need to add a description and photos.
+                </p>
+              </div>
+            </label>
+
+            {skipIsBlem && (
+              <div className="rounded-xl border border-red-200 bg-white p-3 space-y-3">
+                <div>
+                  <label className="text-xs font-semibold text-slate-700">Damage Description *</label>
+                  <textarea
+                    value={skipBlemDescription}
+                    onChange={(e) => setSkipBlemDescription(e.target.value)}
+                    rows={3}
+                    maxLength={1000}
+                    placeholder="Describe where the damage is and what it looks like."
+                    className="w-full mt-1 px-3 py-2 rounded-lg border border-red-200 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-red-300"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-700">Photos *</label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={(e) => setSkipBlemFiles(Array.from(e.target.files ?? []))}
+                    className="mt-1 block w-full text-xs text-slate-600 file:mr-2 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-red-100 file:text-red-700 file:font-semibold"
+                  />
+                  {skipBlemFiles.length > 0 && (
+                    <p className="text-[11px] text-slate-500 mt-1">{skipBlemFiles.length} photo(s) selected</p>
+                  )}
+                </div>
+                {skipBlemError && (
+                  <p className="text-xs text-red-600">{skipBlemError}</p>
+                )}
+              </div>
+            )}
           </div>
           <div className="px-5 pb-6 space-y-2">
-            <Button
-              onClick={() => onSkip(skipShell || undefined, skipCabinet || undefined)}
-              variant="default"
-              size="lg"
-              className="w-full"
-            >
-              Add to Contract
-            </Button>
-            <Button
-              onClick={() => onSkip()}
-              variant="ghost"
-              size="lg"
-              className="w-full text-slate-500"
-            >
-              Skip — Add Without Colors
-            </Button>
+            {skipIsBlem ? (
+              <Button
+                onClick={handleSkipBlemConfirm}
+                variant="accent"
+                size="lg"
+                className="w-full"
+              >
+                Upload Photos & Show to Customer
+              </Button>
+            ) : (
+              <>
+                <Button
+                  onClick={() => onSkip(skipShell || undefined, skipCabinet || undefined)}
+                  variant="default"
+                  size="lg"
+                  className="w-full"
+                >
+                  Add to Contract
+                </Button>
+                <Button
+                  onClick={() => onSkip()}
+                  variant="ghost"
+                  size="lg"
+                  className="w-full text-slate-500"
+                >
+                  Skip — Add Without Colors
+                </Button>
+              </>
+            )}
           </div>
         </div>
+
+        {/* Sale-time blem Show-to-Customer gate */}
+        <BlemConfirmationDialog
+          open={!!pendingSaleTimeBlem}
+          payload={pendingSaleTimeBlem ? {
+            unitLabel: "New blem unit (added at sale)",
+            blem_description: skipBlemDescription,
+            blem_photo_urls: pendingSaleTimeBlem.urls,
+            captions: pendingSaleTimeBlem.captions,
+          } : null}
+          onConfirm={finalizeSaleTimeBlem}
+          onCancel={() => setPendingSaleTimeBlem(null)}
+          kioskMode
+        />
       </div>
     );
   }
@@ -254,11 +472,16 @@ export function InventoryUnitPicker({
                 const modelName = resolveModelName(unit);
                 const where = unit.show?.name ?? (unit.location?.name ?? "—");
                 const cabinetLabel = unit.cabinet_color ? getCabinetName(unit.cabinet_color) : null;
+                const isBlem = unit.unit_type === "blem";
+                const blemPhotoCount = unit.blem_photo_count ?? unit.blem_photos?.length ?? 0;
+                const blemPreview = (unit.blem_description ?? "").slice(0, 80);
                 return (
                   <li key={unit.id}>
                     <button
-                      onClick={() => onSelect(unit)}
-                      className="w-full flex items-center justify-between px-5 py-4 hover:bg-slate-50 active:bg-slate-100 text-left transition-colors"
+                      onClick={() => handleUnitTap(unit)}
+                      className={`w-full flex items-center justify-between px-5 py-4 active:bg-slate-100 text-left transition-colors ${
+                        isBlem ? "hover:bg-red-50 border-l-4 border-red-400" : "hover:bg-slate-50"
+                      }`}
                     >
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -268,18 +491,28 @@ export function InventoryUnitPicker({
                           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${badge?.color ?? "bg-slate-100 text-slate-600"}`}>
                             {badge?.label ?? getUnitTypeLabel(unit.unit_type)}
                           </span>
+                          {isBlem && blemPhotoCount > 0 && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-red-600 text-white">
+                              {blemPhotoCount} photo{blemPhotoCount === 1 ? "" : "s"}
+                            </span>
+                          )}
                         </div>
                         <p className="text-sm text-slate-700 font-medium mt-0.5">{modelName}</p>
                         <p className="text-sm text-slate-500 mt-0.5">
                           {unit.shell_color ?? "—"}
                           {cabinetLabel ? ` · ${cabinetLabel} cabinet` : ""}
                         </p>
+                        {isBlem && blemPreview && (
+                          <p className="text-xs text-red-700 mt-1 italic">
+                            “{blemPreview}{(unit.blem_description?.length ?? 0) > 80 ? "…" : ""}”
+                          </p>
+                        )}
                         <p className="text-xs text-slate-400 mt-0.5">
                           📍 {where}{unit.sub_location ? ` · ${unit.sub_location}` : ""}
                           {allLocations && unit.location?.city ? ` · ${unit.location.city}, ${unit.location.state ?? ""}` : ""}
                         </p>
                       </div>
-                      <svg className="w-5 h-5 text-[#00929C] ml-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg className={`w-5 h-5 ml-3 flex-shrink-0 ${isBlem ? "text-red-600" : "text-[#00929C]"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
                       </svg>
                     </button>
@@ -300,6 +533,15 @@ export function InventoryUnitPicker({
           </p>
         </div>
       </div>
+
+      {/* Blem confirmation gate — fired for inventory-marked blem selections */}
+      <BlemConfirmationDialog
+        open={!!pendingBlem}
+        payload={pendingBlem?.payload ?? null}
+        onConfirm={handleBlemConfirm}
+        onCancel={() => setPendingBlem(null)}
+        kioskMode
+      />
     </div>
   );
 }

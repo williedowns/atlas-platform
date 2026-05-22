@@ -65,9 +65,12 @@ export default async function DashboardPage() {
   // Don't filter by deposit_paid — Wells Fargo financed-in-full sales have
   // deposit_paid = 0 but ARE real closed revenue. Status filter alone gates
   // out quote/draft/cancelled; is_contingent gates out conditional deals.
+  // Per William Downs Sr. clarification 2026-05-21, the financed amount run
+  // at POS counts as a deposit, so we include the `financing` JSONB and
+  // compute effective deposit via the helper.
   const todayStatsQuery = supabase
     .from("contracts")
-    .select("total, deposit_paid, status, is_contingent, sales_rep_id")
+    .select("total, deposit_paid, financing, status, is_contingent, sales_rep_id")
     .gte("created_at", todayStart)
     .not("status", "in", '("quote","draft","cancelled")')
     .eq("is_contingent", false);
@@ -77,7 +80,7 @@ export default async function DashboardPage() {
   // Yesterday's stats for trend comparison
   const yesterdayStatsQuery = supabase
     .from("contracts")
-    .select("total, deposit_paid")
+    .select("total, deposit_paid, financing")
     .gte("created_at", yesterdayStart)
     .lt("created_at", todayStart)
     .not("status", "in", '("quote","draft","cancelled")')
@@ -89,12 +92,23 @@ export default async function DashboardPage() {
     yesterdayStatsQuery,
   ]);
 
+  const { effectiveDeposit } = await import("@/lib/effective-deposit");
   const todayRevenue = todayStats?.reduce((s, c) => s + (c.total ?? 0), 0) ?? 0;
-  const todayDeposits = todayStats?.reduce((s, c) => s + (c.deposit_paid ?? 0), 0) ?? 0;
+  const todayDepositSplit = todayStats?.reduce(
+    (acc, c) => {
+      const e = effectiveDeposit(c);
+      acc.cash += e.cash;
+      acc.financed += e.financed;
+      return acc;
+    },
+    { cash: 0, financed: 0 },
+  ) ?? { cash: 0, financed: 0 };
+  const todayDeposits = todayDepositSplit.cash + todayDepositSplit.financed;
+  const todayFinanceDeposits = todayDepositSplit.financed;
   const todayCount = todayStats?.length ?? 0;
 
   const yRevenue = yesterdayStats?.reduce((s, c) => s + (c.total ?? 0), 0) ?? 0;
-  const yDeposits = yesterdayStats?.reduce((s, c) => s + (c.deposit_paid ?? 0), 0) ?? 0;
+  const yDeposits = yesterdayStats?.reduce((s, c) => s + effectiveDeposit(c).total, 0) ?? 0;
   const yCount = yesterdayStats?.length ?? 0;
 
   function pctDelta(current: number, prior: number): { trend: "up" | "down" | "flat"; label: string } | null {
@@ -483,7 +497,11 @@ export default async function DashboardPage() {
           <KpiCard
             label={isAdmin ? "Deposits Collected" : "My Deposits Today"}
             value={formatCurrency(todayDeposits)}
-            sublabel={yDeposits > 0 ? `${formatCurrency(yDeposits)} yesterday` : undefined}
+            sublabel={
+              todayFinanceDeposits > 0
+                ? `incl. ${formatCurrency(todayFinanceDeposits)} financed`
+                : yDeposits > 0 ? `${formatCurrency(yDeposits)} yesterday` : undefined
+            }
             trend={depDelta?.trend}
             trendValue={depDelta?.label}
             accentColor="#10b981"

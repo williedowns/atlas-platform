@@ -5,7 +5,9 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import {
   TERMS_AND_CONDITIONS,
   REQUIRED_ACKNOWLEDGMENTS,
+  BLEM_ACKNOWLEDGMENT,
   type AcknowledgmentsRecord,
+  type AcknowledgmentClause,
 } from "@/lib/contract-terms";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -219,11 +221,35 @@ export async function GET(
     const name = String(item.product_name ?? "");
     const qty = item.quantity ?? 1;
     const lineTotal = (item.sell_price ?? 0) * qty;
-    const displayName = name.length > 50 ? name.substring(0, 47) + "…" : name;
+    const isBlem = item.unit_type === "blem";
+    // Reserve space for the "BLEM · AS-IS" tag when present so the product
+    // name doesn't collide with it. Pad the displayName max length down.
+    const nameMax = isBlem ? 36 : 50;
+    const displayName = name.length > nameMax ? name.substring(0, nameMax - 3) + "…" : name;
 
     doc.setTextColor(...SLATE_900);
     doc.setFont("helvetica", "normal");
     doc.text(displayName, colProduct + 1, y);
+    if (isBlem) {
+      // Small red tag adjacent to product name so the line is visually
+      // marked. Use measured width so the badge stays snug against the
+      // name across all font metrics.
+      const nameW = doc.getTextWidth(displayName);
+      const tagX = colProduct + 1 + nameW + 2;
+      const tagY = y - 3.2;
+      const tagText = "BLEM · AS-IS";
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(6.5);
+      const tagW = doc.getTextWidth(tagText) + 3;
+      doc.setFillColor(254, 226, 226);  // red-100
+      doc.setDrawColor(...RED);
+      doc.setLineWidth(0.2);
+      doc.roundedRect(tagX, tagY, tagW, 4, 0.6, 0.6, "FD");
+      doc.setTextColor(...RED);
+      doc.text(tagText, tagX + 1.5, tagY + 2.8);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+    }
     doc.setFontSize(9);
     doc.setTextColor(...SLATE_500);
     doc.text(String(item.serial_number ?? ""), colSerial, y);
@@ -420,6 +446,115 @@ export async function GET(
     y = ny + 4;
   }
 
+  // ─── Blem Details ────────────────────────────────────────────────────────
+  // Render a dedicated block per blem line item with the description and up
+  // to 4 thumbnail photos. PDF stays under typical email-deliverable size
+  // because we cap thumbnails. The portal has the full photo set.
+  const blemItems = lineItems.filter((li: any) => li?.unit_type === "blem");
+  if (blemItems.length > 0) {
+    // Always start the block on a fresh "shelf" — page break if tight.
+    if (y > 220) { doc.addPage(); y = M; }
+    // Heading band
+    doc.setFillColor(254, 226, 226); // red-100
+    doc.setDrawColor(...RED);
+    doc.setLineWidth(0.4);
+    doc.roundedRect(M, y, W - M * 2, 8, 1.5, 1.5, "FD");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(...RED);
+    doc.text("⚠  BLEMISHED ITEMS — SOLD AS-IS", M + 3, y + 5.3);
+    y += 12;
+
+    for (const item of blemItems as any[]) {
+      // Estimate block height up front so we can page-break cleanly.
+      const description = String(item.blem_description ?? "").trim();
+      const photoUrls: string[] = Array.isArray(item.blem_photo_urls) ? item.blem_photo_urls : [];
+      const visiblePhotos = photoUrls.slice(0, 4);
+      const overflow = Math.max(0, photoUrls.length - visiblePhotos.length);
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      const descLines = description ? doc.splitTextToSize(description, W - M * 2 - 4) : [];
+      const descH = descLines.length * 3.8;
+      const photoH = visiblePhotos.length > 0 ? 32 : 0; // 30mm thumb + label space
+      const blockH = 6 + descH + 4 + photoH + 4;
+      if (y + blockH > 270) { doc.addPage(); y = M; }
+
+      // Label line: product + serial
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9.5);
+      doc.setTextColor(...NAVY);
+      const labelText = `${item.product_name ?? ""}${item.serial_number ? `  ·  Serial ${item.serial_number}` : ""}`;
+      doc.text(labelText, M + 2, y + 4);
+      y += 6;
+
+      // Description
+      if (descLines.length > 0) {
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(9);
+        doc.setTextColor(...SLATE_900);
+        for (const ln of descLines) {
+          doc.text(ln, M + 2, y);
+          y += 3.8;
+        }
+        y += 1;
+      }
+
+      // Up to 4 thumbnail photos in a row. Each photo is fetched, base64-
+      // encoded, and embedded. Fetch errors silently skip (matches signature
+      // embed fallback).
+      if (visiblePhotos.length > 0) {
+        const thumbW = 26;
+        const thumbH = 26;
+        const gap = 4;
+        let tx = M + 2;
+        const ty = y;
+        for (const url of visiblePhotos) {
+          if (tx + thumbW > W - M) break; // safety
+          try {
+            const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+            if (res.ok) {
+              const ct = res.headers.get("content-type") ?? "image/jpeg";
+              const buf = Buffer.from(await res.arrayBuffer());
+              const fmt = ct.includes("png") ? "PNG" : ct.includes("webp") ? "WEBP" : "JPEG";
+              const dataUrl = `data:${ct};base64,${buf.toString("base64")}`;
+              try {
+                doc.addImage(dataUrl, fmt, tx, ty, thumbW, thumbH);
+              } catch {/* unsupported format — show placeholder */
+                doc.setDrawColor(...SLATE_300);
+                doc.setLineWidth(0.2);
+                doc.rect(tx, ty, thumbW, thumbH);
+              }
+            } else {
+              doc.setDrawColor(...SLATE_300);
+              doc.setLineWidth(0.2);
+              doc.rect(tx, ty, thumbW, thumbH);
+            }
+          } catch {
+            doc.setDrawColor(...SLATE_300);
+            doc.setLineWidth(0.2);
+            doc.rect(tx, ty, thumbW, thumbH);
+          }
+          tx += thumbW + gap;
+        }
+        if (overflow > 0) {
+          doc.setFont("helvetica", "italic");
+          doc.setFontSize(7.5);
+          doc.setTextColor(...SLATE_500);
+          doc.text(`+ ${overflow} more photo${overflow === 1 ? "" : "s"} in customer portal`, tx, ty + thumbH / 2);
+        }
+        y = ty + thumbH + 3;
+      }
+
+      // Section divider between blem items
+      doc.setDrawColor(...SLATE_300);
+      doc.setLineWidth(0.15);
+      doc.line(M, y, W - M, y);
+      y += 4;
+    }
+    y += 2;
+  }
+
   // ─── Signature ───────────────────────────────────────────────────────────
   if (y > 235) { doc.addPage(); y = M; }
   sectionLabel(isQuote ? "ACKNOWLEDGEMENT" : "SIGNATURE", M, y);
@@ -555,9 +690,15 @@ export async function GET(
   const ackRightGap = 12;
   const ackBodyMaxW = ackBoxLeft - M - ackRightGap;
 
-  for (const a of REQUIRED_ACKNOWLEDGMENTS) {
+  // Include the blem acknowledgment only when the contract has blem line
+  // items — keeps legacy non-blem contracts visually identical to before.
+  const ackList: AcknowledgmentClause[] = blemItems.length > 0
+    ? [...REQUIRED_ACKNOWLEDGMENTS, BLEM_ACKNOWLEDGMENT]
+    : REQUIRED_ACKNOWLEDGMENTS;
+
+  for (const a of ackList) {
     const inkUrl = (acks as Record<string, unknown>)[`${a.key}_initials_url`] as string | undefined;
-    const isChecked = !isQuote && !!acks[a.key];
+    const isChecked = !isQuote && !!(acks as Record<string, unknown>)[a.key];
     // Wrap the label too — "Texas Prescription — 30-Day Deadline" is wide
     // enough at 8.5pt bold that some renderers nudged it past the box edge.
     // Set each font BEFORE splitTextToSize so jsPDF measures with the same

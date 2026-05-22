@@ -167,7 +167,7 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
   const [pendingRemoveItemIdx, setPendingRemoveItemIdx] = useState<number | null>(null);
   const [pendingRemoveDiscountIdx, setPendingRemoveDiscountIdx] = useState<number | null>(null);
 
-  const { addLineItem, addLineItemWithUnit, removeLineItem, addDiscount, removeDiscount, setTax, updateLineItemPrice, updateLineItemColors, setDocFeeWaived } = useContractStore();
+  const { addLineItem, addLineItemWithUnit, addBlemLineWithoutUnit, markBlemPhotosViewed, removeLineItem, addDiscount, removeDiscount, setTax, updateLineItemPrice, updateLineItemColors, setDocFeeWaived } = useContractStore();
   const draft = useContractStore((s) => s.draft);
 
   // Inventory unit picker state
@@ -965,9 +965,36 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
           productModelCode={pickerProduct.product.model_code ?? undefined}
           showId={draft.show_id ?? null}
           locationId={draft.location_id ?? null}
-          onSelect={(unit) => {
+          onSelect={(unit, extras) => {
             const { product, price } = pickerProduct;
-            addLineItemWithUnit(product, price, unit);
+            // Blem path: thread the snapshot fields onto the unit before
+            // adding the line, then mark the photo-viewed gate complete
+            // so Step7Sign enables the acknowledgment pad.
+            if (extras?.blem_description !== undefined || extras?.blem_photo_urls) {
+              addLineItemWithUnit(product, price, {
+                ...unit,
+                blem_description: extras.blem_description,
+                blem_photo_urls: extras.blem_photo_urls,
+              });
+              // The blem_line_id was just assigned inside the store; we
+              // can't read it back synchronously, so the store action
+              // returns the id via a side-channel. Instead, after-the-fact
+              // lookup: the line we just appended is the LAST blem line
+              // in line_items. The store reads its own state on the next
+              // tick to find the blem_line_id and record the timestamp.
+              if (extras.blem_photos_viewed_at) {
+                // Run on microtask so the line item is in the store.
+                Promise.resolve().then(() => {
+                  const draftLines = useContractStore.getState().draft.line_items;
+                  const last = [...draftLines].reverse().find((li) => li.unit_type === "blem" && li.blem_line_id);
+                  if (last?.blem_line_id) {
+                    markBlemPhotosViewed(last.blem_line_id, extras.blem_photos_viewed_at!);
+                  }
+                });
+              }
+            } else {
+              addLineItemWithUnit(product, price, unit);
+            }
             const flashKey = product.id + "-" + price;
             setAddedFlash(flashKey);
             setTimeout(() => setAddedFlash(null), 800);
@@ -977,6 +1004,27 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
           onSkip={(shell, cabinet) => {
             const { product, price } = pickerProduct;
             addLineItem(product, price, false, shell, cabinet);
+            const flashKey = product.id + "-" + price;
+            setAddedFlash(flashKey);
+            setTimeout(() => setAddedFlash(null), 800);
+            setPickerProduct(null);
+            collapseAfterModelAdd();
+          }}
+          onAddOffInventoryBlem={(payload) => {
+            const { product, price } = pickerProduct;
+            addBlemLineWithoutUnit(product, price, {
+              description: payload.description,
+              photo_urls: payload.photo_urls,
+              shell_color: payload.shell_color,
+              cabinet_color: payload.cabinet_color,
+            });
+            Promise.resolve().then(() => {
+              const draftLines = useContractStore.getState().draft.line_items;
+              const last = [...draftLines].reverse().find((li) => li.unit_type === "blem" && li.blem_line_id);
+              if (last?.blem_line_id) {
+                markBlemPhotosViewed(last.blem_line_id, payload.blem_photos_viewed_at);
+              }
+            });
             const flashKey = product.id + "-" + price;
             setAddedFlash(flashKey);
             setTimeout(() => setAddedFlash(null), 800);

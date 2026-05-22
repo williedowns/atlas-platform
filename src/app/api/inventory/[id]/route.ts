@@ -22,7 +22,15 @@ export async function PATCH(
     serial_number, order_number, notes,
     delivery_team, customer_name, fin_balance,
     delivery_info, foundation_financing, scheduled_owes,
+    blem_description,
   } = body;
+
+  // Reset blem_description to null whenever the unit is no longer flagged
+  // as a blem so a misclick at intake doesn't leave stale damage text on
+  // an in-stock unit. The corresponding blem_photos rows stay because they
+  // may still reference an already-signed contract.
+  const blemDescriptionUpdate =
+    unit_type === "blem" ? (blem_description ?? null) : null;
 
   const { data, error } = await supabase
     .from("inventory_units")
@@ -44,6 +52,7 @@ export async function PATCH(
       delivery_info: delivery_info || null,
       foundation_financing: foundation_financing ?? false,
       scheduled_owes: scheduled_owes ?? false,
+      blem_description: blemDescriptionUpdate,
       updated_at: new Date().toISOString(),
     })
     .eq("id", id)

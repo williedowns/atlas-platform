@@ -13,6 +13,7 @@ import {
   WRAP_STATUSES,
   SUB_LOCATIONS,
 } from "@/lib/inventory-constants";
+import { BlemPhotoUploader, type BlemPhoto } from "@/components/inventory/BlemPhotoUploader";
 
 interface Product { id: string; name: string; category: string; line?: string; model_code?: string; }
 interface Location { id: string; name: string; city: string; state: string; }
@@ -45,7 +46,15 @@ export function AddInventoryUnitForm({
     show_id: "",
     received_date: "",
     notes: "",
+    blem_description: "",
   });
+
+  // Blem photos staged locally as data URLs — the unit_id doesn't exist
+  // until POST returns, so photos can't be uploaded to the bucket yet.
+  // POST handler unpacks the data URLs and uploads them server-side.
+  const [blemPhotos, setBlemPhotos] = useState<BlemPhoto[]>([]);
+
+  const isBlem = form.unit_type === "blem";
 
   function set(field: string, value: string) {
     setForm((f) => ({ ...f, [field]: value }));
@@ -56,6 +65,14 @@ export function AddInventoryUnitForm({
     if (!form.product_id) { setError("Please select a product."); return; }
     if (!form.serial_number && !form.order_number) {
       setError("Enter a serial number or order number."); return;
+    }
+    if (isBlem && !form.blem_description.trim()) {
+      setError("Blem units require a damage description so the customer can see exactly what they're agreeing to.");
+      return;
+    }
+    if (isBlem && blemPhotos.length === 0) {
+      setError("Please attach at least one photo of the blemish.");
+      return;
     }
     setSaving(true);
     setError(null);
@@ -74,6 +91,17 @@ export function AddInventoryUnitForm({
           sub_location: form.sub_location || null,
           received_date: form.received_date || null,
           notes: form.notes || null,
+          // Send blem fields only when applicable; the API ignores them
+          // for non-blem unit_types but we'd rather not transmit stale
+          // state if the rep toggled away from blem after typing.
+          blem_description: isBlem ? form.blem_description : null,
+          blem_photos: isBlem
+            ? blemPhotos.map((p, i) => ({
+                photo_url: p.photo_url,
+                caption: p.caption ?? null,
+                sort_order: i,
+              }))
+            : [],
         }),
       });
       if (!res.ok) {
@@ -191,6 +219,46 @@ export function AddInventoryUnitForm({
           </div>
         </CardContent>
       </Card>
+
+      {/* Blem details — only visible when unit_type='blem'.
+          Local form state is preserved if the rep toggles away and back,
+          so a misclick doesn't erase the description / photos they entered. */}
+      {isBlem && (
+        <Card className="border-red-200 bg-red-50/40">
+          <CardContent className="p-4 space-y-4">
+            <div className="flex items-start gap-2">
+              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-red-600 text-white text-xs font-bold flex-shrink-0">!</span>
+              <div>
+                <h2 className="font-semibold text-red-900">Blem Details</h2>
+                <p className="text-xs text-red-700/80 mt-0.5">
+                  Required. The description and photos here are shown to the customer at sign and snapshot into the contract PDF.
+                </p>
+              </div>
+            </div>
+            <F label="Damage Description *">
+              <textarea
+                value={form.blem_description}
+                onChange={(e) => set("blem_description", e.target.value)}
+                placeholder="Describe where the blemish is and what it looks like. Be specific (e.g. '2-inch scratch on the front-right corner of the cabinet, near the equipment bay door')."
+                rows={4}
+                maxLength={1000}
+                className="w-full px-3 py-2.5 rounded-xl border border-red-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-red-300 resize-none"
+              />
+              <p className="text-[11px] text-slate-400 text-right">
+                {form.blem_description.length} / 1000
+              </p>
+            </F>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-slate-700">Photos *</label>
+              <BlemPhotoUploader
+                photos={blemPhotos}
+                onChange={setBlemPhotos}
+                stageOnly
+              />
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Location */}
       <Card>
