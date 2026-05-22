@@ -610,11 +610,29 @@ export async function GET(
     doc.setTextColor(...SLATE_500);
     doc.text("INITIALS", boxLeft + boxW / 2, y + 3, { align: "center" });
 
-    if (inkUrl && inkUrl.startsWith("data:image/")) {
+    // Resolve ink URL to a data URL. Mirrors the signature block above:
+    // inline data: URLs come from the Step 7 (in-person) flow, https URLs
+    // come from the remote /sign/[token] flow which uploads to Storage
+    // first. Without this fetch, remote-signed contracts fell back to
+    // typed initials even when real ink was on file.
+    let inkDataUrl: string | null = null;
+    if (inkUrl?.startsWith("data:image/")) {
+      inkDataUrl = inkUrl;
+    } else if (inkUrl?.startsWith("http")) {
+      try {
+        const res = await fetch(inkUrl, { signal: AbortSignal.timeout(5000) });
+        if (res.ok) {
+          const buf = Buffer.from(await res.arrayBuffer());
+          inkDataUrl = `data:image/png;base64,${buf.toString("base64")}`;
+        }
+      } catch {/* network/timeout — fall through to text-only */}
+    }
+
+    if (inkDataUrl) {
       // Embed the actual ink. Pad inside the box so the strokes don't
       // touch the border.
       try {
-        doc.addImage(inkUrl, "PNG", boxLeft + 1.5, y + 4, boxW - 3, boxH - 6);
+        doc.addImage(inkDataUrl, "PNG", boxLeft + 1.5, y + 4, boxW - 3, boxH - 6);
       } catch {
         // Fall through to typed initials if jsPDF rejects the image
         if (fallbackInitials) {

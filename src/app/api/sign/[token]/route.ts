@@ -1,6 +1,58 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logAction } from "@/lib/audit";
+import { inflateSync } from "node:zlib";
+
+// Detect a PNG data URL where the canvas was never actually drawn into.
+// Background: a customer signed on iPad inside the Google in-app browser
+// (GSA) and the signature canvas reported isEmpty()==false to the client
+// (so submit was enabled), but the captured PNG was 2560x360 fully
+// transparent — see contract AS-2605-7158. Now we re-check on the server.
+//
+// Strategy: parse IDAT chunks, decompress them, and count the number of
+// distinct byte values in the raw pixel stream. A fully transparent or
+// fully uniform canvas produces only 1–3 distinct bytes (the filter
+// byte + one or two uniform pixel values). A real drawn signature has
+// hundreds of distinct bytes from anti-aliased strokes. Threshold of 8
+// leaves comfortable headroom on both sides. Pure Node — no native
+// addon, no extra dependency.
+function isBlankPng(dataUrl: string): boolean {
+  try {
+    const base64 = dataUrl.split(",")[1];
+    if (!base64) return true;
+    const buf = Buffer.from(base64, "base64");
+    if (buf.length < 16 || buf.readUInt32BE(0) !== 0x89504e47) return false;
+
+    let offset = 8;
+    let width = 0;
+    let height = 0;
+    const idats: Buffer[] = [];
+    while (offset + 12 <= buf.length) {
+      const length = buf.readUInt32BE(offset);
+      const type = buf.toString("ascii", offset + 4, offset + 8);
+      if (type === "IHDR") {
+        width = buf.readUInt32BE(offset + 8);
+        height = buf.readUInt32BE(offset + 12);
+      } else if (type === "IDAT") {
+        idats.push(buf.subarray(offset + 8, offset + 8 + length));
+      } else if (type === "IEND") {
+        break;
+      }
+      offset += 12 + length;
+    }
+    if (width === 0 || height === 0 || idats.length === 0) return false;
+
+    const pixels = inflateSync(Buffer.concat(idats));
+    const seen = new Set<number>();
+    for (let i = 0; i < pixels.length; i++) {
+      seen.add(pixels[i]);
+      if (seen.size > 8) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 // Public endpoint — accepts a signature submission from a customer who
 // followed the email link to /sign/[token]. Validates the token, uploads
@@ -65,12 +117,31 @@ export async function POST(
   if (!signatureDataUrl?.startsWith("data:image/")) {
     return NextResponse.json({ error: "Signature is required" }, { status: 400 });
   }
+  if (isBlankPng(signatureDataUrl)) {
+    return NextResponse.json(
+      { error: "Your signature looks blank. Please draw your signature in the box and try again." },
+      { status: 400 }
+    );
+  }
   if (!body.electronic_consent) {
     return NextResponse.json({ error: "Electronic consent is required" }, { status: 400 });
   }
   if (!initials.sales_final || !initials.cancellation_forfeit || !initials.rx_30_day) {
     return NextResponse.json(
       { error: "All three required acknowledgments must be initialed" },
+      { status: 400 }
+    );
+  }
+  // Same blank-canvas guard for each required initial.
+  const requiredInitials: Array<[string, string]> = [
+    ["Sales-final acknowledgment", initials.sales_final],
+    ["Cancellation acknowledgment", initials.cancellation_forfeit],
+    ["Texas prescription acknowledgment", initials.rx_30_day],
+  ];
+  const firstBlankInitial = requiredInitials.find(([, url]) => isBlankPng(url));
+  if (firstBlankInitial) {
+    return NextResponse.json(
+      { error: `Your ${firstBlankInitial[0]} initials look blank. Please initial the box and try again.` },
       { status: 400 }
     );
   }
