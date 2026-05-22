@@ -3,6 +3,7 @@ import { logAction } from "@/lib/audit";
 import { requireAdminOrManager } from "@/lib/auth-guard";
 import { archivePdfUrls } from "@/lib/contract-pdf";
 import { recalcTotals, recomputeItemsTaxFlat } from "@/lib/contract-recalc";
+import { countOutTheDoorDiscounts } from "@/lib/discounts";
 import type { ContractDiscount, ContractLineItem } from "@/types";
 
 interface DiscountsBody {
@@ -49,6 +50,13 @@ export async function PATCH(
       amount,
       requires_approval: false,
     });
+  }
+
+  if (countOutTheDoorDiscounts(newDiscounts) > 1) {
+    return NextResponse.json(
+      { error: "Only one out-the-door discount is allowed per contract" },
+      { status: 400 }
+    );
   }
 
   const { data: contract } = await supabase

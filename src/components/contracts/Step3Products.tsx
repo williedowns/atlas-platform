@@ -11,6 +11,7 @@ import type { Product, DiscountType, ContractDiscount } from "@/types";
 import { isSpaProduct, isOptionAvailableForModel } from "@/lib/inventory-constants";
 import { InventoryUnitPicker } from "@/components/contracts/InventoryUnitPicker";
 import { GRANITE_PRICE_TIERS } from "@/lib/granite";
+import { isOutTheDoorDiscount } from "@/lib/discounts";
 
 interface Step3ProductsProps {
   onNext: () => void;
@@ -160,6 +161,7 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
   const [discountAmount, setDiscountAmount] = useState("");
   const [targetPrice, setTargetPrice] = useState(""); // final price customer was promised — computes discount
   const [calcConfirmation, setCalcConfirmation] = useState<string | null>(null);
+  const [calcError, setCalcError] = useState<string | null>(null);
   const [taxCalculating, setTaxCalculating] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
   const [editingPriceIdx, setEditingPriceIdx] = useState<number | null>(null);
@@ -283,6 +285,13 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
     const target = parseFloat(targetPrice);
     const discountAmt = computeCalculatedDiscount(target);
     if (discountAmt === null) return;
+    if (draft.discounts.some((d) => isOutTheDoorDiscount(d.label))) {
+      setCalcError(
+        "An out-the-door discount is already applied. Remove the existing one before adding another.",
+      );
+      setTimeout(() => setCalcError(null), 4000);
+      return;
+    }
     const discount: ContractDiscount = {
       type: "show_special",
       label: `Calculated to $${target.toFixed(2)} out-the-door`,
@@ -292,6 +301,7 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
     addDiscount(discount);
     setCalcConfirmation(`Applied $${discountAmt.toFixed(2)} discount → customer total $${target.toFixed(2)}`);
     setTargetPrice("");
+    setCalcError(null);
     setTimeout(() => setCalcConfirmation(null), 2500);
   }
 
@@ -740,6 +750,11 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
                 {calcConfirmation && (
                   <p className="text-sm font-semibold text-green-700 bg-green-50 border border-green-200 rounded-lg p-2">
                     ✓ {calcConfirmation}
+                  </p>
+                )}
+                {calcError && (
+                  <p className="text-sm font-semibold text-red-700 bg-red-50 border border-red-200 rounded-lg p-2">
+                    {calcError}
                   </p>
                 )}
                 <Button

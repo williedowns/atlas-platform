@@ -8,6 +8,7 @@ import {
   isDeliveryDiagramRequired,
 } from "@/lib/delivery-diagram-requirement";
 import { assignConcretePadEstimate } from "@/lib/concrete-pad-assignment";
+import { countOutTheDoorDiscounts } from "@/lib/discounts";
 
 export async function POST(req: Request) {
   const supabase = await createClient();
@@ -131,6 +132,13 @@ export async function POST(req: Request) {
     concrete_estimate_pending && !parent_contract_id
       ? await assignConcretePadEstimate(supabase, customer?.state)
       : null;
+
+  if (Array.isArray(discounts) && countOutTheDoorDiscounts(discounts) > 1) {
+    return NextResponse.json(
+      { error: "Only one out-the-door discount is allowed per contract" },
+      { status: 400 }
+    );
+  }
 
   const contractNumber = generateContractNumber();
   const financingArr = Array.isArray(financing) ? financing : [];

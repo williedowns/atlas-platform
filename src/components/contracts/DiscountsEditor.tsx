@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { formatCurrency } from "@/lib/utils";
+import { countOutTheDoorDiscounts } from "@/lib/discounts";
 
 interface DiscountRow {
   label: string;
@@ -69,6 +70,13 @@ export default function DiscountsEditor({
         return;
       }
       payload.push({ label, amount });
+    }
+
+    if (countOutTheDoorDiscounts(payload) > 1) {
+      setError(
+        "Only one out-the-door discount is allowed per contract. Remove or rename the duplicates before saving.",
+      );
+      return;
     }
 
     startSaving(async () => {

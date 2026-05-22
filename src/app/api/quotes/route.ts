@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { generateContractNumber } from "@/lib/utils";
 import { assignConcretePadEstimate } from "@/lib/concrete-pad-assignment";
+import { countOutTheDoorDiscounts } from "@/lib/discounts";
 
 export async function POST(req: Request) {
   const supabase = await createClient();
@@ -66,6 +67,13 @@ export async function POST(req: Request) {
   const concreteEstimateAssignedTo = concrete_estimate_pending
     ? await assignConcretePadEstimate(supabase, customer?.state)
     : null;
+
+  if (Array.isArray(discounts) && countOutTheDoorDiscounts(discounts) > 1) {
+    return NextResponse.json(
+      { error: "Only one out-the-door discount is allowed per contract" },
+      { status: 400 }
+    );
+  }
 
   const quoteNumber = generateContractNumber();
 
