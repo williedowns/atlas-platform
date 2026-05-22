@@ -608,24 +608,17 @@ export default async function ContractDetailPage({
                   )}
                 </div>
               )}
-              {/* Document Fee — first-class field. Always taxed; tax shown
-                  on its own line so the bookkeeper can see the
-                  non-refundable portion at a glance. Read-only here
-                  (the contract is signed); waiver is locked at sale time
-                  and the toggle lives only in the Step 5 builder. */}
+              {/* Document Fee — first-class field. Fee + tax shown combined
+                  on a single line per Willie's call (matches Step 5 Review
+                  and the printed PDF). Bookkeeper tax-report still has the
+                  raw doc_fee_amount / doc_fee_tax_amount split. Read-only
+                  here (the contract is signed); waiver is locked at sale
+                  time and the toggle lives only in the Step 5 builder. */}
               {!contract.doc_fee_waived && Number(contract.doc_fee_amount ?? 0) > 0 && (
-                <>
-                  <div className="flex justify-between text-slate-600">
-                    <span>Document Fee</span>
-                    <span>{formatCurrency(contract.doc_fee_amount)}</span>
-                  </div>
-                  {Number(contract.doc_fee_tax_amount ?? 0) > 0 && (
-                    <div className="flex justify-between text-slate-600">
-                      <span>Doc Fee Tax ({((contract.tax_rate ?? 0) * 100).toFixed(2)}%)</span>
-                      <span>{formatCurrency(contract.doc_fee_tax_amount)}</span>
-                    </div>
-                  )}
-                </>
+                <div className="flex justify-between text-slate-600">
+                  <span>Document Fee</span>
+                  <span>{formatCurrency(Number(contract.doc_fee_amount ?? 0) + Number(contract.doc_fee_tax_amount ?? 0))}</span>
+                </div>
               )}
               {contract.doc_fee_waived && (
                 <div className="flex justify-between text-slate-400">

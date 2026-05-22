@@ -350,10 +350,12 @@ export async function GET(
     totalsRow("Tax — Exempt (Rx)", "$0.00", { color: SLATE_500 });
   }
   if (!docFeeWaived && docFeeAmount > 0) {
-    totalsRow("Document Fee", formatCurrency(docFeeAmount));
-    if (docFeeTax > 0) {
-      totalsRow(`Doc Fee Tax (${((contract.tax_rate ?? 0) * 100).toFixed(2)}%)`, formatCurrency(docFeeTax));
-    }
+    // Combined fee+tax on a single line per Willie's call — matches the
+    // Step 5 Review screen the rep sees while building the contract so the
+    // printed agreement doesn't introduce a separate row the customer never
+    // saw at sale time. Data is still persisted in doc_fee_amount and
+    // doc_fee_tax_amount columns separately for the bookkeeper tax report.
+    totalsRow("Document Fee", formatCurrency(docFeeAmount + docFeeTax));
   }
   // Total divider (sits above the TOTAL row, not through it)
   doc.setDrawColor(...NAVY);
