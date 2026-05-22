@@ -45,6 +45,7 @@ const ACTION_LABELS: Record<AuditAction, { label: string; variant: "default" | "
   "contract.discounts_updated":     { label: "Discounts Edited",     variant: "warning" },
   "contract.notes_updated":         { label: "Notes Edited",         variant: "secondary" },
   "contract.assignment_updated":    { label: "Show / Rep Changed",   variant: "warning" },
+  "contract.concrete_assignment_updated": { label: "Site Visit Reassigned", variant: "warning" },
   "contract.tax_settings_updated":  { label: "Tax Settings Edited",  variant: "warning" },
   "contract.delivery_diagram_updated": { label: "Diagram Edited",    variant: "secondary" },
   "lead.created":              { label: "Lead Created",           variant: "accent" },

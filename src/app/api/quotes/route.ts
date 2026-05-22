@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { generateContractNumber } from "@/lib/utils";
+import { assignConcretePadEstimate } from "@/lib/concrete-pad-assignment";
 
 export async function POST(req: Request) {
   const supabase = await createClient();
@@ -33,6 +34,8 @@ export async function POST(req: Request) {
     needs_permit,
     needs_hoa,
     permit_jurisdiction,
+    concrete_estimate_pending,
+    concrete_estimate_notes,
   } = body;
 
   // Ensure customer exists in DB
@@ -55,6 +58,14 @@ export async function POST(req: Request) {
     if (custError) return NextResponse.json({ error: custError.message }, { status: 500 });
     customerId = newCustomer.id;
   }
+
+  // Concrete pad estimate auto-routing on quote save: mirrors the same gate
+  // and mapping used in /api/contracts so a Save-as-Quote doesn't lose the
+  // concrete pad state or its assignee. OK/KS → Ryan Frank, others → Alex
+  // Broyles. Null result = unassigned.
+  const concreteEstimateAssignedTo = concrete_estimate_pending
+    ? await assignConcretePadEstimate(supabase, customer?.state)
+    : null;
 
   const quoteNumber = generateContractNumber();
 
@@ -103,6 +114,9 @@ export async function POST(req: Request) {
       permit_jurisdiction: permit_jurisdiction ?? null,
       permit_status: needs_permit ? "pending" : null,
       hoa_status: needs_hoa ? "pending" : null,
+      concrete_estimate_pending: !!concrete_estimate_pending,
+      concrete_estimate_notes: concrete_estimate_pending ? (concrete_estimate_notes?.trim() || null) : null,
+      concrete_estimate_assigned_to: concreteEstimateAssignedTo,
     })
     .select()
     .single();
