@@ -62,13 +62,15 @@ export default async function DashboardPage() {
 
   // ── Today's stats ─────────────────────────────────────────────────────────
   // Admin/manager: company-wide. Sales reps: their own contracts only.
+  // Don't filter by deposit_paid — Wells Fargo financed-in-full sales have
+  // deposit_paid = 0 but ARE real closed revenue. Status filter alone gates
+  // out quote/draft/cancelled; is_contingent gates out conditional deals.
   const todayStatsQuery = supabase
     .from("contracts")
     .select("total, deposit_paid, status, is_contingent, sales_rep_id")
     .gte("created_at", todayStart)
     .not("status", "in", '("quote","draft","cancelled")')
-    .eq("is_contingent", false)
-    .gt("deposit_paid", 0);
+    .eq("is_contingent", false);
 
   if (!isAdmin) todayStatsQuery.eq("sales_rep_id", effectiveUserId);
 
@@ -79,8 +81,7 @@ export default async function DashboardPage() {
     .gte("created_at", yesterdayStart)
     .lt("created_at", todayStart)
     .not("status", "in", '("quote","draft","cancelled")')
-    .eq("is_contingent", false)
-    .gt("deposit_paid", 0);
+    .eq("is_contingent", false);
   if (!isAdmin) yesterdayStatsQuery.eq("sales_rep_id", effectiveUserId);
 
   const [{ data: todayStats }, { data: yesterdayStats }] = await Promise.all([
@@ -115,8 +116,7 @@ export default async function DashboardPage() {
     .select("total, created_at")
     .gte("created_at", thirtyDaysAgoStart)
     .not("status", "in", '("quote","draft","cancelled")')
-    .eq("is_contingent", false)
-    .gt("deposit_paid", 0);
+    .eq("is_contingent", false);
   if (!isAdmin) trendStatsQuery.eq("sales_rep_id", effectiveUserId);
   const { data: trendRows } = await trendStatsQuery;
 
@@ -179,11 +179,14 @@ export default async function DashboardPage() {
   }
 
   // ── Recent confirmed contracts (non-contingent, any status except quote/draft/cancelled) ──
+  // Exclude historical backfill rows (BF- prefix from scripts/backfill_historical_shows.py)
+  // so the dashboard widget only surfaces contracts actually run through this system.
   const confirmedQuery = supabase
     .from("contracts")
     .select("id, contract_number, status, total, deposit_paid, is_contingent, created_at, customer:customers(first_name, last_name), show:shows(name)")
     .not("status", "in", '("quote","draft","cancelled")')
     .eq("is_contingent", false)
+    .not("contract_number", "like", "BF-%")
     .order("created_at", { ascending: false })
     .limit(10);
 
@@ -226,8 +229,7 @@ export default async function DashboardPage() {
     .select("total, deposit_paid")
     .gte("created_at", monthStart)
     .not("status", "in", '("quote","draft","cancelled")')
-    .eq("is_contingent", false)
-    .gt("deposit_paid", 0);
+    .eq("is_contingent", false);
   if (!isAdmin) monthStatsQuery.eq("sales_rep_id", effectiveUserId);
 
   // ── Goal for current user this month ──────────────────────────────────────
