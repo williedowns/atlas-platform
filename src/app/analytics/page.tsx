@@ -14,6 +14,15 @@ import { RepLeaderboardBars } from "@/components/analytics/RepLeaderboardBars";
 import { ShowsBarChart } from "@/components/analytics/ShowsBarChart";
 import { isMainProduct } from "@/lib/inventory-constants";
 import { lowDepositInfo } from "@/lib/low-deposit";
+import { effectiveDeposit } from "@/lib/effective-deposit";
+import {
+  fetchBuildingSalesForPeriod,
+  summarizeBuildingSales,
+  EMPTY_BUILDING_SUMMARY,
+  type BuildingSummary,
+} from "@/lib/building-sales";
+
+type Division = "all" | "spas" | "buildings";
 
 // ── Period helpers ────────────────────────────────────────────────────────────
 
@@ -124,6 +133,9 @@ export default async function AnalyticsPage({
   const period: Period = (["today", "week", "month", "year", "all"].includes(params.period)
     ? params.period
     : "month") as Period;
+  const division: Division = (["all", "spas", "buildings"].includes(params.division)
+    ? params.division
+    : "all") as Division;
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -150,8 +162,8 @@ export default async function AnalyticsPage({
   let query = supabase
     .from("contracts")
     .select(`
-      id, contract_number, total, deposit_paid, balance_due, status, is_contingent, created_at,
-      signature_metadata,
+      id, contract_number, total, cost, deposit_paid, balance_due, status, is_contingent, created_at,
+      signature_metadata, financing,
       customer:customers(first_name, last_name),
       show:shows(id, name, venue_name, city, state, start_date, end_date),
       location:locations(id, name, type),
@@ -165,7 +177,7 @@ export default async function AnalyticsPage({
 
   let priorQuery = supabase
     .from("contracts")
-    .select("total, deposit_paid, is_contingent, status")
+    .select("total, cost, deposit_paid, is_contingent, status, financing")
     .not("status", "in", '("cancelled","quote","draft")');
 
   if (priorRange.gte) priorQuery = priorQuery.gte("created_at", priorRange.gte);
@@ -246,13 +258,26 @@ export default async function AnalyticsPage({
     .filter((c) => !lowDepositInfo(c).isLow);
 
   // ── KPIs (OK-only) ──────────────────────────────────────────────────────────
+  // Total Deposits per William Downs Sr. clarification 2026-05-21: includes
+  // financed amounts run at point of sale (Wells Fargo etc.), not just cash.
   const totalRevenue = okRows.reduce((s, c) => s + (c.total ?? 0), 0);
-  const totalDeposits = okRows.reduce((s, c) => s + (c.deposit_paid ?? 0), 0);
+  const depositSplit = okRows.reduce(
+    (acc, c) => {
+      const e = effectiveDeposit(c);
+      acc.cash += e.cash;
+      acc.financed += e.financed;
+      return acc;
+    },
+    { cash: 0, financed: 0 },
+  );
+  const totalDeposits = depositSplit.cash + depositSplit.financed;
+  const cashDeposits = depositSplit.cash;
+  const financeDeposits = depositSplit.financed;
   const contractCount = okRows.length;
   const avgDeal = contractCount > 0 ? totalRevenue / contractCount : 0;
 
   const priorRevenue = okPriorRows.reduce((s, c) => s + (c.total ?? 0), 0);
-  const priorDeposits = okPriorRows.reduce((s, c) => s + (c.deposit_paid ?? 0), 0);
+  const priorDeposits = okPriorRows.reduce((s, c) => s + effectiveDeposit(c).total, 0);
   const priorCount = okPriorRows.length;
 
   const revDelta = priorRevenue > 0 ? ((totalRevenue - priorRevenue) / priorRevenue) * 100 : null;
@@ -261,14 +286,26 @@ export default async function AnalyticsPage({
   const priorPeriodLabel = getPriorPeriodLabel(period);
 
   // ── Net Profit (period-wide) ─────────────────────────────────────────────
-  // totalRevenue is already OK-only (contingent + low-deposit excluded above).
-  // Cost side: sum of show.total_cost for shows that overlap the period.
+  // Two cost categories now that we have real per-deal data:
+  //   1. totalContractCost — Atlas's per-deal COGS (spa wholesale + freight +
+  //      delivery + options) from contracts.cost. Imported from Lori XLSX.
+  //   2. totalShowCost — per-show booth/staffing overhead from shows.total_cost.
+  // Both are real out-of-pocket costs. True net profit subtracts both.
+  const totalContractCost = okRows.reduce((s, c) => {
+    const n = Number((c as { cost?: number | string | null }).cost ?? 0);
+    return s + (Number.isFinite(n) ? n : 0);
+  }, 0);
   const totalShowCost = (showsInPeriod ?? []).reduce((s, sh) => {
     const raw = (sh as { total_cost?: number | string | null }).total_cost;
     const n = raw == null ? 0 : Number(raw);
     return s + (Number.isFinite(n) ? n : 0);
   }, 0);
-  const netProfit = totalRevenue - totalShowCost;
+  const netProfit = totalRevenue - totalContractCost - totalShowCost;
+  // Coverage: how many okRows have real cost data vs missing
+  const okContractsWithCost = okRows.filter((c) => {
+    const n = Number((c as { cost?: number | string | null }).cost ?? 0);
+    return Number.isFinite(n) && n > 0;
+  }).length;
 
   // ── Cancellations in period ─────────────────────────────────────────────────
   const cancelled = cancelledRows ?? [];
@@ -305,15 +342,38 @@ export default async function AnalyticsPage({
   const goalMap = new Map((goalRows ?? []).map((g) => [g.rep_id, g.target_revenue]));
   const commissionMap = new Map((commissionRows ?? []).map((r: any) => [r.rep_id, Number(r.rate_pct)]));
   const hasCommissions = (commissionRows ?? []).length > 0;
-  const repMap = new Map<string, { id: string; name: string; count: number; revenue: number }>();
+  const repMap = new Map<string, { id: string; name: string; count: number; revenue: number; cost: number }>();
   for (const c of okRows) {
     const repId = (c.sales_rep as { id?: string } | null)?.id ?? "unknown";
     const repName = (c.sales_rep as { full_name?: string } | null)?.full_name ?? "Unknown";
-    const existing = repMap.get(repId) ?? { id: repId, name: repName, count: 0, revenue: 0 };
+    const existing = repMap.get(repId) ?? { id: repId, name: repName, count: 0, revenue: 0, cost: 0 };
     existing.count += 1;
     existing.revenue += c.total ?? 0;
+    const cn = Number((c as { cost?: number | string | null }).cost ?? 0);
+    if (Number.isFinite(cn)) existing.cost += cn;
     repMap.set(repId, existing);
   }
+
+  // Real per-rep net profit using actual per-deal COGS imported from XLSX.
+  // No longer allocates show booth cost — that lives at the show level.
+  // Contracts missing cost (~6% of dataset) contribute revenue but no cost,
+  // which inflates their margin until backfill is complete.
+  const repNetProfit = new Map<string, number>();
+  for (const r of repMap.values()) {
+    repNetProfit.set(r.id, r.revenue - r.cost);
+  }
+
+  // Per-show contract cost — sum of contract.cost grouped by show. Used by
+  // Top Products allocation and the Shows breakdown below.
+  const _contractCostByShowId = new Map<string, number>();
+  for (const c of okRows) {
+    const sid = (c.show as { id?: string } | null)?.id;
+    if (!sid) continue;
+    const cn = Number((c as { cost?: number | string | null }).cost ?? 0);
+    if (!Number.isFinite(cn)) continue;
+    _contractCostByShowId.set(sid, (_contractCostByShowId.get(sid) ?? 0) + cn);
+  }
+
   const reps = Array.from(repMap.values()).sort((a, b) => b.revenue - a.revenue);
 
   // ── Shows breakdown ─────────────────────────────────────────────────────────
@@ -348,14 +408,17 @@ export default async function AnalyticsPage({
   };
   for (const c of okRows) {
     const showRef = (c.show as ShowRef | null) ?? null;
-    const showId = showRef?.id ?? "unknown";
+    // Skip showroom / store sales (no show_id). They appear under Locations
+    // — Shows Performance is only for actual show events.
+    if (!showRef?.id) continue;
+    const showId = showRef.id;
     const existing = showMap.get(showId) ?? {
       id: showId,
-      name: showRef?.name ?? "Unknown",
-      venue_name: showRef?.venue_name ?? null,
-      city: showRef?.city ?? null,
-      state: showRef?.state ?? null,
-      start_date: showRef?.start_date,
+      name: showRef.name ?? "Unknown",
+      venue_name: showRef.venue_name ?? null,
+      city: showRef.city ?? null,
+      state: showRef.state ?? null,
+      start_date: showRef.start_date,
       count: 0,
       revenue: 0,
       deposits: 0,
@@ -399,10 +462,21 @@ export default async function AnalyticsPage({
     existing.cost = cost != null && !Number.isNaN(cost) ? cost : null;
     showMap.set(s.id, existing);
   }
-  // Compute profit per show now that both revenue and cost are merged.
-  // Null cost → null profit (unknown, not zero) so unranked rows sort to bottom.
+  // Compute profit per show. show.cost (booth/staffing) covers the show's
+  // overhead. Add the sum of per-contract COGS for deals AT this show to get
+  // the full cost. Profit = revenue - per-deal COGS - booth.
+  // Null booth cost → null profit (unknown, not zero) so unranked rows sort
+  // to bottom.
   for (const entry of showMap.values()) {
-    entry.profit = entry.cost != null ? entry.revenue - entry.cost : null;
+    const contractCost = _contractCostByShowId.get(entry.id) ?? 0;
+    if (entry.cost != null) {
+      entry.profit = entry.revenue - contractCost - entry.cost;
+    } else if (contractCost > 0) {
+      // No booth cost recorded but we know contract COGS — still informative.
+      entry.profit = entry.revenue - contractCost;
+    } else {
+      entry.profit = null;
+    }
   }
   const shows = Array.from(showMap.values()).sort((a, b) => {
     // Known profit first (desc), then unknown-profit rows by revenue desc.
@@ -411,6 +485,54 @@ export default async function AnalyticsPage({
     if (b.profit != null) return 1;
     return b.revenue - a.revenue;
   });
+
+  // ── Venue rollup ─────────────────────────────────────────────────────────────
+  // Multiple shows at the same venue collapse to a single row. Robert wants to
+  // compare venues by AVG profit per show, since visit counts vary across
+  // venues and total profit favors the most-visited venues. Closing ratios are
+  // aggregated below once showClosingMap is built.
+  type VenueEntry = {
+    venue: string;
+    showCount: number;
+    showsWithCost: number;
+    contractCount: number;
+    revenue: number;
+    revenueWithCost: number;
+    cost: number;
+    profit: number | null;
+    avgProfitPerShow: number | null;
+    showIds: string[];
+    opps: number;
+    closed: number;
+  };
+  const venueMap = new Map<string, VenueEntry>();
+  for (const sh of showMap.values()) {
+    const key = sh.venue_name ?? sh.name;
+    const existing = venueMap.get(key) ?? {
+      venue: key,
+      showCount: 0,
+      showsWithCost: 0,
+      contractCount: 0,
+      revenue: 0,
+      revenueWithCost: 0,
+      cost: 0,
+      profit: null,
+      avgProfitPerShow: null,
+      showIds: [],
+      opps: 0,
+      closed: 0,
+    };
+    existing.showCount += 1;
+    existing.contractCount += sh.count;
+    existing.revenue += sh.revenue;
+    existing.showIds.push(sh.id);
+    if (sh.cost != null) {
+      existing.cost += sh.cost;
+      existing.revenueWithCost += sh.revenue;
+      existing.showsWithCost += 1;
+    }
+    venueMap.set(key, existing);
+  }
 
   // ── Locations breakdown ──────────────────────────────────────────────────────
   const locMap = new Map<string, { id: string; name: string; type: string; count: number; revenue: number }>();
@@ -455,6 +577,28 @@ export default async function AnalyticsPage({
     }
   }
 
+  // Finalize venueMap now that showClosingMap exists — aggregate closing
+  // metrics across all shows in each venue, then derive profit and avg-per-show.
+  for (const v of venueMap.values()) {
+    for (const sid of v.showIds) {
+      const c = showClosingMap.get(sid);
+      if (c) {
+        v.opps += c.opps;
+        v.closed += c.closed;
+      }
+    }
+    v.profit = v.showsWithCost > 0 ? v.revenueWithCost - v.cost : null;
+    v.avgProfitPerShow = v.profit != null ? v.profit / v.showsWithCost : null;
+  }
+  const venues = Array.from(venueMap.values()).sort((a, b) => {
+    if (a.avgProfitPerShow != null && b.avgProfitPerShow != null) {
+      return b.avgProfitPerShow - a.avgProfitPerShow;
+    }
+    if (a.avgProfitPerShow != null) return -1;
+    if (b.avgProfitPerShow != null) return 1;
+    return b.revenue - a.revenue;
+  });
+
   function closingRatioPct(opps: number, closed: number): string {
     if (opps === 0) return "—";
     return `${Math.round((closed / opps) * 100)}%`;
@@ -481,7 +625,17 @@ export default async function AnalyticsPage({
   // Robert Downs 04-29: only rank MAIN products (hot tubs / swim spas / cold tubs /
   // saunas / pools). Exclude options, accessories, fees, upgrades. We look up the
   // category via product_id since it isn't stored on the line_item itself.
-  type LineItem = { product_id?: string; product_name?: string; quantity?: number; sell_price?: number };
+  // Historical contracts backfilled from Lori's XLSX use {name, unit_price}
+  // while new Salta-created contracts use {product_name, sell_price}. Accept
+  // BOTH shapes so historical line items don't read as "Unknown / $0".
+  type LineItem = {
+    product_id?: string;
+    product_name?: string;
+    name?: string;
+    quantity?: number;
+    sell_price?: number;
+    unit_price?: number;
+  };
   const productIdsOnContracts = Array.from(new Set(
     okRows.flatMap((c) => (Array.isArray(c.line_items) ? c.line_items : []).map((i: LineItem) => i.product_id).filter(Boolean) as string[])
   ));
@@ -493,24 +647,39 @@ export default async function AnalyticsPage({
     if (r.category) categoryByProductId.set(r.id, r.category);
   }
 
-  const productMap = new Map<string, { units: number; revenue: number }>();
+  const productMap = new Map<string, { units: number; revenue: number; allocatedCost: number }>();
   for (const c of okRows) {
     const items: LineItem[] = Array.isArray(c.line_items) ? c.line_items : [];
+    // Allocate the contract's REAL per-deal COGS (from contracts.cost,
+    // imported from Lori XLSX) proportionally across the main line items.
+    // Per-line cost share = (line_total / contract.total) * contract.cost
+    const contractCost = Number((c as { cost?: number | string | null }).cost ?? 0);
+    const contractTotal = c.total ?? 0;
     for (const item of items) {
-      const name = item.product_name ?? "Unknown";
+      const name = item.product_name ?? item.name ?? "Unknown";
       if (!name || name === "Unknown") continue;
       const cat = item.product_id ? categoryByProductId.get(item.product_id) : null;
       if (!isMainProduct(cat)) continue; // filter out add-ons / accessories / fees
-      const existing = productMap.get(name) ?? { units: 0, revenue: 0 };
+      const existing = productMap.get(name) ?? { units: 0, revenue: 0, allocatedCost: 0 };
       const qty = item.quantity ?? 1;
-      const price = item.sell_price ?? 0;
+      const price = item.sell_price ?? item.unit_price ?? 0;
+      const lineTotal = price * qty;
+      const lineCostShare = contractTotal > 0 && Number.isFinite(contractCost)
+        ? (lineTotal / contractTotal) * contractCost
+        : 0;
       existing.units += qty;
-      existing.revenue += price * qty;
+      existing.revenue += lineTotal;
+      existing.allocatedCost += lineCostShare;
       productMap.set(name, existing);
     }
   }
   const topProducts = Array.from(productMap.entries())
-    .map(([name, v]) => ({ name, ...v }))
+    .map(([name, v]) => ({
+      name,
+      ...v,
+      netProfit: v.revenue - v.allocatedCost,
+      marginPct: v.revenue > 0 ? ((v.revenue - v.allocatedCost) / v.revenue) * 100 : 0,
+    }))
     .sort((a, b) => b.revenue - a.revenue)
     .slice(0, 10);
 
@@ -527,7 +696,7 @@ export default async function AnalyticsPage({
     for (const item of items) {
       const cat = item.product_id ? categoryByProductId.get(item.product_id) : null;
       const qty = item.quantity ?? 1;
-      const price = item.sell_price ?? 0;
+      const price = item.sell_price ?? item.unit_price ?? 0;
       const lineTotal = price * qty;
       if (isMainProduct(cat)) {
         mainUnits += qty;
@@ -620,12 +789,24 @@ export default async function AnalyticsPage({
     count: r.count,
   }));
 
-  // Shows chart data — prefer venue_name for easier visual identification.
-  const showsChartData = shows.slice(0, 6).map((s) => ({
-    name: s.venue_name ?? s.name,
-    revenue: s.revenue,
-    count: s.count,
+  // Shows chart data — top venues by avg profit per show (mirrors the table
+  // ordering). Bars plot revenue so users can see the dollar weight behind
+  // each top-ranked venue at a glance.
+  const showsChartData = venues.slice(0, 6).map((v) => ({
+    name: v.venue,
+    revenue: v.revenue,
+    count: v.contractCount,
   }));
+
+  // ── Atlas Building Systems (separate division) ──────────────────────────────
+  // Fetch and summarize only when the active view actually needs it.
+  let buildingSummary: BuildingSummary = EMPTY_BUILDING_SUMMARY;
+  if (division === "all" || division === "buildings") {
+    const buildingRows = await fetchBuildingSalesForPeriod(supabase, range);
+    buildingSummary = summarizeBuildingSales(buildingRows);
+  }
+  const companyRevenue = totalRevenue + buildingSummary.totalRevenue;
+  const companyTxns = contractCount + buildingSummary.transactionCount;
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
@@ -638,13 +819,73 @@ export default async function AnalyticsPage({
 
       <main className="px-5 py-6 space-y-5 max-w-4xl mx-auto pb-24">
 
+        {/* ── Division toggle (All / Spas / Buildings) ── */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+          <span className="flex-shrink-0 text-xs font-semibold text-slate-500 uppercase tracking-wide mr-1">Division:</span>
+          {([
+            { value: "all", label: "All Divisions" },
+            { value: "spas", label: "Atlas Spas" },
+            { value: "buildings", label: "Atlas Buildings" },
+          ] as const).map((d) => (
+            <Link
+              key={d.value}
+              href={`/analytics?period=${period}&division=${d.value}`}
+              className={`flex-shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                division === d.value
+                  ? "bg-[#010F21] text-white shadow-sm"
+                  : "bg-white text-slate-600 border border-slate-200 hover:border-[#010F21]"
+              }`}
+            >
+              {d.label}
+            </Link>
+          ))}
+        </div>
+
+        {/* ── Company Overview (only in "all" mode) ── */}
+        {division === "all" && (
+          <Card className="border-[#010F21]/15 bg-gradient-to-br from-slate-50 to-white">
+            <CardHeader className="pb-2">
+              <div className="flex items-baseline justify-between gap-3">
+                <CardTitle className="text-base">Company Overview</CardTitle>
+                <p className="text-xs text-slate-500">{PERIOD_LABELS[period]} · Spas + Buildings combined</p>
+              </div>
+            </CardHeader>
+            <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <KpiCard
+                label="Company Revenue"
+                value={formatCurrency(companyRevenue)}
+                sublabel={`${formatCurrency(totalRevenue)} spa + ${formatCurrency(buildingSummary.totalRevenue)} build`}
+                accentColor="#010F21"
+              />
+              <KpiCard
+                label="Total Transactions"
+                value={companyTxns.toString()}
+                sublabel={`${contractCount} spa + ${buildingSummary.transactionCount} build`}
+                accentColor="#00929C"
+              />
+              <KpiCard
+                label="Spas Share"
+                value={companyRevenue > 0 ? `${((totalRevenue / companyRevenue) * 100).toFixed(0)}%` : "—"}
+                sublabel="of company revenue"
+                accentColor="#0f172a"
+              />
+              <KpiCard
+                label="Buildings Share"
+                value={companyRevenue > 0 ? `${((buildingSummary.totalRevenue / companyRevenue) * 100).toFixed(0)}%` : "—"}
+                sublabel="of company revenue"
+                accentColor="#d97706"
+              />
+            </CardContent>
+          </Card>
+        )}
+
         {/* ── Period selector + Export ── */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 flex-1">
             {(["today", "week", "month", "year", "all"] as Period[]).map((p) => (
               <Link
                 key={p}
-                href={`/analytics?period=${p}`}
+                href={`/analytics?period=${p}&division=${division}`}
                 className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-semibold transition-all ${
                   period === p
                     ? "bg-[#00929C] text-white shadow-md"
@@ -655,18 +896,33 @@ export default async function AnalyticsPage({
               </Link>
             ))}
           </div>
-          <a
-            href={`/api/analytics/export?period=${period}`}
-            download
-            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm text-slate-600 hover:bg-slate-50 transition-colors"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
-            CSV
-          </a>
+          <div className="flex-shrink-0 flex items-center gap-2">
+            <a
+              href={`/api/analytics/export?period=${period}`}
+              download
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm text-slate-600 hover:bg-slate-50 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              CSV
+            </a>
+            <a
+              href={`/api/analytics/pdf?period=${period}`}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#00929C] text-white text-sm font-semibold shadow-sm hover:bg-[#007a82] transition-colors"
+              title="Owner's report — KPIs, tables, and AI insights as a PDF"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              PDF Report
+            </a>
+          </div>
         </div>
 
+        {/* All spa-specific sections only render outside the "buildings" view. */}
+        {division !== "buildings" && (
+        <div className="space-y-5">
         {/* ── KPI Strip ── */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
           <KpiCard
@@ -682,7 +938,11 @@ export default async function AnalyticsPage({
             value={formatCurrency(totalDeposits)}
             trend={depDelta == null ? undefined : depDelta >= 0 ? "up" : "down"}
             trendValue={depDelta == null ? undefined : `${Math.abs(depDelta).toFixed(1)}%`}
-            sublabel={depDelta == null ? undefined : priorPeriodLabel}
+            sublabel={
+              financeDeposits > 0
+                ? `${formatCurrency(cashDeposits)} cash + ${formatCurrency(financeDeposits)} financed`
+                : depDelta == null ? undefined : priorPeriodLabel
+            }
             accentColor="#10b981"
           />
           <KpiCard
@@ -701,7 +961,11 @@ export default async function AnalyticsPage({
           <KpiCard
             label="Net Profit"
             value={formatCurrency(netProfit)}
-            sublabel={totalShowCost > 0 ? `${formatCurrency(totalShowCost)} cost` : undefined}
+            sublabel={
+              totalContractCost > 0 || totalShowCost > 0
+                ? `${formatCurrency(totalContractCost)} COGS + ${formatCurrency(totalShowCost)} booth`
+                : undefined
+            }
             accentColor={netProfit >= 0 ? "#059669" : "#dc2626"}
           />
         </div>
@@ -916,6 +1180,7 @@ export default async function AnalyticsPage({
                       <th className="text-right py-3 px-4 font-medium text-slate-500">Deals</th>
                       <th className="text-right py-3 px-4 font-medium text-slate-500">Revenue</th>
                       <th className="text-right py-3 px-4 font-medium text-slate-500">Avg</th>
+                      <th className="text-right py-3 px-4 font-medium text-slate-500">Net Profit</th>
                       <th className="text-right py-3 px-4 font-medium text-slate-500">Goal</th>
                       {hasCommissions && <th className="text-right py-3 px-4 font-medium text-slate-500">Commission</th>}
                     </tr>
@@ -928,6 +1193,7 @@ export default async function AnalyticsPage({
                         : null;
                       const ratePct = commissionMap.get(rep.id) ?? 0;
                       const commissionEarned = ratePct > 0 ? (ratePct / 100) * rep.revenue : null;
+                      const netProfit = repNetProfit.get(rep.id) ?? rep.revenue;
                       return (
                       <tr
                         key={rep.name}
@@ -955,6 +1221,9 @@ export default async function AnalyticsPage({
                         </td>
                         <td className="py-3 px-4 text-right text-slate-600">
                           {formatCurrency(rep.count > 0 ? rep.revenue / rep.count : 0)}
+                        </td>
+                        <td className={`py-3 px-4 text-right font-semibold ${netProfit >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                          {formatCurrency(netProfit)}
                         </td>
                         <td className="py-3 px-4 text-right">
                           {goalPct !== null ? (
@@ -990,12 +1259,12 @@ export default async function AnalyticsPage({
           <CardHeader className="pb-3">
             <div className="flex items-baseline justify-between gap-3">
               <CardTitle className="text-lg">Shows</CardTitle>
-              {shows.length > 0 && (
-                <p className="text-xs text-slate-500">Top {Math.min(6, shows.length)} by profit</p>
+              {venues.length > 0 && (
+                <p className="text-xs text-slate-500">{venues.length} venue{venues.length === 1 ? "" : "s"} · ranked by avg profit per show</p>
               )}
             </div>
           </CardHeader>
-          {shows.length === 0 ? (
+          {venues.length === 0 ? (
             <CardContent>
               <p className="text-sm text-slate-400 text-center py-4">No shows for this period.</p>
             </CardContent>
@@ -1009,55 +1278,44 @@ export default async function AnalyticsPage({
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-50">
-                      <th className="text-left py-3 px-4 font-medium text-slate-500">Show</th>
+                      <th className="text-left py-3 px-4 font-medium text-slate-500">Venue</th>
+                      <th className="text-right py-3 px-4 font-medium text-slate-500">Shows</th>
                       <th className="text-right py-3 px-4 font-medium text-slate-500">Contracts</th>
                       <th className="text-right py-3 px-4 font-medium text-slate-500">Revenue</th>
-                      <th className="text-right py-3 px-4 font-medium text-slate-500">Deposits</th>
                       <th className="text-right py-3 px-4 font-medium text-slate-500">Cost</th>
-                      <th className="text-right py-3 px-4 font-medium text-slate-500">Net Profit</th>
+                      <th className="text-right py-3 px-4 font-medium text-slate-500">Total Profit</th>
+                      <th className="text-right py-3 px-4 font-medium text-slate-500">Avg/Show</th>
                       <th className="text-right py-3 px-4 font-medium text-slate-500">ROI %</th>
                       <th className="text-right py-3 px-4 font-medium text-slate-500">Close %</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {shows.map((show) => {
-                      const cr = showClosingMap.get(show.id);
+                    {venues.map((venue) => {
+                      const costForRoi = venue.showsWithCost > 0 ? venue.cost : null;
                       return (
-                      <tr key={show.id} className="border-b border-slate-100">
+                      <tr key={venue.venue} className="border-b border-slate-100">
                         <td className="py-3 px-4">
-                          <p className="font-medium text-slate-900">{show.venue_name ?? show.name}</p>
-                          <p className="text-xs text-slate-400">
-                            {[
-                              show.city && show.state ? `${show.city}, ${show.state}` : show.city,
-                              show.start_date
-                                ? new Date(show.start_date).toLocaleDateString("en-US", {
-                                    month: "short",
-                                    day: "numeric",
-                                  })
-                                : null,
-                            ]
-                              .filter(Boolean)
-                              .join(" · ")}
-                          </p>
+                          <p className="font-medium text-slate-900">{venue.venue}</p>
                         </td>
-                        <td className="py-3 px-4 text-right text-slate-700">{show.count}</td>
+                        <td className="py-3 px-4 text-right text-slate-700">{venue.showCount}</td>
+                        <td className="py-3 px-4 text-right text-slate-700">{venue.contractCount}</td>
                         <td className="py-3 px-4 text-right font-semibold text-[#00929C]">
-                          {formatCurrency(show.revenue)}
+                          {formatCurrency(venue.revenue)}
                         </td>
                         <td className="py-3 px-4 text-right text-slate-600">
-                          {formatCurrency(show.deposits)}
+                          {venue.showsWithCost > 0 ? formatCurrency(venue.cost) : <span className="text-slate-300">—</span>}
                         </td>
-                        <td className="py-3 px-4 text-right text-slate-600">
-                          {show.cost != null ? formatCurrency(show.cost) : <span className="text-slate-300">—</span>}
+                        <td className={`py-3 px-4 text-right ${venue.profit == null ? "text-slate-300" : venue.profit >= 0 ? "font-semibold text-emerald-600" : "font-semibold text-red-600"}`}>
+                          {venue.profit != null ? formatCurrency(venue.profit) : "—"}
                         </td>
-                        <td className={`py-3 px-4 text-right ${show.profit == null ? "text-slate-300" : show.profit >= 0 ? "font-semibold text-emerald-600" : "font-semibold text-red-600"}`}>
-                          {show.profit != null ? formatCurrency(show.profit) : "—"}
+                        <td className={`py-3 px-4 text-right ${venue.avgProfitPerShow == null ? "text-slate-300" : venue.avgProfitPerShow >= 0 ? "font-bold text-emerald-600" : "font-bold text-red-600"}`}>
+                          {venue.avgProfitPerShow != null ? formatCurrency(venue.avgProfitPerShow) : "—"}
                         </td>
-                        <td className={`py-3 px-4 text-right ${roiColor(show.revenue, show.cost)}`}>
-                          {roiPct(show.revenue, show.cost)}
+                        <td className={`py-3 px-4 text-right ${roiColor(venue.revenueWithCost, costForRoi)}`}>
+                          {roiPct(venue.revenueWithCost, costForRoi)}
                         </td>
-                        <td className={`py-3 px-4 text-right ${cr ? closingRatioColor(cr.opps, cr.closed) : "text-slate-400"}`}>
-                          {cr ? closingRatioPct(cr.opps, cr.closed) : "—"}
+                        <td className={`py-3 px-4 text-right ${venue.opps > 0 ? closingRatioColor(venue.opps, venue.closed) : "text-slate-400"}`}>
+                          {venue.opps > 0 ? closingRatioPct(venue.opps, venue.closed) : "—"}
                         </td>
                       </tr>
                       );
@@ -1088,12 +1346,20 @@ export default async function AnalyticsPage({
                       <th className="text-left py-3 px-4 font-medium text-slate-500">Location</th>
                       <th className="text-right py-3 px-4 font-medium text-slate-500">Contracts</th>
                       <th className="text-right py-3 px-4 font-medium text-slate-500">Revenue</th>
+                      <th className="text-right py-3 px-4 font-medium text-slate-500">Net Profit</th>
                       <th className="text-right py-3 px-4 font-medium text-slate-500">Close %</th>
                     </tr>
                   </thead>
                   <tbody>
                     {locations.map((loc) => {
                       const cr = locClosingMap.get(loc.id);
+                      // Net profit: for show-type rows, cross-reference the show by stripping
+                      // the "show-" prefix and looking up the show's profit. Store rows have
+                      // no cost data → render "—".
+                      const matchedShow = loc.id.startsWith("show-")
+                        ? shows.find((s) => `show-${s.id}` === loc.id)
+                        : undefined;
+                      const profit = matchedShow?.profit ?? null;
                       return (
                       <tr key={loc.name} className="border-b border-slate-100">
                         <td className="py-3 px-4">
@@ -1107,6 +1373,9 @@ export default async function AnalyticsPage({
                         <td className="py-3 px-4 text-right text-slate-700">{loc.count}</td>
                         <td className="py-3 px-4 text-right font-semibold text-[#00929C]">
                           {formatCurrency(loc.revenue)}
+                        </td>
+                        <td className={`py-3 px-4 text-right ${profit == null ? "text-slate-300" : profit >= 0 ? "font-semibold text-emerald-600" : "font-semibold text-red-600"}`}>
+                          {profit != null ? formatCurrency(profit) : "—"}
                         </td>
                         <td className={`py-3 px-4 text-right ${cr ? closingRatioColor(cr.opps, cr.closed) : "text-slate-400"}`}>
                           {cr ? closingRatioPct(cr.opps, cr.closed) : "—"}
@@ -1139,6 +1408,8 @@ export default async function AnalyticsPage({
                       <th className="text-left py-3 px-4 font-medium text-slate-500">Product</th>
                       <th className="text-right py-3 px-4 font-medium text-slate-500">Units</th>
                       <th className="text-right py-3 px-4 font-medium text-slate-500">Revenue</th>
+                      <th className="text-right py-3 px-4 font-medium text-slate-500">Net Profit</th>
+                      <th className="text-right py-3 px-4 font-medium text-slate-500">Margin</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1154,11 +1425,20 @@ export default async function AnalyticsPage({
                         <td className="py-3 px-4 text-right font-semibold text-[#00929C]">
                           {formatCurrency(p.revenue)}
                         </td>
+                        <td className={`py-3 px-4 text-right font-semibold ${p.netProfit >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                          {formatCurrency(p.netProfit)}
+                        </td>
+                        <td className={`py-3 px-4 text-right ${p.netProfit >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                          {p.marginPct.toFixed(1)}%
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+              <p className="text-xs text-slate-400 italic px-4 py-3">
+                Profit = revenue minus per-deal COGS (spa wholesale + freight + delivery, imported from Lori&apos;s XLSX). {okContractsWithCost}/{contractCount} contracts in this period have real cost data.
+              </p>
             </CardContent>
           )}
         </Card>
@@ -1256,6 +1536,128 @@ export default async function AnalyticsPage({
             )}
           </CardContent>
         </Card>
+        </div>
+        )}
+
+        {/* ── Atlas Building Systems section (visible in 'all' and 'buildings' views) ── */}
+        {division !== "spas" && (
+          <Card id="buildings" className="scroll-mt-32 border-amber-200/60">
+            <CardHeader className="pb-3">
+              <div className="flex items-baseline justify-between gap-3">
+                <CardTitle className="text-lg">Atlas Building Systems</CardTitle>
+                <p className="text-xs text-slate-500">
+                  {PERIOD_LABELS[period]} · {buildingSummary.transactionCount} transaction{buildingSummary.transactionCount === 1 ? "" : "s"}
+                </p>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Buildings KPIs */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <KpiCard
+                  label="Buildings Revenue"
+                  value={formatCurrency(buildingSummary.totalRevenue)}
+                  accentColor="#d97706"
+                />
+                <KpiCard
+                  label="Transactions"
+                  value={buildingSummary.transactionCount.toString()}
+                  accentColor="#0f172a"
+                />
+                <KpiCard
+                  label="Avg Sale"
+                  value={formatCurrency(buildingSummary.avgSale)}
+                  accentColor="#00929C"
+                />
+                <KpiCard
+                  label="Retail / Wholesale"
+                  value={`${formatCurrency(buildingSummary.retailRevenue).replace("$", "")} / ${formatCurrency(buildingSummary.wholesaleRevenue).replace("$", "")}`}
+                  sublabel={`${buildingSummary.retailCount} / ${buildingSummary.wholesaleCount} txns`}
+                  accentColor="#059669"
+                />
+              </div>
+
+              {/* Top Product Categories */}
+              {buildingSummary.topCategories.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Top Product Categories</p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-200 bg-slate-50">
+                          <th className="text-left py-2 px-3 font-medium text-slate-500">#</th>
+                          <th className="text-left py-2 px-3 font-medium text-slate-500">Category</th>
+                          <th className="text-right py-2 px-3 font-medium text-slate-500">Units</th>
+                          <th className="text-right py-2 px-3 font-medium text-slate-500">Revenue</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {buildingSummary.topCategories.map((c, i) => (
+                          <tr key={c.name} className="border-b border-slate-100">
+                            <td className="py-2 px-3 text-slate-400">{i + 1}</td>
+                            <td className="py-2 px-3 font-medium text-slate-900">{c.name}</td>
+                            <td className="py-2 px-3 text-right text-slate-700">{c.units}</td>
+                            <td className="py-2 px-3 text-right font-semibold text-[#00929C]">{formatCurrency(c.revenue)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Top Lots / Locations */}
+              {buildingSummary.topLocations.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Top Lots</p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-200 bg-slate-50">
+                          <th className="text-left py-2 px-3 font-medium text-slate-500">Location</th>
+                          <th className="text-right py-2 px-3 font-medium text-slate-500">Transactions</th>
+                          <th className="text-right py-2 px-3 font-medium text-slate-500">Revenue</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {buildingSummary.topLocations.map((l) => (
+                          <tr key={l.name} className="border-b border-slate-100">
+                            <td className="py-2 px-3 font-medium text-slate-900">{l.name}</td>
+                            <td className="py-2 px-3 text-right text-slate-700">{l.count}</td>
+                            <td className="py-2 px-3 text-right font-semibold text-[#00929C]">{formatCurrency(l.revenue)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Stock Status breakdown */}
+              {buildingSummary.byStockStatus.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Stock Status</p>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                    {buildingSummary.byStockStatus.map((s) => (
+                      <div key={s.status} className="px-3 py-2 bg-slate-50 rounded-lg border border-slate-200">
+                        <p className="text-[10px] uppercase tracking-wide text-slate-500">{s.status}</p>
+                        <p className="font-semibold text-slate-900">{s.count}</p>
+                        <p className="text-xs text-slate-600">{formatCurrency(s.revenue)}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {buildingSummary.transactionCount === 0 && (
+                <p className="text-sm text-slate-400 text-center py-4">No building sales in this period.</p>
+              )}
+
+              <p className="text-xs text-slate-400 italic">
+                Cost / profit columns will populate once William Downs Sr. provides cost data.
+              </p>
+            </CardContent>
+          </Card>
+        )}
 
       </main>
     </AppShell>
