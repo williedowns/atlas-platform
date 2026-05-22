@@ -953,7 +953,8 @@ export async function GET(req: Request) {
   ctx.y = MARGIN;
   drawSectionHeader(ctx, "Atlas Spas & Swim Spas", `Executive Summary · ${PERIOD_LABELS[period]}`);
 
-  // 5 KPI cards in a 3-2 grid
+  // 6 KPI cards in a 3-2 grid. Finance Deposits sits immediately left of Total
+  // Deposits so the reader sees the financed slice right before its parent.
   const cardW = (CONTENT_W - 6) / 3;
   const cardH = 26;
   const row1Y = ctx.y;
@@ -963,38 +964,36 @@ export async function GET(req: Request) {
     revDelta == null ? undefined : "vs prior year",
     TEAL);
   drawKpiCard(doc, MARGIN + cardW + 3, row1Y, cardW, cardH,
-    "Total Deposits", formatCurrency(totalDeposits),
-    depDelta == null ? null : { pct: depDelta, positive: depDelta >= 0 },
-    financeDeposits > 0
-      ? `${formatCurrency(cashDeposits)} cash + ${formatCurrency(financeDeposits)} fin`
-      : depDelta == null ? undefined : "vs prior year",
-    EMERALD);
-  drawKpiCard(doc, MARGIN + (cardW + 3) * 2, row1Y, cardW, cardH,
-    "Contracts", contractCount.toString(),
-    cntDelta == null ? null : { pct: cntDelta, positive: cntDelta >= 0 },
-    cntDelta == null ? undefined : "vs prior year",
-    NAVY);
-  const row2Y = row1Y + cardH + 4;
-  drawKpiCard(doc, MARGIN, row2Y, cardW, cardH,
-    "Avg Deal Size", formatCurrency(avgDeal),
-    null, contractCount > 0 ? `across ${contractCount} contracts` : undefined,
-    AMBER);
-  drawKpiCard(doc, MARGIN + cardW + 3, row2Y, cardW, cardH,
-    "Net Profit", formatCurrency(netProfit),
-    null,
-    (totalContractCost > 0 || totalShowCost > 0)
-      ? `${formatCurrency(totalContractCost)} COGS + ${formatCurrency(totalShowCost)} booth`
-      : undefined,
-    netProfit >= 0 ? EMERALD : RED);
-  // 6th slot — Finance Deposits (per William Downs Sr. clarification, this
-  // is its own line item alongside cash deposits)
-  drawKpiCard(doc, MARGIN + (cardW + 3) * 2, row2Y, cardW, cardH,
     "Finance Deposits", formatCurrency(financeDeposits),
     null,
     financeDeposits > 0
       ? `${Math.round((financeDeposits / Math.max(totalDeposits, 1)) * 100)}% of total deposits`
       : "no financed sales",
     TEAL);
+  drawKpiCard(doc, MARGIN + (cardW + 3) * 2, row1Y, cardW, cardH,
+    "Total Deposits", formatCurrency(totalDeposits),
+    depDelta == null ? null : { pct: depDelta, positive: depDelta >= 0 },
+    financeDeposits > 0
+      ? `${formatCurrency(cashDeposits)} cash + ${formatCurrency(financeDeposits)} fin`
+      : depDelta == null ? undefined : "vs prior year",
+    EMERALD);
+  const row2Y = row1Y + cardH + 4;
+  drawKpiCard(doc, MARGIN, row2Y, cardW, cardH,
+    "Contracts", contractCount.toString(),
+    cntDelta == null ? null : { pct: cntDelta, positive: cntDelta >= 0 },
+    cntDelta == null ? undefined : "vs prior year",
+    NAVY);
+  drawKpiCard(doc, MARGIN + cardW + 3, row2Y, cardW, cardH,
+    "Avg Deal Size", formatCurrency(avgDeal),
+    null, contractCount > 0 ? `across ${contractCount} contracts` : undefined,
+    AMBER);
+  drawKpiCard(doc, MARGIN + (cardW + 3) * 2, row2Y, cardW, cardH,
+    "Net Profit", formatCurrency(netProfit),
+    null,
+    (totalContractCost > 0 || totalShowCost > 0)
+      ? `${formatCurrency(totalContractCost)} COGS + ${formatCurrency(totalShowCost)} booth`
+      : undefined,
+    netProfit >= 0 ? EMERALD : RED);
   ctx.y = row2Y + cardH + 6;
 
   // Methodology note — one place, applies to every Net Profit number in the
