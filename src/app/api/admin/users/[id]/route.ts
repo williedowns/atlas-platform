@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function PATCH(
   req: Request,
@@ -21,16 +24,50 @@ export async function PATCH(
 
   const { id } = await params;
   const body = await req.json();
-  const { role } = body;
+  const { role, email } = body as { role?: string; email?: string };
 
-  if (!role) return NextResponse.json({ error: "role is required" }, { status: 400 });
+  if (!role && !email) {
+    return NextResponse.json({ error: "role or email is required" }, { status: 400 });
+  }
 
-  const { error } = await supabase
-    .from("profiles")
-    .update({ role })
-    .eq("id", id);
+  if (email !== undefined) {
+    const trimmed = email.trim().toLowerCase();
+    if (!EMAIL_RE.test(trimmed)) {
+      return NextResponse.json({ error: "Invalid email format" }, { status: 400 });
+    }
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (id === user.id) {
+      return NextResponse.json(
+        { error: "Use your account settings to change your own email" },
+        { status: 400 }
+      );
+    }
+
+    const admin = createAdminClient();
+    const { error: authErr } = await admin.auth.admin.updateUserById(id, {
+      email: trimmed,
+      email_confirm: true,
+    });
+    if (authErr) {
+      return NextResponse.json({ error: authErr.message }, { status: 500 });
+    }
+
+    const { error: profErr } = await supabase
+      .from("profiles")
+      .update({ email: trimmed })
+      .eq("id", id);
+    if (profErr) {
+      return NextResponse.json({ error: profErr.message }, { status: 500 });
+    }
+  }
+
+  if (role !== undefined) {
+    const { error } = await supabase
+      .from("profiles")
+      .update({ role })
+      .eq("id", id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  }
 
   return NextResponse.json({ success: true });
 }
