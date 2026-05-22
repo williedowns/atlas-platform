@@ -339,18 +339,19 @@ export default async function AnalyticsPage({
   })();
 
   // ── Sales rep leaderboard ───────────────────────────────────────────────────
-  const goalMap = new Map((goalRows ?? []).map((g) => [g.rep_id, g.target_revenue]));
   const commissionMap = new Map((commissionRows ?? []).map((r: any) => [r.rep_id, Number(r.rate_pct)]));
   const hasCommissions = (commissionRows ?? []).length > 0;
-  const repMap = new Map<string, { id: string; name: string; count: number; revenue: number; cost: number }>();
+  const repMap = new Map<string, { id: string; name: string; count: number; revenue: number; cost: number; shows: Set<string> }>();
   for (const c of okRows) {
     const repId = (c.sales_rep as { id?: string } | null)?.id ?? "unknown";
     const repName = (c.sales_rep as { full_name?: string } | null)?.full_name ?? "Unknown";
-    const existing = repMap.get(repId) ?? { id: repId, name: repName, count: 0, revenue: 0, cost: 0 };
+    const existing = repMap.get(repId) ?? { id: repId, name: repName, count: 0, revenue: 0, cost: 0, shows: new Set<string>() };
     existing.count += 1;
     existing.revenue += c.total ?? 0;
     const cn = Number((c as { cost?: number | string | null }).cost ?? 0);
     if (Number.isFinite(cn)) existing.cost += cn;
+    const showId = (c.show as { id?: string } | null)?.id;
+    if (showId) existing.shows.add(showId);
     repMap.set(repId, existing);
   }
 
@@ -1181,19 +1182,16 @@ export default async function AnalyticsPage({
                       <th className="text-right py-3 px-4 font-medium text-slate-500">Revenue</th>
                       <th className="text-right py-3 px-4 font-medium text-slate-500">Avg</th>
                       <th className="text-right py-3 px-4 font-medium text-slate-500">Net Profit</th>
-                      <th className="text-right py-3 px-4 font-medium text-slate-500">Goal</th>
+                      <th className="text-right py-3 px-4 font-medium text-slate-500">Net/Show</th>
                       {hasCommissions && <th className="text-right py-3 px-4 font-medium text-slate-500">Commission</th>}
                     </tr>
                   </thead>
                   <tbody>
                     {reps.map((rep, i) => {
-                      const targetRev = goalMap.get(rep.id);
-                      const goalPct = targetRev && period === "month"
-                        ? Math.min(999, Math.round((rep.revenue / targetRev) * 100))
-                        : null;
                       const ratePct = commissionMap.get(rep.id) ?? 0;
                       const commissionEarned = ratePct > 0 ? (ratePct / 100) * rep.revenue : null;
                       const netProfit = repNetProfit.get(rep.id) ?? rep.revenue;
+                      const netPerShow = rep.shows.size > 0 ? netProfit / rep.shows.size : null;
                       return (
                       <tr
                         key={rep.name}
@@ -1226,9 +1224,9 @@ export default async function AnalyticsPage({
                           {formatCurrency(netProfit)}
                         </td>
                         <td className="py-3 px-4 text-right">
-                          {goalPct !== null ? (
-                            <span className={`font-bold text-sm ${goalPct >= 100 ? "text-emerald-600" : goalPct >= 70 ? "text-[#00929C]" : "text-slate-500"}`}>
-                              {goalPct}%
+                          {netPerShow !== null ? (
+                            <span className={`font-bold ${netPerShow >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                              {formatCurrency(netPerShow)}
                             </span>
                           ) : (
                             <span className="text-slate-300 text-sm">—</span>
