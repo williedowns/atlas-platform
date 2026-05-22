@@ -193,11 +193,13 @@ export default async function DashboardPage() {
   if (!isAdmin) confirmedQuery.eq("sales_rep_id", effectiveUserId);
 
   // ── Recent contingent contracts ───────────────────────────────────────────
+  // Same BF- exclusion as confirmedQuery — only surface contracts run through this system.
   const contingentQuery = supabase
     .from("contracts")
     .select("id, contract_number, status, total, deposit_paid, is_contingent, created_at, customer:customers(first_name, last_name), show:shows(name)")
     .not("status", "in", '("quote","draft","cancelled")')
     .eq("is_contingent", true)
+    .not("contract_number", "like", "BF-%")
     .order("created_at", { ascending: false })
     .limit(5);
 
