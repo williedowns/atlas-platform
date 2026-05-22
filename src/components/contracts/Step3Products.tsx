@@ -901,8 +901,12 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
                   {draft.doc_fee_waived ? "Waived · Restore" : "Waive"}
                 </button>
               </div>
+              {/* Fee + tax combined into a single Document Fee line per
+                  Willie's call — matches Step 5 Review, the contract
+                  detail page, and the printed PDF. Bookkeeper tax-report
+                  keeps the raw split. */}
               <span className={`text-base font-semibold ${draft.doc_fee_waived ? "line-through text-slate-400" : "text-slate-900"}`}>
-                {formatCurrency(draft.doc_fee_amount ?? 0)}
+                {formatCurrency((draft.doc_fee_amount ?? 0) + (draft.doc_fee_tax_amount ?? 0))}
               </span>
             </div>
           )}
@@ -924,12 +928,6 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
                   </span>
                 ) : formatCurrency(draft.tax_exempt ? 0 : (draft.tax_amount ?? 0))}
               </span>
-            </div>
-          )}
-          {!draft.doc_fee_waived && (draft.doc_fee_tax_amount ?? 0) > 0 && (
-            <div className="flex justify-between items-center">
-              <span className="text-base text-slate-600">Doc Fee Tax ({(draft.tax_rate * 100).toFixed(2)}%)</span>
-              <span className="text-base font-semibold text-slate-900">{formatCurrency(draft.doc_fee_tax_amount ?? 0)}</span>
             </div>
           )}
           <div className="border-t border-slate-200 pt-3 flex justify-between items-center">
