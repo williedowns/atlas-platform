@@ -315,6 +315,16 @@ export interface ContractLineItem {
   // they were generated for so the UI can render them as locked dependents
   // and the cascade can remove them when the spa line is removed.
   linked_spa_product_id?: string;
+  // Blem snapshot — populated at sale time when unit_type='blem'. Frozen
+  // copy of the inventory record so the contract still renders the exact
+  // photos & description the customer reviewed even if inventory is later
+  // edited (e.g. a photo soft-deleted, the description amended).
+  blem_description?: string;
+  blem_photo_urls?: string[];
+  // Identifier for the per-line acknowledgment gate — present means the
+  // customer must complete the Show-to-Customer tap-through before the
+  // blem_acknowledgment initial pad enables in Step7Sign.
+  blem_line_id?: string;
 }
 
 export interface Contract {

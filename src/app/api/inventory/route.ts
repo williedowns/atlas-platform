@@ -24,9 +24,11 @@ export async function GET(req: Request) {
     .select(`
       id, serial_number, order_number, status, unit_type,
       shell_color, cabinet_color, wrap_status, sub_location, model_code,
+      blem_description,
       product:products(id, name, category, line, model_code),
       location:locations(id, name, city, state),
-      show:shows(id, name, venue_name)
+      show:shows(id, name, venue_name),
+      blem_photos:inventory_blem_photos(id, photo_url, caption, sort_order, deleted_at)
     `)
     .order("created_at", { ascending: false });
 
@@ -59,20 +61,14 @@ export async function GET(req: Request) {
   // rows (e.g. "TS 6.2" vs "TS 6.25") and only one is selected.
   let rows = data ?? [];
   if (productId || modelCode || category) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     rows = rows.filter((u: any) => {
-      // 1. Exact product_id match — best signal when available.
       if (productId && u.product?.id === productId) return true;
-      // 2. model_code match — works for legacy units (no product_id) AND
-      //    units linked to a near-duplicate product.
       if (modelCode) {
         if (u.model_code === modelCode) return true;
         if (u.product?.model_code === modelCode) return true;
       }
-      // 3. If a productId was requested but neither check above matched,
-      //    don't fall through to category — the rep picked a specific
-      //    product and we shouldn't pollute the picker with siblings.
       if (productId) return false;
-      // 4. Category-only browse (no productId, no modelCode).
       if (category) {
         if (u.product?.category === category) return true;
         if (getCategoryForModelCode(u.model_code) === category) return true;
@@ -82,7 +78,19 @@ export async function GET(req: Request) {
     });
   }
 
-  return NextResponse.json(rows);
+  // Strip soft-deleted blem photos before returning + sort by sort_order
+  // so the picker shows the canonical lead photo first.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const cleaned = rows.map((u: any) => {
+    const photos = Array.isArray(u.blem_photos) ? u.blem_photos : [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const active = photos.filter((p: any) => !p.deleted_at)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+    return { ...u, blem_photos: active, blem_photo_count: active.length };
+  });
+
+  return NextResponse.json(cleaned);
 }
 
 export async function POST(req: Request) {
@@ -100,9 +108,11 @@ export async function POST(req: Request) {
     product_id, serial_number, order_number, status, unit_type,
     shell_color, cabinet_color, wrap_status, sub_location,
     location_id, show_id, received_date, notes,
+    blem_description,
+    blem_photos,  // staged photos: [{ photo_url (data URL), caption, sort_order }]
   } = body;
 
-  const { data, error } = await supabase
+  const { data: unit, error } = await supabase
     .from("inventory_units")
     .insert({
       product_id: product_id || null,
@@ -118,10 +128,62 @@ export async function POST(req: Request) {
       show_id: show_id || null,
       received_date: received_date || null,
       notes: notes || null,
+      blem_description: (unit_type === "blem" ? (blem_description || null) : null),
     })
     .select()
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data, { status: 201 });
+
+  // Persist staged blem photos. Data URLs are uploaded to the blem-photos
+  // bucket and the resulting public URLs are inserted into
+  // inventory_blem_photos. We do this server-side so the upload runs with
+  // service credentials and so partial failure can be returned to the rep
+  // (rather than leaving orphan data URLs in the table).
+  let savedPhotos: Array<{ id: string; photo_url: string; caption: string | null; sort_order: number }> = [];
+  if (unit_type === "blem" && Array.isArray(blem_photos) && blem_photos.length > 0) {
+    for (let i = 0; i < blem_photos.length; i++) {
+      const p = blem_photos[i];
+      const dataUrl: string | undefined = p?.photo_url;
+      if (!dataUrl?.startsWith("data:image/")) continue;
+      try {
+        const match = dataUrl.match(/^data:(image\/[a-z+.-]+);base64,(.+)$/i);
+        if (!match) continue;
+        const mime = match[1];
+        const base64 = match[2];
+        const ext = mime.split("/")[1]?.replace("jpeg", "jpg") ?? "jpg";
+        const buf = Buffer.from(base64, "base64");
+        const key = `${unit.id}/${crypto.randomUUID()}.${ext}`;
+        const { error: upErr } = await supabase.storage
+          .from("blem-photos")
+          .upload(key, buf, { contentType: mime, upsert: false });
+        if (upErr) continue;
+        const { data: pub } = supabase.storage.from("blem-photos").getPublicUrl(key);
+        const { data: photoRow } = await supabase
+          .from("inventory_blem_photos")
+          .insert({
+            inventory_unit_id: unit.id,
+            photo_url: pub.publicUrl,
+            caption: p.caption || null,
+            sort_order: i,
+            created_by: user.id,
+          })
+          .select()
+          .single();
+        if (photoRow) {
+          savedPhotos.push({
+            id: photoRow.id,
+            photo_url: photoRow.photo_url,
+            caption: photoRow.caption,
+            sort_order: photoRow.sort_order,
+          });
+        }
+      } catch {
+        // Continue with remaining photos — partial success is acceptable;
+        // the rep can re-add missing photos from the unit detail page.
+      }
+    }
+  }
+
+  return NextResponse.json({ ...unit, blem_photos: savedPhotos }, { status: 201 });
 }

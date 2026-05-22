@@ -3,6 +3,10 @@ import { createClient } from "@/lib/supabase/server";
 import { generateContractNumber } from "@/lib/utils";
 import { createQBOEstimate, createQBOCustomer } from "@/lib/qbo/client";
 import { logAction } from "@/lib/audit";
+import {
+  isDeliveryDiagramFilled,
+  isDeliveryDiagramRequired,
+} from "@/lib/delivery-diagram-requirement";
 
 export async function POST(req: Request) {
   const supabase = await createClient();
@@ -72,6 +76,20 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { contract_id: existing.id, contract_number: existing.contract_number, replayed: true },
         { status: 200 }
+      );
+    }
+  }
+
+  // Delivery diagram is required on contracts that include a spa-family line
+  // item. Pool-only contracts are exempt. Server-side gate so a future wizard
+  // regression or direct API call can't sneak a signed contract through
+  // without one.
+  const lineItemsArr: Array<{ product_id?: string | null }> = Array.isArray(line_items) ? line_items : [];
+  if (await isDeliveryDiagramRequired(supabase, lineItemsArr)) {
+    if (!isDeliveryDiagramFilled(delivery_diagram)) {
+      return NextResponse.json(
+        { error: "A delivery diagram is required before signing a spa contract. Go back to Step 6 and select at least one scenario." },
+        { status: 400 }
       );
     }
   }

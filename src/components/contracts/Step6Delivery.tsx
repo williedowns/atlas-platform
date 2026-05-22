@@ -380,10 +380,6 @@ export default function Step6Delivery({ onNext }: Step6DeliveryProps) {
     onNext();
   }
 
-  function handleSkip() {
-    onNext();
-  }
-
   return (
     <div className="space-y-4">
       <div>
@@ -554,14 +550,11 @@ export default function Step6Delivery({ onNext }: Step6DeliveryProps) {
         >
           Continue to Sign
         </Button>
-        <Button
-          onClick={handleSkip}
-          variant="ghost"
-          size="lg"
-          className="w-full text-slate-500"
-        >
-          Skip — Select Later
-        </Button>
+        {selectedIds.length === 0 && (
+          <p className="text-center text-xs text-slate-500">
+            Select at least one delivery scenario to continue.
+          </p>
+        )}
       </div>
     </div>
   );

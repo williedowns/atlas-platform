@@ -66,11 +66,31 @@ export default async function RemoteSignPage({
   const customer = Array.isArray(customerRel) ? customerRel[0] : customerRel;
 
   const lineItems = Array.isArray(contract.line_items)
-    ? (contract.line_items as Array<{ product_name?: string; waived?: boolean }>)
+    ? (contract.line_items as Array<{
+        product_name?: string;
+        waived?: boolean;
+        unit_type?: string;
+        serial_number?: string;
+        blem_line_id?: string;
+        blem_description?: string;
+        blem_photo_urls?: string[];
+      }>)
     : [];
   const productNames = lineItems
     .filter((i) => !i.waived && typeof i.product_name === "string")
     .map((i) => i.product_name as string);
+  // Summarize blem line items for the customer-facing remote sign flow.
+  // The photo URLs were snapshotted into line_items at sale time so they
+  // render identically to what the rep showed at the kiosk.
+  const blemLines = lineItems
+    .filter((i) => i.unit_type === "blem")
+    .map((i) => ({
+      blem_line_id: i.blem_line_id ?? `${i.product_name}-${i.serial_number ?? ""}`,
+      product_name: i.product_name ?? "Unit",
+      serial_number: i.serial_number ?? null,
+      description: i.blem_description ?? "",
+      photo_urls: Array.isArray(i.blem_photo_urls) ? i.blem_photo_urls : [],
+    }));
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -87,6 +107,7 @@ export default async function RemoteSignPage({
           productNames={productNames}
           total={Number(contract.total)}
           depositAmount={Number(contract.deposit_amount ?? 0)}
+          blemLines={blemLines}
         />
       </main>
     </div>

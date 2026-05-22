@@ -113,7 +113,15 @@ export interface ContractDraft {
     sales_final?: string | null;
     cancellation_forfeit?: string | null;
     rx_30_day?: string | null;
+    blem_acknowledgment?: string | null;
   };
+
+  // Per blem-line "Show to Customer" gate completions. Keyed by
+  // ContractLineItem.blem_line_id. Presence of a timestamp means the
+  // customer tapped through every photo for that line at that moment.
+  // Cleared automatically when the associated line is removed in
+  // removeLineItem so a re-pick triggers a fresh review.
+  blem_photos_viewed_at?: Record<string, string>;
 
   // Texas tax-exemption certificate captured at the show floor when the
   // rep flips tax_exempt to true in Step 5. Stored as a data URL because
@@ -161,6 +169,12 @@ interface InventoryUnitDetails {
   unit_type?: string | null;
   shell_color?: string | null;
   cabinet_color?: string | null;
+  // Snapshot copies of blem evidence used when adding a blem unit. The
+  // store doesn't fetch these from the DB — the caller (InventoryUnitPicker)
+  // passes the values it already loaded so they freeze into the line item
+  // at the moment of the customer's review.
+  blem_description?: string | null;
+  blem_photo_urls?: string[];
 }
 
 interface ContractStore {
@@ -169,6 +183,17 @@ interface ContractStore {
   setCustomer: (customer: Customer) => void;
   addLineItem: (product: Product, price: number, waived?: boolean, shell_color?: string, cabinet_color?: string) => void;
   addLineItemWithUnit: (product: Product, price: number, unit: InventoryUnitDetails) => void;
+  // Add a blem line for a unit NOT in inventory (sale-time fallback).
+  // Photos must already be uploaded to the blem-photos bucket — the caller
+  // passes the public URLs and an optional unit identifier (e.g. user-typed
+  // serial) so receiving can later reconcile to a real inventory row.
+  addBlemLineWithoutUnit: (
+    product: Product,
+    price: number,
+    blem: { description: string; photo_urls: string[]; shell_color?: string; cabinet_color?: string }
+  ) => void;
+  // Mark a blem line's Show-to-Customer photo-viewing gate complete.
+  markBlemPhotosViewed: (blem_line_id: string, viewed_at: string) => void;
   removeLineItem: (index: number) => void;
   updateLineItemSerial: (index: number, serial: string) => void;
   updateLineItemPrice: (index: number, price: number) => void;
@@ -196,7 +221,10 @@ interface ContractStore {
   setSignatureDataUrl: (url: string | undefined) => void;
   setSignedName: (name: string) => void;
   setElectronicConsent: (consent: boolean) => void;
-  setInitialUrl: (key: "sales_final" | "cancellation_forfeit" | "rx_30_day", url: string | null) => void;
+  setInitialUrl: (
+    key: "sales_final" | "cancellation_forfeit" | "rx_30_day" | "blem_acknowledgment",
+    url: string | null
+  ) => void;
   setTaxExemptCert: (cert: { dataUrl: string; filename: string; mime: string } | null) => void;
   setConcreteEstimatePending: (pending: boolean) => void;
   setConcreteEstimateNotes: (notes: string) => void;
@@ -312,6 +340,12 @@ export const useContractStore = create<ContractStore>()(
 
       addLineItemWithUnit: (product, price, unit) => {
         set((state) => {
+          const isBlem = unit.unit_type === "blem";
+          const blem_line_id = isBlem
+            ? (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+                ? crypto.randomUUID()
+                : `blem-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+            : undefined;
           const spaLine: ContractLineItem = {
             product_id: product.id,
             product_name: product.name,
@@ -323,6 +357,13 @@ export const useContractStore = create<ContractStore>()(
             unit_type: (unit.unit_type ?? undefined) as UnitType | undefined,
             shell_color: unit.shell_color ?? undefined,
             cabinet_color: unit.cabinet_color ?? undefined,
+            ...(isBlem
+              ? {
+                  blem_line_id,
+                  blem_description: unit.blem_description ?? undefined,
+                  blem_photo_urls: unit.blem_photo_urls ?? [],
+                }
+              : {}),
           };
           const nextLineItems = [...state.draft.line_items, spaLine];
           if (isSpaWithDimensions(product)) {
@@ -332,6 +373,48 @@ export const useContractStore = create<ContractStore>()(
           return { draft: { ...newDraft, ...computeTotalsFromDraft(newDraft) } };
         });
       },
+
+      // Sale-time blem path: the salesperson is selling a unit that
+      // isn't in inventory (e.g. a floor model with new damage, or an
+      // off-spec unit). Photos are already uploaded to blem-photos by
+      // the picker before calling this.
+      addBlemLineWithoutUnit: (product, price, blem) => {
+        set((state) => {
+          const blem_line_id = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+            ? crypto.randomUUID()
+            : `blem-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+          const spaLine: ContractLineItem = {
+            product_id: product.id,
+            product_name: product.name,
+            msrp: product.msrp,
+            sell_price: price,
+            quantity: 1,
+            unit_type: "blem" as UnitType,
+            shell_color: blem.shell_color ?? undefined,
+            cabinet_color: blem.cabinet_color ?? undefined,
+            blem_line_id,
+            blem_description: blem.description,
+            blem_photo_urls: blem.photo_urls,
+          };
+          const nextLineItems = [...state.draft.line_items, spaLine];
+          if (isSpaWithDimensions(product)) {
+            nextLineItems.push(buildGraniteLineItem(product));
+          }
+          const newDraft = { ...state.draft, line_items: nextLineItems };
+          return { draft: { ...newDraft, ...computeTotalsFromDraft(newDraft) } };
+        });
+      },
+
+      markBlemPhotosViewed: (blem_line_id, viewed_at) =>
+        set((state) => ({
+          draft: {
+            ...state.draft,
+            blem_photos_viewed_at: {
+              ...(state.draft.blem_photos_viewed_at ?? {}),
+              [blem_line_id]: viewed_at,
+            },
+          },
+        })),
 
       removeLineItem: (index) => {
         set((state) => {
@@ -350,7 +433,23 @@ export const useContractStore = create<ContractStore>()(
           const line_items = state.draft.line_items.filter(
             (_, i) => i !== index && i !== graniteIndex
           );
-          const newDraft = { ...state.draft, line_items };
+          // Clear the photo-viewed gate timestamp for any removed blem
+          // line so a re-pick forces a fresh customer review. If no blem
+          // lines remain at all, also clear the blem_acknowledgment initial
+          // pad — otherwise the previous initials would persist and submit
+          // alongside a contract that no longer has any blem line items.
+          const nextViewed = { ...(state.draft.blem_photos_viewed_at ?? {}) };
+          if (removed?.blem_line_id) delete nextViewed[removed.blem_line_id];
+          const anyBlemRemains = line_items.some((li) => li.unit_type === "blem");
+          const nextInitialsUrls = anyBlemRemains
+            ? state.draft.initials_urls
+            : { ...(state.draft.initials_urls ?? {}), blem_acknowledgment: null };
+          const newDraft = {
+            ...state.draft,
+            line_items,
+            blem_photos_viewed_at: nextViewed,
+            initials_urls: nextInitialsUrls,
+          };
           return { draft: { ...newDraft, ...computeTotalsFromDraft(newDraft) } };
         });
       },
@@ -571,7 +670,7 @@ export const useContractStore = create<ContractStore>()(
       },
     }),
     {
-      name: "atlas-contract-draft-v5",
+      name: "atlas-contract-draft-v6",
       partialize: (state) => ({ draft: state.draft }),
     }
   )

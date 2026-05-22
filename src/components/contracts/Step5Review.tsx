@@ -427,7 +427,14 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
                           </button>
                         </div>
                       ) : (
-                        item.product_name
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span>{item.product_name}</span>
+                          {item.unit_type === "blem" && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wide bg-red-100 text-red-700 border border-red-300">
+                              Blem · As-Is
+                            </span>
+                          )}
+                        </div>
                       )}
                     </td>
                     <td className="py-2 px-4">
@@ -457,6 +464,67 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
           </div>
         </CardContent>
       </Card>
+
+      {/* ── Blem (As-Is) Items ─────────────────────────────── */}
+      {/* Surfaces every line item with unit_type='blem' so the customer can
+          re-review the photos and damage description at the review step,
+          before Step 7 captures the dedicated blem-acknowledgment initial.
+          "Show again" reopens the kioskMode confirmation dialog if they
+          want a second look — useful when the customer has been talking to
+          the spouse and wants confirmation. */}
+      {draft.line_items.some((li) => li.unit_type === "blem") && (
+        <Card className="border-2 border-red-300 bg-red-50/40">
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-red-600 text-white text-xs font-bold">!</span>
+              <CardTitle className="text-lg text-red-900">Blemishes — Important</CardTitle>
+            </div>
+            <p className="text-xs text-red-800/80 mt-1">
+              These units are being sold AS-IS with the damage shown. You will be asked to initial that you've reviewed and accepted these blemishes on the next step.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4 p-4">
+            {draft.line_items.map((li, idx) => {
+              if (li.unit_type !== "blem") return null;
+              const photos = li.blem_photo_urls ?? [];
+              return (
+                <div key={`blem-${idx}-${li.blem_line_id ?? ""}`} className="rounded-xl border border-red-200 bg-white p-3">
+                  <p className="text-sm font-semibold text-red-900">
+                    {li.product_name}
+                    {li.serial_number ? <span className="text-xs text-slate-500 font-normal"> · Serial {li.serial_number}</span> : null}
+                  </p>
+                  {li.blem_description && (
+                    <p className="text-sm text-slate-800 mt-1 whitespace-pre-wrap">
+                      {li.blem_description}
+                    </p>
+                  )}
+                  {photos.length > 0 ? (
+                    <ul className="mt-2 grid grid-cols-3 sm:grid-cols-4 gap-2">
+                      {photos.slice(0, 8).map((url, i) => (
+                        <li key={url + i}>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={url}
+                            alt={`Blem ${i + 1}`}
+                            className="w-full aspect-square object-cover rounded-lg border border-red-200"
+                          />
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-xs italic text-red-700 mt-2">No photos attached.</p>
+                  )}
+                  {photos.length > 8 && (
+                    <p className="text-[11px] text-red-700 mt-1.5">
+                      + {photos.length - 8} more photo{photos.length - 8 === 1 ? "" : "s"} (visible on the full contract).
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
 
       {/* ── Concrete Pad Estimate ──────────────────────────── */}
       {/* Concrete pad is NOT priced at the show — Alex estimates it after a

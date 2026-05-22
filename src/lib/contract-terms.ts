@@ -61,9 +61,15 @@ export const TERMS_AND_CONDITIONS: TermSection[] = [
   },
 ];
 
+export type AckKey =
+  | "sales_final"
+  | "cancellation_forfeit"
+  | "rx_30_day"
+  | "blem_acknowledgment";
+
 export interface AcknowledgmentClause {
   /** Storage key on signature_metadata.acknowledgments */
-  key: "sales_final" | "cancellation_forfeit" | "rx_30_day";
+  key: AckKey;
   /** Short label shown on the checkbox itself */
   label: string;
   /** Full legal text customer is acknowledging */
@@ -88,6 +94,16 @@ export const REQUIRED_ACKNOWLEDGMENTS: AcknowledgmentClause[] = [
   },
 ];
 
+// Surfaced ONLY when at least one line item has unit_type='blem'. Captured
+// alongside the three required acknowledgments in Step7Sign / RemoteSignForm
+// when applicable. The Show-to-Customer tap-through gate on each blem line
+// must be satisfied before the initial pad enables.
+export const BLEM_ACKNOWLEDGMENT: AcknowledgmentClause = {
+  key: "blem_acknowledgment",
+  label: "Blem Acceptance — Sold As-Is",
+  text: "I have seen the photos and description of the blemishes on this unit and accept the product as-is with these existing imperfections.",
+};
+
 /**
  * Shape persisted under contracts.signature_metadata.acknowledgments.
  *
@@ -105,5 +121,11 @@ export interface AcknowledgmentsRecord {
   cancellation_forfeit_initials_url?: string;
   rx_30_day?: boolean;
   rx_30_day_initials_url?: string;
+  // Conditional clause — only present when contract includes blem line item(s).
+  blem_acknowledgment?: boolean;
+  blem_acknowledgment_initials_url?: string;
+  // Timestamps proving the Show-to-Customer photo-viewing gate fired for
+  // each blem line item the customer reviewed. Keyed by blem_line_id.
+  blem_photos_viewed_at?: Record<string, string>;
   acknowledged_at?: string;
 }

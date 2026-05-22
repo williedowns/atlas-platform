@@ -20,7 +20,7 @@ export default async function InventoryUnitDetailPage({
   const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
   const isAdmin = ["admin", "manager"].includes(profile?.role ?? "");
 
-  const [{ data: unit }, { data: transfers }, { data: locations }, { data: shows }] = await Promise.all([
+  const [{ data: unit }, { data: transfers }, { data: locations }, { data: shows }, { data: blemPhotos }] = await Promise.all([
     supabase
       .from("inventory_units")
       .select(`
@@ -32,7 +32,7 @@ export default async function InventoryUnitDetailPage({
       `)
       .eq("id", id)
       .single(),
-      // Note: model_code, delivery_team, customer_name, fin_balance are included via *
+      // Note: model_code, delivery_team, customer_name, fin_balance, blem_description are included via *
     supabase
       .from("inventory_transfers")
       .select(`
@@ -48,6 +48,13 @@ export default async function InventoryUnitDetailPage({
       .limit(20),
     supabase.from("locations").select("id, name, city, state").eq("active", true).order("name"),
     supabase.from("shows").select("id, name, venue_name").eq("active", true).order("name"),
+    // Active blem photos for this unit (soft-deleted entries are excluded)
+    supabase
+      .from("inventory_blem_photos")
+      .select("id, photo_url, caption, sort_order")
+      .eq("inventory_unit_id", id)
+      .is("deleted_at", null)
+      .order("sort_order", { ascending: true }),
   ]);
 
   if (!unit) notFound();
@@ -132,6 +139,52 @@ export default async function InventoryUnitDetailPage({
             )}
           </CardContent>
         </Card>
+
+        {/* Blem details — only rendered when unit_type='blem'. Surfaces
+            the customer-visible description + photo gallery so admin can
+            confirm what will be shown at sign. */}
+        {unit.unit_type === "blem" && (
+          <Card className="border-red-200 bg-red-50/40">
+            <CardHeader className="pb-2">
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-red-600 text-white text-xs font-bold">!</span>
+                <CardTitle className="text-red-900">Blem Details</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <div>
+                <p className="text-xs uppercase tracking-wide font-semibold text-red-700">Description</p>
+                <p className="text-slate-800 mt-1 whitespace-pre-wrap">
+                  {unit.blem_description ?? <span className="text-slate-400 italic">No description yet — add one in Edit Details.</span>}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide font-semibold text-red-700 mb-1.5">
+                  Photos ({blemPhotos?.length ?? 0})
+                </p>
+                {(blemPhotos && blemPhotos.length > 0) ? (
+                  <ul className="grid grid-cols-3 gap-2">
+                    {blemPhotos.map((p: any) => (
+                      <li key={p.id} className="rounded-lg border border-slate-200 bg-white overflow-hidden">
+                        <div className="aspect-square bg-slate-100">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={p.photo_url} alt={p.caption ?? ""} className="w-full h-full object-cover" />
+                        </div>
+                        {p.caption && (
+                          <p className="text-[10px] text-slate-600 px-1.5 py-1 truncate" title={p.caption}>
+                            {p.caption}
+                          </p>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-xs text-slate-500 italic">No photos uploaded. Add them in Edit Details below.</p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Current Location */}
         <Card>
@@ -253,9 +306,11 @@ export default async function InventoryUnitDetailPage({
               delivery_info: (unit as any).delivery_info,
               foundation_financing: (unit as any).foundation_financing ?? false,
               scheduled_owes: (unit as any).scheduled_owes ?? false,
+              blem_description: (unit as any).blem_description ?? null,
             }}
             locations={locations ?? []}
             shows={shows ?? []}
+            initialBlemPhotos={(blemPhotos ?? []) as any}
           />
         )}
 

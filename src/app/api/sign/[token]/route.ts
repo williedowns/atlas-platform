@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logAction } from "@/lib/audit";
+import {
+  isDeliveryDiagramFilled,
+  isDeliveryDiagramRequired,
+} from "@/lib/delivery-diagram-requirement";
 import { inflateSync } from "node:zlib";
 
 // Detect a PNG data URL where the canvas was never actually drawn into.
@@ -69,6 +73,9 @@ interface SignSubmitBody {
     sales_final: string | null;
     cancellation_forfeit: string | null;
     rx_30_day: string | null;
+    // Present only when the contract has at least one blem line item.
+    blem_acknowledgment?: string | null;
+    blem_photos_viewed_at?: Record<string, string>;
   };
   electronic_consent: boolean;
 }
@@ -148,7 +155,7 @@ export async function POST(
 
   const { data: contract, error: lookupError } = await supabase
     .from("contracts")
-    .select("id, contract_number, status, signing_token, signing_token_expires_at, sales_rep_id")
+    .select("id, contract_number, status, signing_token, signing_token_expires_at, sales_rep_id, line_items, delivery_diagram")
     .eq("signing_token", token)
     .maybeSingle();
 
@@ -174,6 +181,35 @@ export async function POST(
     );
   }
 
+  // Detect whether this contract has blem line items so we can enforce
+  // the blem acknowledgment without blocking non-blem contracts.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const contractLineItems: any[] = Array.isArray(contract.line_items) ? contract.line_items : [];
+  const hasBlemItems = contractLineItems.some((li) => li?.unit_type === "blem");
+  if (hasBlemItems && !initials.blem_acknowledgment) {
+    return NextResponse.json(
+      { error: "Blem acknowledgment is required for contracts containing as-is items." },
+      { status: 400 }
+    );
+  }
+  if (hasBlemItems && initials.blem_acknowledgment && isBlankPng(initials.blem_acknowledgment)) {
+    return NextResponse.json(
+      { error: "Your blem acknowledgment initials look blank. Please initial the box and try again." },
+      { status: 400 }
+    );
+  }
+
+  // Spa contracts must have a delivery diagram on file before the customer
+  // can complete the remote signing flow. Pool-only contracts are exempt.
+  if (await isDeliveryDiagramRequired(supabase, contractLineItems)) {
+    if (!isDeliveryDiagramFilled(contract.delivery_diagram)) {
+      return NextResponse.json(
+        { error: "This contract is missing a delivery diagram. Please contact your sales rep before signing." },
+        { status: 400 }
+      );
+    }
+  }
+
   // Upload signature + initials to Storage. Fall back to inline data URL if
   // upload fails so signing still completes (matches Step 7's resilience).
   const nowIso = new Date().toISOString();
@@ -193,6 +229,13 @@ export async function POST(
   const rx30DayUrl =
     (await uploadDataUrl(supabase, initials.rx_30_day, `${contract.id}/${tsSlug}-rx-30day.png`)) ??
     initials.rx_30_day;
+  const blemAckUrl = hasBlemItems && initials.blem_acknowledgment
+    ? ((await uploadDataUrl(
+        supabase,
+        initials.blem_acknowledgment,
+        `${contract.id}/${tsSlug}-blem-ack.png`
+      )) ?? initials.blem_acknowledgment)
+    : null;
 
   const ip =
     req.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
@@ -214,6 +257,13 @@ export async function POST(
       cancellation_forfeit_initials_url: cancelForfeitUrl,
       rx_30_day: true,
       rx_30_day_initials_url: rx30DayUrl,
+      ...(hasBlemItems
+        ? {
+            blem_acknowledgment: true,
+            blem_acknowledgment_initials_url: blemAckUrl,
+            blem_photos_viewed_at: initials.blem_photos_viewed_at ?? {},
+          }
+        : {}),
       acknowledged_at: nowIso,
     },
   };
