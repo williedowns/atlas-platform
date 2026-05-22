@@ -58,7 +58,16 @@ export function BlemConfirmationDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4" role="dialog" aria-modal="true">
+    // Stop click propagation on the backdrop so taps inside this dialog
+    // (notably thumbnail "tap to view" interactions) don't bubble up to any
+    // ancestor modal whose backdrop also has onClick=onClose — that would
+    // unmount the parent flow and lose form state.
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4"
+      role="dialog"
+      aria-modal="true"
+      onClick={(e) => e.stopPropagation()}
+    >
       <div className="w-full max-w-3xl bg-white rounded-2xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
         {/* Header */}
         <div className="px-5 py-4 bg-red-50 border-b border-red-200">
