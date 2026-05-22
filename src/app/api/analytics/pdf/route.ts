@@ -1092,8 +1092,9 @@ export async function GET(req: Request) {
     doc.text("No rep activity in this period.", MARGIN, ctx.y);
     ctx.y += 10;
   } else {
-    // Column layout depends on whether commissions data exists. Net Profit
-    // sits between Avg Deal and Goal % — keeps the money columns together.
+    // Net/Show = rep.netProfit / shows worked, surfaces per-opportunity value
+    // (a rep with 5 deals across 1 show is more productive than one with 5
+    // deals across 5 shows). Storefront-only reps with no shows render "—".
     const repCols: Column[] = hasCommissions
       ? [
           { label: "#",          x: MARGIN,        w: 6 },
@@ -1102,7 +1103,7 @@ export async function GET(req: Request) {
           { label: "Revenue",    x: MARGIN + 58,   w: 26, align: "right" },
           { label: "Avg Deal",   x: MARGIN + 84,   w: 24, align: "right" },
           { label: "Net Profit", x: MARGIN + 108,  w: 26, align: "right" },
-          { label: "Goal %",     x: MARGIN + 134,  w: 18, align: "right" },
+          { label: "Net/Show",   x: MARGIN + 134,  w: 18, align: "right" },
           { label: "Commission", x: MARGIN + 152,  w: CONTENT_W - 152, align: "right" },
         ]
       : [
@@ -1112,18 +1113,16 @@ export async function GET(req: Request) {
           { label: "Revenue",    x: MARGIN + 66,   w: 30, align: "right" },
           { label: "Avg Deal",   x: MARGIN + 96,   w: 28, align: "right" },
           { label: "Net Profit", x: MARGIN + 124,  w: 30, align: "right" },
-          { label: "Goal %",     x: MARGIN + 154,  w: CONTENT_W - 154, align: "right" },
+          { label: "Net/Show",   x: MARGIN + 154,  w: CONTENT_W - 154, align: "right" },
         ];
     drawTableHeader(ctx, repCols);
     reps.slice(0, 12).forEach((rep, i) => {
-      const targetRev = goalMap.get(rep.id);
-      const goalPct = targetRev && period === "month"
-        ? Math.min(999, Math.round((rep.revenue / (targetRev as number)) * 100))
-        : null;
       const ratePct = commissionMap.get(rep.id) ?? 0;
       const commissionEarned = ratePct > 0 ? (ratePct / 100) * rep.revenue : null;
-      const goalColor: [number, number, number] | undefined = goalPct == null ? undefined : goalPct >= 100 ? EMERALD : goalPct >= 70 ? TEAL : SLATE_MED;
       const profitColor: [number, number, number] = rep.netProfit >= 0 ? EMERALD : RED;
+      const netPerShow = rep.showCount > 0 ? rep.netProfit / rep.showCount : null;
+      const netPerShowColor: [number, number, number] | undefined =
+        netPerShow == null ? undefined : netPerShow >= 0 ? EMERALD : RED;
       const cells: { text: string; color?: [number, number, number]; bold?: boolean }[] = [
         { text: `${i + 1}`, color: i === 0 ? AMBER : SLATE_MED, bold: i === 0 },
         { text: rep.name, bold: i === 0 },
@@ -1131,7 +1130,7 @@ export async function GET(req: Request) {
         { text: formatCurrency(rep.revenue), color: TEAL, bold: true },
         { text: formatCurrency(rep.count > 0 ? rep.revenue / rep.count : 0) },
         { text: formatCurrency(rep.netProfit), color: profitColor, bold: true },
-        { text: goalPct != null ? `${goalPct}%` : "—", color: goalColor, bold: goalPct != null },
+        { text: netPerShow != null ? formatCurrency(netPerShow) : "—", color: netPerShowColor, bold: netPerShow != null },
       ];
       if (hasCommissions) {
         cells.push({ text: commissionEarned != null ? formatCurrency(commissionEarned) : "—", color: commissionEarned != null ? EMERALD : SLATE_MED });
