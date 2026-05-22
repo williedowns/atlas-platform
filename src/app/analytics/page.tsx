@@ -13,6 +13,7 @@ import { RevenueBreakdownDonut } from "@/components/analytics/RevenueBreakdownDo
 import { RepLeaderboardBars } from "@/components/analytics/RepLeaderboardBars";
 import { ShowsBarChart } from "@/components/analytics/ShowsBarChart";
 import { isMainProduct } from "@/lib/inventory-constants";
+import { lowDepositInfo } from "@/lib/low-deposit";
 
 // ── Period helpers ────────────────────────────────────────────────────────────
 
@@ -142,13 +143,17 @@ export default async function AnalyticsPage({
   const range = getPeriodRange(period);
   const priorRange = getPriorPeriodRange(period);
 
+  // Fetch every non-draft/quote/cancelled contract — INCLUDES contingent and
+  // low-deposit. The Revenue Breakdown section (Confirmed vs Contingent donut)
+  // needs to see both. Everywhere else uses `okRows` (filtered subset below).
+  // Historical/imported contracts are included (no idempotency_key filter).
   let query = supabase
     .from("contracts")
     .select(`
       id, contract_number, total, deposit_paid, balance_due, status, is_contingent, created_at,
       signature_metadata,
       customer:customers(first_name, last_name),
-      show:shows(id, name, start_date, end_date),
+      show:shows(id, name, venue_name, city, state, start_date, end_date),
       location:locations(id, name, type),
       sales_rep:profiles!contracts_sales_rep_id_fkey(id, full_name),
       line_items
@@ -160,13 +165,14 @@ export default async function AnalyticsPage({
 
   let priorQuery = supabase
     .from("contracts")
-    .select("total, deposit_paid, is_contingent")
+    .select("total, deposit_paid, is_contingent, status")
     .not("status", "in", '("cancelled","quote","draft")');
 
   if (priorRange.gte) priorQuery = priorQuery.gte("created_at", priorRange.gte);
   if (priorRange.lte) priorQuery = priorQuery.lt("created_at", priorRange.lte);
 
-  // Outstanding contracts (all time, non-cancelled, balance_due > 0)
+  // Outstanding contracts — Salta-created only (idempotency_key NOT NULL excludes
+  // the Method CRM legacy imports that polluted this list with 500-day-old rows).
   const outstandingQuery = supabase
     .from("contracts")
     .select(`
@@ -174,6 +180,7 @@ export default async function AnalyticsPage({
       customer:customers(first_name, last_name)
     `)
     .not("status", "eq", "cancelled")
+    .not("idempotency_key", "is", null)
     .gt("balance_due", 0)
     .order("created_at", { ascending: true });
 
@@ -199,17 +206,10 @@ export default async function AnalyticsPage({
   // For "all" period we omit both bounds and fetch every show.
   let showsCostQuery = supabase
     .from("shows")
-    .select("id, name, start_date, end_date, total_cost")
+    .select("id, name, venue_name, city, state, start_date, end_date, total_cost")
     .limit(500);
   if (range.gte) showsCostQuery = showsCostQuery.gte("end_date", range.gte.split("T")[0]);
   if (range.lte) showsCostQuery = showsCostQuery.lt("start_date", range.lte.split("T")[0]);
-
-  // Open pipeline — current state, NOT period-filtered. A quote that has been
-  // sitting for 90 days is still "in pipeline" today regardless of when created.
-  const pipelineQuery = supabase
-    .from("contracts")
-    .select("id, total, created_at")
-    .eq("status", "quote");
 
   // Cancellations in the period — filtered by created_at since the schema has
   // no cancelled_at column. A contract created in March and cancelled in April
@@ -221,48 +221,60 @@ export default async function AnalyticsPage({
   if (range.gte) cancelledQuery = cancelledQuery.gte("created_at", range.gte);
   if (range.lte) cancelledQuery = cancelledQuery.lt("created_at", range.lte);
 
-  const [{ data: contracts }, { data: priorContracts }, { data: outstanding }, { data: allOpps }, { data: goalRows }, { data: commissionRows }, { data: showsInPeriod }, { data: pipelineRows }, { data: cancelledRows }] =
-    await Promise.all([query, priorQuery, outstandingQuery, closingRatioQuery, goalsQuery, commissionQuery, showsCostQuery, pipelineQuery, cancelledQuery]);
+  const [{ data: contracts }, { data: priorContracts }, { data: outstanding }, { data: allOpps }, { data: goalRows }, { data: commissionRows }, { data: showsInPeriod }, { data: cancelledRows }] =
+    await Promise.all([query, priorQuery, outstandingQuery, closingRatioQuery, goalsQuery, commissionQuery, showsCostQuery, cancelledQuery]);
 
   const rows = contracts ?? [];
   const priorRows = priorContracts ?? [];
   const outstandingRows = outstanding ?? [];
 
-  // ── KPIs ────────────────────────────────────────────────────────────────────
+  // Revenue Breakdown split — uses the FULL rows (the exception that shows
+  // contingent for transparency).
   const confirmedRows = rows.filter((c) => !(c as any).is_contingent);
   const contingentRows = rows.filter((c) => (c as any).is_contingent);
-
   const confirmedRevenue = confirmedRows.reduce((s, c) => s + (c.total ?? 0), 0);
   const contingentRevenue = contingentRows.reduce((s, c) => s + (c.total ?? 0), 0);
-  const totalRevenue = confirmedRevenue + contingentRevenue;
-  const totalDeposits = rows.reduce((s, c) => s + (c.deposit_paid ?? 0), 0);
-  const contractCount = confirmedRows.length;
+  const grossRevenueAll = confirmedRevenue + contingentRevenue;
   const contingentCount = contingentRows.length;
-  const avgDeal = contractCount > 0 ? confirmedRevenue / contractCount : 0;
 
-  const priorRevenue = priorRows.reduce((s, c) => s + (c.total ?? 0), 0);
-  const priorDeposits = priorRows.reduce((s, c) => s + (c.deposit_paid ?? 0), 0);
-  const priorCount = priorRows.filter((c) => !(c as any).is_contingent).length;
+  // OK-only subset — drives every KPI, table, and the Net Profit calc.
+  // "OK" = not contingent AND not low-deposit. Finance Pending isn't derivable
+  // from raw contracts (workbook-override only), accepted limitation.
+  const okRows = confirmedRows.filter((c) => !lowDepositInfo(c).isLow);
+  const okPriorRows = priorRows
+    .filter((c) => !(c as any).is_contingent)
+    .filter((c) => !lowDepositInfo(c).isLow);
+
+  // ── KPIs (OK-only) ──────────────────────────────────────────────────────────
+  const totalRevenue = okRows.reduce((s, c) => s + (c.total ?? 0), 0);
+  const totalDeposits = okRows.reduce((s, c) => s + (c.deposit_paid ?? 0), 0);
+  const contractCount = okRows.length;
+  const avgDeal = contractCount > 0 ? totalRevenue / contractCount : 0;
+
+  const priorRevenue = okPriorRows.reduce((s, c) => s + (c.total ?? 0), 0);
+  const priorDeposits = okPriorRows.reduce((s, c) => s + (c.deposit_paid ?? 0), 0);
+  const priorCount = okPriorRows.length;
 
   const revDelta = priorRevenue > 0 ? ((totalRevenue - priorRevenue) / priorRevenue) * 100 : null;
   const depDelta = priorDeposits > 0 ? ((totalDeposits - priorDeposits) / priorDeposits) * 100 : null;
   const cntDelta = priorCount > 0 ? ((contractCount - priorCount) / priorCount) * 100 : null;
   const priorPeriodLabel = getPriorPeriodLabel(period);
 
-  // ── Pipeline (open quotes — current state, not period-filtered) ────────────
-  const pipeline = pipelineRows ?? [];
-  const pipelineValue = pipeline.reduce((s, q) => s + (q.total ?? 0), 0);
-  const pipelineCount = pipeline.length;
-  const oldestQuoteDays = pipeline.reduce((max, q) => {
-    const days = Math.floor((Date.now() - new Date(q.created_at).getTime()) / 86400000);
-    return days > max ? days : max;
+  // ── Net Profit (period-wide) ─────────────────────────────────────────────
+  // totalRevenue is already OK-only (contingent + low-deposit excluded above).
+  // Cost side: sum of show.total_cost for shows that overlap the period.
+  const totalShowCost = (showsInPeriod ?? []).reduce((s, sh) => {
+    const raw = (sh as { total_cost?: number | string | null }).total_cost;
+    const n = raw == null ? 0 : Number(raw);
+    return s + (Number.isFinite(n) ? n : 0);
   }, 0);
+  const netProfit = totalRevenue - totalShowCost;
 
   // ── Cancellations in period ─────────────────────────────────────────────────
   const cancelled = cancelledRows ?? [];
   const cancelCount = cancelled.length;
   const cancelTotal = cancelled.reduce((s, c) => s + (c.total ?? 0), 0);
-  const bookingsCount = contractCount + contingentCount;
+  const bookingsCount = contractCount;
   const cancelDenom = cancelCount + bookingsCount;
   const cancelRate = cancelDenom > 0 ? (cancelCount / cancelDenom) * 100 : null;
 
@@ -271,7 +283,7 @@ export default async function AnalyticsPage({
   // canvas signature. Anything past pending_signature should have it set; we
   // skip rows that don't to avoid false zeroes.
   const velocityDays: number[] = [];
-  for (const c of rows) {
+  for (const c of okRows) {
     const sig = (c as any).signature_metadata as { consented_at?: string } | null;
     const consentedAt = sig?.consented_at;
     if (!consentedAt) continue;
@@ -294,7 +306,7 @@ export default async function AnalyticsPage({
   const commissionMap = new Map((commissionRows ?? []).map((r: any) => [r.rep_id, Number(r.rate_pct)]));
   const hasCommissions = (commissionRows ?? []).length > 0;
   const repMap = new Map<string, { id: string; name: string; count: number; revenue: number }>();
-  for (const c of rows) {
+  for (const c of okRows) {
     const repId = (c.sales_rep as { id?: string } | null)?.id ?? "unknown";
     const repName = (c.sales_rep as { full_name?: string } | null)?.full_name ?? "Unknown";
     const existing = repMap.get(repId) ?? { id: repId, name: repName, count: 0, revenue: 0 };
@@ -315,25 +327,40 @@ export default async function AnalyticsPage({
     {
       id: string;
       name: string;
+      venue_name: string | null;
+      city: string | null;
+      state: string | null;
       start_date?: string;
       count: number;
       revenue: number;
       deposits: number;
       cost: number | null;
+      profit: number | null;
     }
   >();
-  for (const c of rows) {
-    const showId = (c.show as { id?: string } | null)?.id ?? "unknown";
-    const showName = (c.show as { name?: string } | null)?.name ?? "Unknown";
-    const showStart = (c.show as { start_date?: string } | null)?.start_date;
+  type ShowRef = {
+    id?: string;
+    name?: string;
+    venue_name?: string | null;
+    city?: string | null;
+    state?: string | null;
+    start_date?: string;
+  };
+  for (const c of okRows) {
+    const showRef = (c.show as ShowRef | null) ?? null;
+    const showId = showRef?.id ?? "unknown";
     const existing = showMap.get(showId) ?? {
       id: showId,
-      name: showName,
-      start_date: showStart,
+      name: showRef?.name ?? "Unknown",
+      venue_name: showRef?.venue_name ?? null,
+      city: showRef?.city ?? null,
+      state: showRef?.state ?? null,
+      start_date: showRef?.start_date,
       count: 0,
       revenue: 0,
       deposits: 0,
       cost: null,
+      profit: null,
     };
     existing.count += 1;
     existing.revenue += c.total ?? 0;
@@ -341,26 +368,53 @@ export default async function AnalyticsPage({
     showMap.set(showId, existing);
   }
   // Merge cost data — also adds shows that have cost but no contracts.
-  for (const s of (showsInPeriod ?? []) as Array<{ id: string; name: string; start_date: string; total_cost: number | string | null }>) {
+  for (const s of (showsInPeriod ?? []) as Array<{
+    id: string;
+    name: string;
+    venue_name: string | null;
+    city: string | null;
+    state: string | null;
+    start_date: string;
+    total_cost: number | string | null;
+  }>) {
     const rawCost = s.total_cost;
     const cost = rawCost == null ? null : Number(rawCost);
     const existing = showMap.get(s.id) ?? {
       id: s.id,
       name: s.name,
+      venue_name: s.venue_name ?? null,
+      city: s.city ?? null,
+      state: s.state ?? null,
       start_date: s.start_date,
       count: 0,
       revenue: 0,
       deposits: 0,
       cost: null,
+      profit: null,
     };
+    // Fill venue/city/state from shows table if the contract-joined ref didn't have them.
+    if (!existing.venue_name && s.venue_name) existing.venue_name = s.venue_name;
+    if (!existing.city && s.city) existing.city = s.city;
+    if (!existing.state && s.state) existing.state = s.state;
     existing.cost = cost != null && !Number.isNaN(cost) ? cost : null;
     showMap.set(s.id, existing);
   }
-  const shows = Array.from(showMap.values()).sort((a, b) => b.revenue - a.revenue);
+  // Compute profit per show now that both revenue and cost are merged.
+  // Null cost → null profit (unknown, not zero) so unranked rows sort to bottom.
+  for (const entry of showMap.values()) {
+    entry.profit = entry.cost != null ? entry.revenue - entry.cost : null;
+  }
+  const shows = Array.from(showMap.values()).sort((a, b) => {
+    // Known profit first (desc), then unknown-profit rows by revenue desc.
+    if (a.profit != null && b.profit != null) return b.profit - a.profit;
+    if (a.profit != null) return -1;
+    if (b.profit != null) return 1;
+    return b.revenue - a.revenue;
+  });
 
   // ── Locations breakdown ──────────────────────────────────────────────────────
   const locMap = new Map<string, { id: string; name: string; type: string; count: number; revenue: number }>();
-  for (const c of rows) {
+  for (const c of okRows) {
     // Show sales are attributed to the show, not any store location —
     // a contract can have both show_id and location_id set, but the show wins.
     const showRef = c.show as { id?: string; name?: string } | null;
@@ -429,7 +483,7 @@ export default async function AnalyticsPage({
   // category via product_id since it isn't stored on the line_item itself.
   type LineItem = { product_id?: string; product_name?: string; quantity?: number; sell_price?: number };
   const productIdsOnContracts = Array.from(new Set(
-    rows.flatMap((c) => (Array.isArray(c.line_items) ? c.line_items : []).map((i: LineItem) => i.product_id).filter(Boolean) as string[])
+    okRows.flatMap((c) => (Array.isArray(c.line_items) ? c.line_items : []).map((i: LineItem) => i.product_id).filter(Boolean) as string[])
   ));
   const { data: productCategoryRows } = productIdsOnContracts.length
     ? await supabase.from("products").select("id, category").in("id", productIdsOnContracts)
@@ -440,7 +494,7 @@ export default async function AnalyticsPage({
   }
 
   const productMap = new Map<string, { units: number; revenue: number }>();
-  for (const c of rows) {
+  for (const c of okRows) {
     const items: LineItem[] = Array.isArray(c.line_items) ? c.line_items : [];
     for (const item of items) {
       const name = item.product_name ?? "Unknown";
@@ -468,7 +522,7 @@ export default async function AnalyticsPage({
   let mainUnits = 0;
   let mainRevenue = 0;
   let accessoryRevenue = 0;
-  for (const c of rows) {
+  for (const c of okRows) {
     const items: LineItem[] = Array.isArray(c.line_items) ? c.line_items : [];
     for (const item of items) {
       const cat = item.product_id ? categoryByProductId.get(item.product_id) : null;
@@ -506,7 +560,7 @@ export default async function AnalyticsPage({
   const trendStart = (() => {
     if (range.gte) return new Date(range.gte);
     // For "all" period, use earliest row date or 6 months ago as fallback
-    const earliest = rows.reduce<Date | null>((min, r) => {
+    const earliest = okRows.reduce<Date | null>((min, r) => {
       const d = new Date(r.created_at);
       return !min || d < min ? d : min;
     }, null);
@@ -533,7 +587,7 @@ export default async function AnalyticsPage({
     }
   }
 
-  for (const r of rows) {
+  for (const r of okRows) {
     const d = new Date(r.created_at);
     const key = trendBucketSize === "day"
       ? d.toISOString().split("T")[0]
@@ -552,9 +606,10 @@ export default async function AnalyticsPage({
     return { date: key, label, ...vals };
   });
 
-  // Breakdown donut data
+  // Revenue Breakdown donut — exception: shows Confirmed + Contingent for transparency.
+  // Center total = confirmed + contingent (the full booking picture), not OK-only.
   const breakdownData = [
-    { name: "Confirmed", value: confirmedRevenue, color: "#00929C", count: contractCount },
+    { name: "Confirmed", value: confirmedRevenue, color: "#00929C", count: confirmedRows.length },
     { name: "Contingent", value: contingentRevenue, color: "#f59e0b", count: contingentCount },
   ].filter((d) => d.value > 0);
 
@@ -565,9 +620,9 @@ export default async function AnalyticsPage({
     count: r.count,
   }));
 
-  // Shows chart data
+  // Shows chart data — prefer venue_name for easier visual identification.
   const showsChartData = shows.slice(0, 6).map((s) => ({
-    name: s.name,
+    name: s.venue_name ?? s.name,
     revenue: s.revenue,
     count: s.count,
   }));
@@ -644,14 +699,10 @@ export default async function AnalyticsPage({
             accentColor="#d97706"
           />
           <KpiCard
-            label="Pipeline"
-            value={formatCurrency(pipelineValue)}
-            sublabel={
-              pipelineCount === 0
-                ? undefined
-                : `${pipelineCount} open · ${oldestQuoteDays}d oldest`
-            }
-            accentColor="#7c3aed"
+            label="Net Profit"
+            value={formatCurrency(netProfit)}
+            sublabel={totalShowCost > 0 ? `${formatCurrency(totalShowCost)} cost` : undefined}
+            accentColor={netProfit >= 0 ? "#059669" : "#dc2626"}
           />
         </div>
 
@@ -702,10 +753,10 @@ export default async function AnalyticsPage({
             <CardTitle className="text-base">Revenue Breakdown</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <RevenueBreakdownDonut data={breakdownData} total={totalRevenue} />
+            <RevenueBreakdownDonut data={breakdownData} total={grossRevenueAll} />
             <div className="pt-4 border-t border-slate-100 space-y-2 text-sm">
             <div className="flex justify-between items-center py-1 border-b border-slate-100">
-              <span className="text-slate-600">Confirmed Contracts ({contractCount})</span>
+              <span className="text-slate-600">Confirmed Contracts ({confirmedRows.length})</span>
               <span className="font-semibold text-[#00929C]">{formatCurrency(confirmedRevenue)}</span>
             </div>
             <div className="flex justify-between items-center py-1 border-b border-slate-100">
@@ -714,7 +765,7 @@ export default async function AnalyticsPage({
             </div>
             <div className="flex justify-between items-center pt-1 font-bold">
               <span className="text-slate-900">Total Gross Revenue</span>
-              <span className="text-slate-900">{formatCurrency(totalRevenue)}</span>
+              <span className="text-slate-900">{formatCurrency(grossRevenueAll)}</span>
             </div>
             </div>
           </CardContent>
@@ -940,7 +991,7 @@ export default async function AnalyticsPage({
             <div className="flex items-baseline justify-between gap-3">
               <CardTitle className="text-lg">Shows</CardTitle>
               {shows.length > 0 && (
-                <p className="text-xs text-slate-500">Top {Math.min(6, shows.length)} by revenue</p>
+                <p className="text-xs text-slate-500">Top {Math.min(6, shows.length)} by profit</p>
               )}
             </div>
           </CardHeader>
@@ -963,6 +1014,7 @@ export default async function AnalyticsPage({
                       <th className="text-right py-3 px-4 font-medium text-slate-500">Revenue</th>
                       <th className="text-right py-3 px-4 font-medium text-slate-500">Deposits</th>
                       <th className="text-right py-3 px-4 font-medium text-slate-500">Cost</th>
+                      <th className="text-right py-3 px-4 font-medium text-slate-500">Net Profit</th>
                       <th className="text-right py-3 px-4 font-medium text-slate-500">ROI %</th>
                       <th className="text-right py-3 px-4 font-medium text-slate-500">Close %</th>
                     </tr>
@@ -973,15 +1025,20 @@ export default async function AnalyticsPage({
                       return (
                       <tr key={show.id} className="border-b border-slate-100">
                         <td className="py-3 px-4">
-                          <p className="font-medium text-slate-900">{show.name}</p>
-                          {show.start_date && (
-                            <p className="text-xs text-slate-400">
-                              {new Date(show.start_date).toLocaleDateString("en-US", {
-                                month: "short",
-                                day: "numeric",
-                              })}
-                            </p>
-                          )}
+                          <p className="font-medium text-slate-900">{show.venue_name ?? show.name}</p>
+                          <p className="text-xs text-slate-400">
+                            {[
+                              show.city && show.state ? `${show.city}, ${show.state}` : show.city,
+                              show.start_date
+                                ? new Date(show.start_date).toLocaleDateString("en-US", {
+                                    month: "short",
+                                    day: "numeric",
+                                  })
+                                : null,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </p>
                         </td>
                         <td className="py-3 px-4 text-right text-slate-700">{show.count}</td>
                         <td className="py-3 px-4 text-right font-semibold text-[#00929C]">
@@ -992,6 +1049,9 @@ export default async function AnalyticsPage({
                         </td>
                         <td className="py-3 px-4 text-right text-slate-600">
                           {show.cost != null ? formatCurrency(show.cost) : <span className="text-slate-300">—</span>}
+                        </td>
+                        <td className={`py-3 px-4 text-right ${show.profit == null ? "text-slate-300" : show.profit >= 0 ? "font-semibold text-emerald-600" : "font-semibold text-red-600"}`}>
+                          {show.profit != null ? formatCurrency(show.profit) : "—"}
                         </td>
                         <td className={`py-3 px-4 text-right ${roiColor(show.revenue, show.cost)}`}>
                           {roiPct(show.revenue, show.cost)}

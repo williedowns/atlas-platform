@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { ATLAS_TIMEZONE } from "@/lib/dates";
 
 interface StatusChip {
   label: string;
@@ -18,7 +19,10 @@ interface AppHeaderProps {
 }
 
 function formatDateShort(d: Date): string {
+  // Force Atlas's local tz (America/Chicago). Without timeZone, server SSR
+  // formats in UTC and the header flips to "tomorrow" after 7pm CT.
   return d.toLocaleDateString("en-US", {
+    timeZone: ATLAS_TIMEZONE,
     weekday: "short",
     month: "short",
     day: "numeric",
