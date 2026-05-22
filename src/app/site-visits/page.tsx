@@ -7,6 +7,9 @@ import { AppHeader } from "@/components/ui/AppHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { getViewAsContext } from "@/lib/view-as";
+import { ReassignButton } from "@/components/site-visits/ReassignButton";
+import { COORDINATOR_EMAIL, OVERFLOW_EMAIL } from "@/lib/concrete-pad-team";
+import { getProfileByEmail } from "@/lib/profile-lookup";
 
 type CustomerJoin = {
   first_name: string | null;
@@ -23,6 +26,7 @@ interface SiteVisitRow {
   contract_number: string | null;
   created_at: string | null;
   concrete_estimate_notes: string | null;
+  concrete_estimate_assigned_to: string | null;
   customer: CustomerJoin;
   show: ShowJoin;
   sales_rep: SalesRepJoin;
@@ -67,12 +71,25 @@ export default async function SiteVisitsPage() {
     ["admin", "manager", "bookkeeper"].includes(effectiveRole ?? "");
   const filterUserId = viewAs.isImpersonatingUser ? viewAs.effectiveUserId : user.id;
 
+  // Only the coordinator (Alex) sees the reassign button. We can tell from
+  // the already-authenticated user.email — no need for an extra profile
+  // lookup unless the current viewer actually IS Alex. When they are,
+  // alexUserId is just user.id, and we only need to fetch Chip's UUID for
+  // the "Send to Chip" target. Non-Alex page loads skip both queries.
+  const isCurrentUserAlex = user.email?.toLowerCase() === COORDINATOR_EMAIL;
+  const alexUserId = isCurrentUserAlex ? user.id : null;
+  let chipUserId: string | null = null;
+  if (isCurrentUserAlex) {
+    const chipProfile = await getProfileByEmail(supabase, OVERFLOW_EMAIL);
+    chipUserId = chipProfile?.id ?? null;
+  }
+
   // Parents only — addon (child) contracts inherit nothing here; we want the
   // original sale that still needs a concrete site check.
   let query = supabase
     .from("contracts")
     .select(`
-      id, contract_number, created_at, concrete_estimate_notes,
+      id, contract_number, created_at, concrete_estimate_notes, concrete_estimate_assigned_to,
       customer:customers(first_name, last_name, phone, email),
       show:shows(name),
       sales_rep:profiles!contracts_sales_rep_id_fkey(full_name)
@@ -82,8 +99,13 @@ export default async function SiteVisitsPage() {
     .order("created_at", { ascending: true })
     .limit(200);
 
+  // Non-admin scope: show pending site visits where the current user is
+  // either the original sales rep OR the assigned concrete-pad estimator
+  // (Alex / Ryan / Chip). Admins/managers/bookkeepers see everything.
   if (!isAdminEffective && filterUserId) {
-    query = query.eq("sales_rep_id", filterUserId);
+    query = query.or(
+      `sales_rep_id.eq.${filterUserId},concrete_estimate_assigned_to.eq.${filterUserId}`,
+    );
   }
 
   const { data: rowsRaw } = await query;
@@ -185,12 +207,21 @@ export default async function SiteVisitsPage() {
                             </p>
                           </td>
                           <td className="px-4 py-3 align-top text-right">
-                            <Link
-                              href={`/contracts/new?from_contract=${r.id}&type=concrete-addon`}
-                              className="inline-flex items-center justify-center rounded-lg bg-amber-600 px-3 py-2 text-xs font-bold text-white hover:bg-amber-700 active:bg-amber-800 transition-colors whitespace-nowrap"
-                            >
-                              Create Concrete Contract
-                            </Link>
+                            <div className="inline-flex items-center gap-2">
+                              <ReassignButton
+                                contractId={r.id}
+                                currentAssignedTo={r.concrete_estimate_assigned_to}
+                                isCurrentUserAlex={isCurrentUserAlex}
+                                alexUserId={alexUserId}
+                                chipUserId={chipUserId}
+                              />
+                              <Link
+                                href={`/contracts/new?from_contract=${r.id}&type=concrete-addon`}
+                                className="inline-flex items-center justify-center rounded-lg bg-amber-600 px-3 py-2 text-xs font-bold text-white hover:bg-amber-700 active:bg-amber-800 transition-colors whitespace-nowrap"
+                              >
+                                Create Concrete Contract
+                              </Link>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -242,12 +273,21 @@ export default async function SiteVisitsPage() {
                           </span>
                         )}
                       </p>
-                      <Link
-                        href={`/contracts/new?from_contract=${r.id}&type=concrete-addon`}
-                        className="mt-3 inline-flex items-center justify-center rounded-lg bg-amber-600 px-3 py-2 text-xs font-bold text-white hover:bg-amber-700 active:bg-amber-800 transition-colors w-full"
-                      >
-                        Create Concrete Contract
-                      </Link>
+                      <div className="mt-3 flex flex-col gap-2">
+                        <ReassignButton
+                          contractId={r.id}
+                          currentAssignedTo={r.concrete_estimate_assigned_to}
+                          isCurrentUserAlex={isCurrentUserAlex}
+                          alexUserId={alexUserId}
+                          chipUserId={chipUserId}
+                        />
+                        <Link
+                          href={`/contracts/new?from_contract=${r.id}&type=concrete-addon`}
+                          className="inline-flex items-center justify-center rounded-lg bg-amber-600 px-3 py-2 text-xs font-bold text-white hover:bg-amber-700 active:bg-amber-800 transition-colors w-full"
+                        >
+                          Create Concrete Contract
+                        </Link>
+                      </div>
                     </li>
                   );
                 })}

@@ -7,6 +7,7 @@ import {
   isDeliveryDiagramFilled,
   isDeliveryDiagramRequired,
 } from "@/lib/delivery-diagram-requirement";
+import { assignConcretePadEstimate } from "@/lib/concrete-pad-assignment";
 
 export async function POST(req: Request) {
   const supabase = await createClient();
@@ -119,6 +120,18 @@ export async function POST(req: Request) {
     customerId = newCustomer.id;
   }
 
+  // Concrete pad estimate auto-routing: when the contract is flagged for a
+  // site visit AND this isn't an addon spawned from a parent (addons inherit
+  // their parent's site-visit decision and clear the parent's pending flag
+  // below), route the visit to a field rep based on customer state.
+  // OK/KS → Ryan Frank, others → Alex Broyles. Alex can reassign manually
+  // from the Site Visits page. Null result = unassigned; row still appears
+  // in Site Visits without an owner.
+  const concreteEstimateAssignedTo =
+    concrete_estimate_pending && !parent_contract_id
+      ? await assignConcretePadEstimate(supabase, customer?.state)
+      : null;
+
   const contractNumber = generateContractNumber();
   const financingArr = Array.isArray(financing) ? financing : [];
   // Only GreenSky/WF (deduct_from_balance !== false) reduce balance at POS; Foundation carries to balance
@@ -171,6 +184,7 @@ export async function POST(req: Request) {
       delivery_timeframe_updated_by: delivery_timeframe?.trim() ? user.id : null,
       concrete_estimate_pending: !!concrete_estimate_pending,
       concrete_estimate_notes: concrete_estimate_pending ? (concrete_estimate_notes?.trim() || null) : null,
+      concrete_estimate_assigned_to: concreteEstimateAssignedTo,
       parent_contract_id: parent_contract_id ?? null,
       signature_metadata: {
         ip_address: ip,
