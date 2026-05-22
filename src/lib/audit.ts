@@ -5,6 +5,7 @@ export type AuditAction =
   | "contract.signed"
   | "contract.status_changed"
   | "contract.cancelled"
+  | "contract.deleted"
   | "contract.submission_failed"
   | "contract.recovered_by_lookup"
   | "contract.idempotent_replay"

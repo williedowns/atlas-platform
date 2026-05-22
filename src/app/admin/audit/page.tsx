@@ -18,6 +18,7 @@ const ACTION_LABELS: Record<AuditAction, { label: string; variant: "default" | "
   "contract.signed":           { label: "Contract Signed",        variant: "success" },
   "contract.status_changed":   { label: "Contract Status",        variant: "secondary" },
   "contract.cancelled":        { label: "Contract Cancelled",     variant: "destructive" },
+  "contract.deleted":          { label: "Contract Deleted",       variant: "destructive" },
   "contract.submission_failed":{ label: "Submission Failed",      variant: "destructive" },
   "contract.recovered_by_lookup":{ label: "Recovered (Lookup)",   variant: "warning" },
   "contract.idempotent_replay":{ label: "Idempotent Replay",      variant: "warning" },

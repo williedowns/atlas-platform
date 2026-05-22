@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { ContingentToggle } from "@/components/contracts/ContingentToggle";
 import { CancelContractButton } from "@/components/contracts/CancelContractButton";
+import { DeleteContractButton } from "@/components/contracts/DeleteContractButton";
 import { SendForSignatureButton } from "@/components/contracts/SendForSignatureButton";
 import { TaxRefundButton } from "@/components/contracts/TaxRefundButton";
 import { CertViewButton } from "@/components/contracts/CertViewButton";
@@ -1011,6 +1012,12 @@ export default async function ContractDetailPage({
               contractId={contract.id}
               contractNumber={contract.contract_number}
               depositPaid={contract.deposit_paid ?? 0}
+            />
+          )}
+          {profile?.role === "admin" && (
+            <DeleteContractButton
+              contractId={contract.id}
+              contractNumber={contract.contract_number}
             />
           )}
           {canRecordRefund && "tax_refund_amount" in contract && (contract.tax_amount > 0 || contract.tax_refund_amount != null) && (
