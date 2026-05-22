@@ -4,6 +4,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { InviteUserButton } from "@/components/admin/InviteUserButton";
 import { UserRoleEditor } from "@/components/admin/UserRoleEditor";
+import { UserEmailEditor } from "@/components/admin/UserEmailEditor";
 import { GetLoginLinkButton } from "@/components/admin/GetLoginLinkButton";
 import { SetPasswordButton } from "@/components/admin/SetPasswordButton";
 
@@ -84,7 +85,11 @@ export default async function AdminUsersPage() {
                 <p className="font-semibold text-slate-900 truncate">
                   {p.full_name || <span className="text-slate-400 italic">No name</span>}
                 </p>
-                <p className="text-xs text-slate-500 truncate">{p.email}</p>
+                <UserEmailEditor
+                  userId={p.id}
+                  currentEmail={p.email}
+                  currentUserId={user.id}
+                />
               </div>
 
               {/* Role + Actions */}
