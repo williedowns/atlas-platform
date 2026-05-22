@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { logAction } from "@/lib/audit";
 
 // Hard-delete a contract. Admin only — managers use the cancel route for
@@ -55,6 +56,12 @@ export async function DELETE(
     req,
   });
 
+  // Use the service-role client for the mutations. The contracts table has
+  // no DELETE policy under RLS, so deletes via the user-scoped client are
+  // silently filtered to 0 rows. Auth check above is the gate; the admin
+  // client just lets us actually execute the cleanup.
+  const admin = createAdminClient();
+
   // 2 — Release any assigned inventory units back to stock.
   const lineItems = Array.isArray(contract.line_items) ? contract.line_items : [];
   const unitIds = lineItems
@@ -62,37 +69,45 @@ export async function DELETE(
     .filter(Boolean) as string[];
 
   if (unitIds.length > 0) {
-    await supabase
+    await admin
       .from("inventory_units")
       .update({ status: "at_location", contract_id: null })
       .in("id", unitIds);
   }
   // Also catch units pointing at the contract that aren't tracked in line_items.
-  await supabase
+  await admin
     .from("inventory_units")
     .update({ status: "at_location", contract_id: null })
     .eq("contract_id", id);
 
   // 3 — Remove dependent rows that don't cascade.
   // payments, delivery_work_orders both have NO ACTION on FK to contracts.
-  await supabase.from("payments").delete().eq("contract_id", id);
-  await supabase.from("delivery_work_orders").delete().eq("contract_id", id);
+  await admin.from("payments").delete().eq("contract_id", id);
+  await admin.from("delivery_work_orders").delete().eq("contract_id", id);
 
   // 4 — Detach any child add-on contracts (e.g. concrete pad add-ons) so
   // their FK doesn't block the parent delete.
-  await supabase
+  await admin
     .from("contracts")
     .update({ parent_contract_id: null })
     .eq("parent_contract_id", id);
 
-  // 5 — Delete the contract row.
-  const { error: deleteError } = await supabase
+  // 5 — Delete the contract row. Verify a row was actually removed; RLS or
+  // an FK we didn't account for can produce a silent 0-row delete.
+  const { data: deletedRows, error: deleteError } = await admin
     .from("contracts")
     .delete()
-    .eq("id", id);
+    .eq("id", id)
+    .select("id");
 
   if (deleteError) {
     return NextResponse.json({ error: deleteError.message }, { status: 500 });
+  }
+  if (!deletedRows || deletedRows.length === 0) {
+    return NextResponse.json(
+      { error: "Delete affected 0 rows — likely an FK constraint we missed." },
+      { status: 500 },
+    );
   }
 
   return NextResponse.json({
