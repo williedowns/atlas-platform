@@ -220,12 +220,15 @@ export default async function DashboardPage() {
   if (!isAdmin) contingentQuery.eq("sales_rep_id", effectiveUserId);
 
   // ── Recent quotes ─────────────────────────────────────────────────────────
+  // Over-fetch (20) so the converted-quote filter below has headroom before
+  // slicing to 5 for display. customer_id is selected so we can match it
+  // against the customers who already have a non-quote contract.
   const quotesQuery = supabase
     .from("contracts")
-    .select("id, contract_number, status, total, created_at, customer:customers(first_name, last_name), show:shows(name)")
+    .select("id, contract_number, status, total, created_at, customer_id, customer:customers(first_name, last_name), show:shows(name)")
     .eq("status", "quote")
     .order("created_at", { ascending: false })
-    .limit(5);
+    .limit(20);
 
   if (!isAdmin) quotesQuery.eq("sales_rep_id", effectiveUserId);
 
@@ -289,8 +292,49 @@ export default async function DashboardPage() {
 
   const confirmedContracts = (confirmedContractsRaw ?? []) as any[];
   const contingentContracts = (contingentContractsRaw ?? []) as any[];
-  const recentQuotes = (recentQuotesRaw ?? []) as any[];
+  const recentQuotesAll = (recentQuotesRaw ?? []) as any[];
   const leads = (leadsRaw ?? []) as any[];
+
+  // Hide quotes that have already been converted into a contract for the same
+  // customer. Mirrors shows/[id]/floor/page.tsx: convert-via-/contracts/new
+  // keeps customer_id, but rebuild-from-scratch creates a new customer row
+  // with the same name — so match on both customer_id AND lowercased name.
+  const quoteCustomerKey = (c: { customer?: unknown }): string => {
+    const cust = Array.isArray(c.customer) ? c.customer[0] : c.customer;
+    const first = ((cust as { first_name?: string } | null)?.first_name ?? "").trim().toLowerCase();
+    const last = ((cust as { last_name?: string } | null)?.last_name ?? "").trim().toLowerCase();
+    return `${first}|${last}`;
+  };
+
+  const quoteCustomerIds = Array.from(
+    new Set(recentQuotesAll.map((q) => q.customer_id).filter((id): id is string => Boolean(id)))
+  );
+
+  let convertedCustomerIds = new Set<string>();
+  let convertedNameKeys = new Set<string>();
+  if (quoteCustomerIds.length) {
+    const convertedQuery = supabase
+      .from("contracts")
+      .select("customer_id, customer:customers(first_name, last_name)")
+      .in("customer_id", quoteCustomerIds)
+      .not("status", "in", '("quote","draft","cancelled")');
+    if (!isAdmin) convertedQuery.eq("sales_rep_id", effectiveUserId);
+    const { data: convertedRows } = await convertedQuery;
+    for (const row of (convertedRows ?? []) as { customer_id: string | null; customer?: unknown }[]) {
+      if (row.customer_id) convertedCustomerIds.add(row.customer_id);
+      const key = quoteCustomerKey(row);
+      if (key !== "|") convertedNameKeys.add(key);
+    }
+  }
+
+  const recentQuotes = recentQuotesAll
+    .filter((q) => {
+      if (q.customer_id && convertedCustomerIds.has(q.customer_id)) return false;
+      const key = quoteCustomerKey(q);
+      if (key !== "|" && convertedNameKeys.has(key)) return false;
+      return true;
+    })
+    .slice(0, 5);
 
   // Pending site visits — parent contracts flagged for a concrete estimate
   // at Step 5. Same role/scope rules as the contracts list: admins/managers/
