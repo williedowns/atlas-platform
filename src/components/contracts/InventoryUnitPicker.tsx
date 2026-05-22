@@ -333,7 +333,15 @@ export function InventoryUnitPicker({
                     type="file"
                     accept="image/*"
                     multiple
-                    onChange={(e) => setSkipBlemFiles(Array.from(e.target.files ?? []))}
+                    onChange={(e) => {
+                      const incoming = Array.from(e.target.files ?? []);
+                      // Append to existing — iOS camera capture returns one
+                      // file per "Take Photo" invocation, so replacing the
+                      // array clobbers prior camera shots. Reset the input
+                      // value afterward so the same file can be re-selected.
+                      setSkipBlemFiles((prev) => [...prev, ...incoming]);
+                      e.target.value = "";
+                    }}
                     className="mt-1 block w-full text-xs text-slate-600 file:mr-2 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-red-100 file:text-red-700 file:font-semibold"
                   />
                   {skipBlemFiles.length > 0 && (
