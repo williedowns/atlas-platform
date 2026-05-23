@@ -30,6 +30,11 @@ export async function PATCH(
     return NextResponse.json({ error: "role or email is required" }, { status: 400 });
   }
 
+  // Profile writes must bypass RLS — profiles_update_own only allows a user
+  // to update their own row, so the cookie-auth client silently no-ops when
+  // an admin tries to edit another user. Use the service-role client.
+  const admin = createAdminClient();
+
   if (email !== undefined) {
     const trimmed = email.trim().toLowerCase();
     if (!EMAIL_RE.test(trimmed)) {
@@ -43,7 +48,6 @@ export async function PATCH(
       );
     }
 
-    const admin = createAdminClient();
     const { error: authErr } = await admin.auth.admin.updateUserById(id, {
       email: trimmed,
       email_confirm: true,
@@ -52,21 +56,29 @@ export async function PATCH(
       return NextResponse.json({ error: authErr.message }, { status: 500 });
     }
 
-    const { error: profErr } = await supabase
+    const { data: emailRows, error: profErr } = await admin
       .from("profiles")
       .update({ email: trimmed })
-      .eq("id", id);
+      .eq("id", id)
+      .select("id");
     if (profErr) {
       return NextResponse.json({ error: profErr.message }, { status: 500 });
+    }
+    if (!emailRows || emailRows.length === 0) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
   }
 
   if (role !== undefined) {
-    const { error } = await supabase
+    const { data: roleRows, error } = await admin
       .from("profiles")
       .update({ role })
-      .eq("id", id);
+      .eq("id", id)
+      .select("id");
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!roleRows || roleRows.length === 0) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
   }
 
   return NextResponse.json({ success: true });
