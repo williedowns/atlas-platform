@@ -63,7 +63,7 @@ export default async function ContractsPage({
       id, contract_number, status, is_contingent,
       total, subtotal, discount_total, tax_amount, deposit_paid, balance_due,
       payment_method, notes, line_items, created_at,
-      show_id,
+      show_id, customer_id,
       customer:customers(first_name, last_name, phone, email, address, city, state, zip),
       show:shows(name),
       location:locations(name)
@@ -96,7 +96,34 @@ export default async function ContractsPage({
       return q;
     })
   );
-  const contracts = pageResults.flatMap((r) => r.data ?? []);
+  const allRows = pageResults.flatMap((r) => r.data ?? []) as any[];
+
+  // Hide quotes that have already been converted into a contract for the same
+  // customer. Mirrors src/app/dashboard/page.tsx + shows/[id]/floor/page.tsx:
+  // convert-via-/contracts/new keeps customer_id, but rebuild-from-scratch
+  // creates a new customer row with the same name — match on both.
+  const quoteCustomerKey = (c: any): string => {
+    const cust = Array.isArray(c.customer) ? c.customer[0] : c.customer;
+    const first = (cust?.first_name ?? "").trim().toLowerCase();
+    const last = (cust?.last_name ?? "").trim().toLowerCase();
+    return `${first}|${last}`;
+  };
+  const convertedCustomerIds = new Set<string>();
+  const convertedNameKeys = new Set<string>();
+  for (const r of allRows) {
+    if (r.status === "quote" || r.status === "draft" || r.status === "cancelled") continue;
+    if (r.customer_id) convertedCustomerIds.add(r.customer_id);
+    const key = quoteCustomerKey(r);
+    if (key !== "|") convertedNameKeys.add(key);
+  }
+  const contracts = allRows.filter((c) => {
+    if (c.status !== "quote") return true;
+    if (c.customer_id && convertedCustomerIds.has(c.customer_id)) return false;
+    const key = quoteCustomerKey(c);
+    if (key !== "|" && convertedNameKeys.has(key)) return false;
+    return true;
+  });
+
   const activeShow = await getActiveShow();
   // Only pre-filter to the active show when at least one contract actually
   // belongs to it. Otherwise the list silently hides every row and looks blank.
