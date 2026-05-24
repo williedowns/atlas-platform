@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { SendForSignatureButton } from "@/components/contracts/SendForSignatureButton";
+import { PdfDownloadButton } from "@/components/contracts/PdfDownloadButton";
 
 export default async function QuoteDetailPage({
   params,
@@ -63,18 +64,16 @@ export default async function QuoteDetailPage({
 
         {/* ── Action Buttons ─────────────────────────────────── */}
         <div className="grid grid-cols-2 gap-3">
-          <a
-            href={`/api/contracts/${id}/pdf`}
-            target="_blank"
-            rel="noopener noreferrer"
-            download
-            className="flex items-center justify-center gap-2 h-14 rounded-xl border-2 border-slate-300 bg-white text-slate-700 font-semibold text-sm hover:border-[#00929C] hover:text-[#00929C] transition-colors"
+          <PdfDownloadButton
+            contractId={id}
+            filename={`Quote-${quote.contract_number}.pdf`}
+            className="flex items-center justify-center gap-2 h-14 rounded-xl border-2 border-slate-300 bg-white text-slate-700 font-semibold text-sm hover:border-[#00929C] hover:text-[#00929C] transition-colors disabled:opacity-60"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0 0l-4-4m4 4l4-4" />
             </svg>
-            Print / PDF
-          </a>
+            Download PDF
+          </PdfDownloadButton>
           <Link
             href={`/contracts/new?from=${id}`}
             className="flex items-center justify-center gap-2 h-14 rounded-xl bg-[#00929C] text-white font-semibold text-sm hover:bg-[#007279] transition-colors shadow-md"

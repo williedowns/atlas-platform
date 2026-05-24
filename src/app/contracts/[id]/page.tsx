@@ -23,6 +23,7 @@ import { evaluateReadiness, blockerLabels } from "@/lib/readiness";
 import FinancingDetailsCard from "@/components/contracts/FinancingDetailsCard";
 import ModifyContractCard from "@/components/contracts/ModifyContractCard";
 import CustomerInfoEditor from "@/components/contracts/CustomerInfoEditor";
+import { PdfDownloadButton } from "@/components/contracts/PdfDownloadButton";
 import LineItemsEditor from "@/components/contracts/LineItemsEditor";
 import DiscountsEditor from "@/components/contracts/DiscountsEditor";
 import NotesEditor from "@/components/contracts/NotesEditor";
@@ -262,19 +263,17 @@ export default async function ContractDetailPage({
             "#64748b",
         }}
         actions={
-          <a
-            href={`/api/contracts/${contract.id}/pdf`}
-            target="_blank"
-            rel="noopener noreferrer"
-            download
-            aria-label="Download PDF"
-            className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+          <PdfDownloadButton
+            contractId={contract.id}
+            filename={`Contract-${contract.contract_number}.pdf`}
+            ariaLabel="Download PDF"
             title="Download PDF"
+            className="p-2 rounded-lg hover:bg-white/10 transition-colors disabled:opacity-60"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0 0l-4-4m4 4l4-4" />
             </svg>
-          </a>
+          </PdfDownloadButton>
         }
       />
 
@@ -976,11 +975,13 @@ export default async function ContractDetailPage({
               </Button>
             </Link>
           )}
-          <a href={`/api/contracts/${id}/pdf`} target="_blank" rel="noopener noreferrer" download className="block">
-            <Button variant="outline" size="lg" className="w-full">
-              Download PDF
-            </Button>
-          </a>
+          <PdfDownloadButton
+            contractId={id}
+            filename={`Contract-${contract.contract_number}.pdf`}
+            className="w-full inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-11 px-8"
+          >
+            Download PDF
+          </PdfDownloadButton>
           {Array.isArray(contract.contract_pdf_archive_urls) && contract.contract_pdf_archive_urls.length > 0 && (
             <div className="text-xs text-slate-600 px-1">
               <p className="font-semibold mb-1">
