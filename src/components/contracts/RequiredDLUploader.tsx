@@ -2,6 +2,51 @@
 
 import { useEffect, useState } from "react";
 
+// Vercel caps serverless request bodies at 4.5MB. iPad/iPhone photos at full
+// resolution routinely exceed that and the upload fails with a generic error.
+// Downscale large images client-side before sending — keeps text legible on a
+// driver's license while staying well under the limit.
+const COMPRESS_THRESHOLD_BYTES = 1_500_000;
+const MAX_DIMENSION_PX = 2000;
+const JPEG_QUALITY = 0.85;
+
+async function downscaleImage(f: File): Promise<File> {
+  if (!f.type.startsWith("image/")) return f;
+  if (f.size < COMPRESS_THRESHOLD_BYTES) return f;
+  try {
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(f);
+    });
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = () => reject(new Error("image decode failed"));
+      i.src = dataUrl;
+    });
+    const longest = Math.max(img.width, img.height);
+    const scale = longest > MAX_DIMENSION_PX ? MAX_DIMENSION_PX / longest : 1;
+    const w = Math.round(img.width * scale);
+    const h = Math.round(img.height * scale);
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return f;
+    ctx.drawImage(img, 0, 0, w, h);
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, "image/jpeg", JPEG_QUALITY)
+    );
+    if (!blob || blob.size >= f.size) return f;
+    const baseName = f.name.replace(/\.[^.]+$/, "") || "image";
+    return new File([blob], `${baseName}.jpg`, { type: "image/jpeg" });
+  } catch {
+    return f;
+  }
+}
+
 interface CustomerFile {
   id: string;
   filename: string;
@@ -52,8 +97,9 @@ export default function RequiredDLUploader({ customerId, contractId, category, l
   async function uploadFile(f: File) {
     setUploading(true);
     setError(null);
+    const toSend = await downscaleImage(f);
     const fd = new FormData();
-    fd.append("file", f);
+    fd.append("file", toSend);
     fd.append("customer_id", customerId);
     fd.append("category", category);
     if (contractId) fd.append("contract_id", contractId);
