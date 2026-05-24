@@ -277,18 +277,28 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
     setShowDiscountForm(false);
   }
 
-  // Discount Calculator: given a target out-the-door price (pre-tax — subtotal
-  // after discount, plus CC surcharge if enabled), compute the discount that
-  // lands the cart there. Tax (items tax + doc-fee tax) stacks on top of OTD.
+  // Discount Calculator: given the TOTAL out-the-door price the rep promised
+  // (tax included — what the customer actually pays per the contract),
+  // compute the discount that lands the cart's `total` exactly there.
+  // CC surcharge is a separate per-payment fee and intentionally excluded —
+  // it isn't part of the contract total or the OTD promise.
   //
-  //   S = current subtotal, D = discount, r_s = surcharge_rate
-  //   target = (S − D)(1 + r_s)
-  //   D      = S − target / (1 + r_s)
+  //   I = items subtotal, F = doc fee (0 if waived), S = I + F = draft.subtotal
+  //   D = discount, r = tax_rate, target = desired final total
+  //
+  //   Non-exempt:  total = (S − D)(1 + r)        → D = S − target / (1 + r)
+  //   Tax-exempt:  total = (S − D) + F × r       → D = S + F × r − target
   function computeCalculatedDiscount(target: number): number | null {
     if (isNaN(target) || target <= 0) return null;
-    const r_s = draft.surcharge_enabled ? (draft.surcharge_rate ?? 0) : 0;
-    const desiredPostDiscountSubtotal = target / (1 + r_s);
-    const discountAmt = Math.round((draft.subtotal - desiredPostDiscountSubtotal) * 100) / 100;
+    const r = draft.tax_rate ?? 0;
+    const F = draft.doc_fee_waived ? 0 : (draft.doc_fee_amount ?? 0);
+    let discountAmt: number;
+    if (draft.tax_exempt) {
+      discountAmt = draft.subtotal + F * r - target;
+    } else {
+      discountAmt = draft.subtotal - target / (1 + r);
+    }
+    discountAmt = Math.round(discountAmt * 100) / 100;
     if (discountAmt <= 0 || discountAmt >= draft.subtotal) return null;
     return discountAmt;
   }
@@ -727,22 +737,22 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
         const previewDiscount = computeCalculatedDiscount(targetNum);
         const hasInvalidTarget = targetPrice !== "" && !isNaN(targetNum) && targetNum > 0 && previewDiscount === null;
         const surchargeNote = draft.surcharge_enabled
-          ? ` (incl. ${(draft.surcharge_rate * 100).toFixed(1)}% CC surcharge)`
+          ? ` CC surcharge (${(draft.surcharge_rate * 100).toFixed(1)}%) is charged separately at swipe.`
           : "";
         return (
           <div className="border-t border-slate-200 pt-4">
             <h3 className="text-lg font-semibold text-slate-700 mb-1">Discount Calculator</h3>
             <p className="text-sm text-slate-500 mb-3">
-              Enter the pre-tax out-the-door price you promised the customer. We'll work out the discount{surchargeNote}. Tax is added on top.
+              Enter the total out-the-door price you promised the customer — tax included. We'll work out the discount so the contract total lands exactly there.{surchargeNote}
             </p>
             <Card className="mb-4">
               <CardContent className="p-4 space-y-3">
                 <div className="flex justify-between items-center text-sm">
-                  <span className="text-slate-600">Current subtotal (before discount)</span>
-                  <span className="font-semibold text-slate-900">{formatCurrency(draft.subtotal)}</span>
+                  <span className="text-slate-600">Current total (with tax)</span>
+                  <span className="font-semibold text-slate-900">{formatCurrency(draft.total)}</span>
                 </div>
                 <Input
-                  label="Out-the-door price you promised ($)"
+                  label="Out-the-door price you promised ($, incl. tax)"
                   type="number"
                   min="0"
                   step="0.01"
