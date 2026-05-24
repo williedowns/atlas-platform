@@ -183,6 +183,11 @@ interface ContractStore {
   setCustomer: (customer: Customer) => void;
   addLineItem: (product: Product, price: number, waived?: boolean, shell_color?: string, cabinet_color?: string) => void;
   addLineItemWithUnit: (product: Product, price: number, unit: InventoryUnitDetails) => void;
+  // Add one Crushed Granite Base line per spa in cart, length locked to each
+  // spa's longest side. Skips any spa that already has a linked granite line
+  // (idempotent — re-clickable safely after adding more spas). Returns the
+  // count of granite lines added.
+  addGraniteForSpas: (spas: Product[], price?: number) => number;
   // Add a blem line for a unit NOT in inventory (sale-time fallback).
   // Photos must already be uploaded to the blem-photos bucket — the caller
   // passes the public URLs and an optional unit identifier (e.g. user-typed
@@ -330,9 +335,6 @@ export const useContractStore = create<ContractStore>()(
             ...(cabinet_color ? { cabinet_color } : {}),
           };
           const nextLineItems = [...state.draft.line_items, spaLine];
-          if (isSpaWithDimensions(product)) {
-            nextLineItems.push(buildGraniteLineItem(product));
-          }
           const newDraft = { ...state.draft, line_items: nextLineItems };
           return { draft: { ...newDraft, ...computeTotalsFromDraft(newDraft) } };
         });
@@ -366,9 +368,6 @@ export const useContractStore = create<ContractStore>()(
               : {}),
           };
           const nextLineItems = [...state.draft.line_items, spaLine];
-          if (isSpaWithDimensions(product)) {
-            nextLineItems.push(buildGraniteLineItem(product));
-          }
           const newDraft = { ...state.draft, line_items: nextLineItems };
           return { draft: { ...newDraft, ...computeTotalsFromDraft(newDraft) } };
         });
@@ -397,12 +396,29 @@ export const useContractStore = create<ContractStore>()(
             blem_photo_urls: blem.photo_urls,
           };
           const nextLineItems = [...state.draft.line_items, spaLine];
-          if (isSpaWithDimensions(product)) {
-            nextLineItems.push(buildGraniteLineItem(product));
-          }
           const newDraft = { ...state.draft, line_items: nextLineItems };
           return { draft: { ...newDraft, ...computeTotalsFromDraft(newDraft) } };
         });
+      },
+
+      addGraniteForSpas: (spas, price) => {
+        let added = 0;
+        set((state) => {
+          const linkedSpaIds = new Set(
+            state.draft.line_items
+              .map((li) => li.linked_spa_product_id)
+              .filter((id): id is string => !!id)
+          );
+          const newGraniteLines = spas
+            .filter((s) => isSpaWithDimensions(s) && !linkedSpaIds.has(s.id))
+            .map((s) => buildGraniteLineItem(s, price));
+          added = newGraniteLines.length;
+          if (added === 0) return state;
+          const nextLineItems = [...state.draft.line_items, ...newGraniteLines];
+          const newDraft = { ...state.draft, line_items: nextLineItems };
+          return { draft: { ...newDraft, ...computeTotalsFromDraft(newDraft) } };
+        });
+        return added;
       },
 
       markBlemPhotosViewed: (blem_line_id, viewed_at) =>

@@ -10,7 +10,7 @@ import { formatCurrency } from "@/lib/utils";
 import type { Product, DiscountType, ContractDiscount } from "@/types";
 import { isSpaProduct, isOptionAvailableForModel } from "@/lib/inventory-constants";
 import { InventoryUnitPicker } from "@/components/contracts/InventoryUnitPicker";
-import { GRANITE_PRICE_TIERS } from "@/lib/granite";
+import { GRANITE_PRICE_TIERS, GRANITE_PRODUCT_ID, isSpaWithDimensions } from "@/lib/granite";
 import { isOutTheDoorDiscount } from "@/lib/discounts";
 
 interface Step3ProductsProps {
@@ -169,7 +169,7 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
   const [pendingRemoveItemIdx, setPendingRemoveItemIdx] = useState<number | null>(null);
   const [pendingRemoveDiscountIdx, setPendingRemoveDiscountIdx] = useState<number | null>(null);
 
-  const { addLineItem, addLineItemWithUnit, addBlemLineWithoutUnit, markBlemPhotosViewed, removeLineItem, addDiscount, removeDiscount, setTax, updateLineItemPrice, updateLineItemColors, setDocFeeWaived } = useContractStore();
+  const { addLineItem, addLineItemWithUnit, addBlemLineWithoutUnit, markBlemPhotosViewed, removeLineItem, addDiscount, removeDiscount, setTax, updateLineItemPrice, updateLineItemColors, setDocFeeWaived, addGraniteForSpas } = useContractStore();
   const draft = useContractStore((s) => s.draft);
 
   // Inventory unit picker state
@@ -234,6 +234,18 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
   }
 
   function handleAddProduct(product: Product, price: number, waived = false) {
+    if (product.id === GRANITE_PRODUCT_ID) {
+      // Granite is opt-in but still locked per spa: build one line per spa
+      // currently in the cart, with quantity = each spa's longest side.
+      const spasInCart = draft.line_items
+        .map((li) => products.find((p) => p.id === li.product_id))
+        .filter((p): p is Product => !!p && isSpaWithDimensions(p));
+      addGraniteForSpas(spasInCart, waived ? 0 : price);
+      const flashKey = product.id + "-" + (waived ? "waived" : price);
+      setAddedFlash(flashKey);
+      setTimeout(() => setAddedFlash(null), 800);
+      return;
+    }
     addLineItem(product, price, waived);
     const flashKey = product.id + "-" + (waived ? "waived" : price);
     setAddedFlash(flashKey);
@@ -338,9 +350,16 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
     return null;
   })();
 
+  const hasSpaInCart = draft.line_items.some((li) => {
+    const prod = products.find((p) => p.id === li.product_id);
+    return prod ? isSpaWithDimensions(prod) : false;
+  });
+
   const optionProducts = products.filter((p) => {
     if (!relevantOptionCategories.includes(p.category ?? "")) return false;
     if (p.category === "Other Options" && !filterOtherOption(p.name, selectedLine)) return false;
+    // Granite is locked per spa — hide from the picker until at least one spa is in cart.
+    if (p.id === GRANITE_PRODUCT_ID && !hasSpaInCart) return false;
     return isOptionAvailableForModel(p.name, lastSpaModelCode);
   });
   const groupedOptions = optionProducts.reduce<Record<string, Product[]>>((acc, p) => {
