@@ -688,6 +688,23 @@ export const useContractStore = create<ContractStore>()(
     {
       name: "atlas-contract-draft-v6",
       partialize: (state) => ({ draft: state.draft }),
+      // Crushed granite used to auto-attach itself to every spa via
+      // addLineItem / addLineItemWithUnit / addBlemLineWithoutUnit. Reps
+      // asked for it to be opt-in (2026-05-23), but any draft persisted
+      // before the change still carries those auto-added granite lines.
+      // Strip them on rehydration so the picker starts clean — the rep
+      // can still add granite explicitly from the options panel. Future
+      // version bumps would extend this migration chain in place.
+      version: 1,
+      migrate: (persistedState, fromVersion) => {
+        const s = persistedState as { draft?: { line_items?: Array<{ linked_spa_product_id?: string }> } };
+        if (fromVersion < 1 && s?.draft?.line_items) {
+          s.draft.line_items = s.draft.line_items.filter(
+            (li) => !li.linked_spa_product_id
+          );
+        }
+        return s;
+      },
     }
   )
 );
