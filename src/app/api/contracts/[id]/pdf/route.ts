@@ -834,7 +834,12 @@ export async function GET(
   return new Response(pdfBuffer, {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="${filename}"`,
+      // `attachment` triggers a download instead of in-frame preview. The
+      // iPad show-floor PWA runs in standalone mode, where opening a PDF
+      // inline (even with target="_blank") replaces the app view with no
+      // back button — leaving the rep stranded. Downloading routes the file
+      // through iOS's Files / share sheet and keeps the contract page mounted.
+      "Content-Disposition": `attachment; filename="${filename}"`,
     },
   });
 }
