@@ -14,10 +14,22 @@ interface Props {
 // iOS Safari (and especially PWAs running in standalone display mode) ignore
 // Content-Disposition: attachment and the <a download> attribute for PDFs —
 // they render the PDF inline in the standalone shell, leaving the rep with
-// no back button and no way to save the file. Fetch the PDF as a Blob and
-// route it through the native share sheet (navigator.share with files) so
-// iOS lets the user save to Files / mail / print without leaving the app.
-// Fall back to a Blob-URL download on platforms without file-share support.
+// no back button and no way to save the file. On iOS we route through the
+// native share sheet (navigator.share with files) so the rep can save to
+// Files / mail / print without leaving the app.
+//
+// On every other platform (macOS, Windows, Linux, Android) the share sheet
+// is the wrong UX — the OS share sheet on desktop blocks direct download —
+// so we skip Web Share entirely and use the Blob-URL <a download> path,
+// which honors Content-Disposition and drops the file in Downloads.
+function isIOS(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  if (/iPad|iPhone|iPod/.test(ua)) return true;
+  // iPadOS 13+ reports the desktop Safari UA; distinguish via touch points.
+  return navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+}
+
 export function PdfDownloadButton({
   contractId,
   filename,
@@ -37,10 +49,8 @@ export function PdfDownloadButton({
       const blob = await res.blob();
       const file = new File([blob], filename, { type: "application/pdf" });
 
-      // canShare({files}) is the only reliable feature-detect — `navigator.share`
-      // is defined on platforms that reject file payloads.
       if (
-        typeof navigator !== "undefined" &&
+        isIOS() &&
         typeof navigator.canShare === "function" &&
         navigator.canShare({ files: [file] })
       ) {
