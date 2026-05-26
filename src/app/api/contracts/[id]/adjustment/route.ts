@@ -84,6 +84,19 @@ export async function PATCH(
     total_adjustment_amount: roundedAmount,
   });
 
+  // recalcTotals floors the total at 0. If the adjustment was large enough
+  // to push it there, the stored adjustment and the stored total no longer
+  // tell a consistent story. Reject loud rather than silently re-using a
+  // clamped total on the next edit.
+  const unclampedTotal = totals.subtotal - totals.discount_total +
+    totals.tax_amount + totals.doc_fee_tax_amount + roundedAmount;
+  if (unclampedTotal < 0) {
+    return NextResponse.json(
+      { error: "adjustment would drop the contract total below $0" },
+      { status: 400 }
+    );
+  }
+
   const newBalanceDue = Math.max(0, totals.total - depositPaid);
   const pdfArchive = archivePdfUrls(contract.contract_pdf_url, contract.contract_pdf_archive_urls);
 
