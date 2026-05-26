@@ -368,6 +368,22 @@ export default function Step8Payment() {
         </div>
       )}
 
+      {/* Done — Back to Dashboard. The contract is already saved; the rep
+          should always have a clear exit even if no deposit was queued. */}
+      {splits.length === 0 && (
+        <Button
+          variant="primary"
+          size="xl"
+          className="w-full"
+          onClick={() => {
+            resetDraft();
+            router.push("/dashboard");
+          }}
+        >
+          Done — Back to Dashboard
+        </Button>
+      )}
+
       {/* Split progress */}
       {splits.length > 1 && (
         <Card>

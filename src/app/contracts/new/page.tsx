@@ -229,6 +229,13 @@ function NewContractContent() {
   }
 
   function exit() {
+    // Step 8 = post-sign. Contract is already saved server-side; no progress
+    // to lose. Skip the scary confirm and just leave cleanly.
+    if (step === 8) {
+      resetDraft();
+      router.push("/dashboard");
+      return;
+    }
     const msg = step >= 5
       ? "Exit the wizard? Your progress so far will be lost unless you've already saved it as a quote."
       : "Exit the wizard? Your progress will be lost.";
