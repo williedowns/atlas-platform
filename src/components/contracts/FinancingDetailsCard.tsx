@@ -44,6 +44,7 @@ export default function FinancingDetailsCard({ contractId, financing }: Props) {
   const [drawNotes, setDrawNotes] = useState("");
   const [externalAppId, setExternalAppId] = useState("");
   const [externalChargeId, setExternalChargeId] = useState("");
+  const [authorizedAmount, setAuthorizedAmount] = useState("");
 
   if (!financing || financing.length === 0) return null;
 
@@ -382,6 +383,48 @@ export default function FinancingDetailsCard({ contractId, financing }: Props) {
                         >
                           Log Draw
                         </Button>
+                      </div>
+                    )}
+
+                    {/* Edit authorized amount — for cases where the lender
+                        funded a different total than originally authorized
+                        (rep ran the wrong figure through the portal). Floor
+                        is the already-drawn funded_amount; reducing the
+                        authorization to that figure closes out the
+                        "Remaining to run" gap. */}
+                    {!isFoundation && (
+                      <div className="rounded-lg border border-amber-200 bg-amber-50/40 p-3 space-y-2">
+                        <p className="text-xs font-bold uppercase tracking-wide text-amber-800">Edit Authorized Amount</p>
+                        <p className="text-xs text-slate-600">
+                          Currently authorized: <span className="font-semibold">{formatCurrency(f.financed_amount)}</span>.
+                          Drawn so far: <span className="font-semibold">{formatCurrency(fundedAmt)}</span>.
+                          Cannot reduce below the drawn amount.
+                        </p>
+                        <div className="grid grid-cols-[1fr_auto] gap-2 items-end">
+                          <div>
+                            <label className="text-xs font-medium text-slate-600 block mb-1">New authorized amount</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min={fundedAmt}
+                              placeholder={f.financed_amount.toFixed(2)}
+                              value={authorizedAmount}
+                              onChange={(e) => setAuthorizedAmount(e.target.value)}
+                              className="h-9 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm"
+                            />
+                          </div>
+                          <Button
+                            variant="default"
+                            size="sm"
+                            disabled={busy || !(parseFloat(authorizedAmount) > 0) || parseFloat(authorizedAmount) < fundedAmt}
+                            onClick={async () => {
+                              await patchEntry(idx, { financed_amount: parseFloat(authorizedAmount) });
+                              setAuthorizedAmount("");
+                            }}
+                          >
+                            Save
+                          </Button>
+                        </div>
                       </div>
                     )}
 
