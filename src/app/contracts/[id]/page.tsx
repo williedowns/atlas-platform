@@ -32,6 +32,7 @@ import TaxSettingsEditor from "@/components/contracts/TaxSettingsEditor";
 import DeliveryDiagramEditor from "@/components/contracts/DeliveryDiagramEditor";
 import { LowDepositBadge } from "@/components/contracts/LowDepositBadge";
 import { lowDepositInfo } from "@/lib/low-deposit";
+import { getDisplayStatus } from "@/lib/contract-status";
 import { AppHeader } from "@/components/ui/AppHeader";
 import { SectionCard } from "@/components/ui/SectionCard";
 
@@ -252,16 +253,19 @@ export default async function ContractDetailPage({
         title={contract.contract_number}
         subtitle={formatDate(contract.created_at)}
         backHref="/contracts"
-        status={{
-          label: contract.status.replace(/_/g, " "),
-          color:
-            contract.status === "delivered" ? "#10b981" :
-            contract.status === "cancelled" ? "#ef4444" :
-            contract.status === "ready_for_delivery" ? "#f59e0b" :
-            contract.status === "deposit_collected" ? "#00929C" :
-            contract.status === "pending_signature" ? "#f59e0b" :
-            "#64748b",
-        }}
+        status={(() => {
+          const display = getDisplayStatus(contract);
+          return {
+            label: display.replace(/_/g, " "),
+            color:
+              display === "delivered" ? "#10b981" :
+              display === "cancelled" ? "#ef4444" :
+              display === "ready_for_delivery" ? "#f59e0b" :
+              display === "deposit_collected" ? "#00929C" :
+              display === "pending_signature" ? "#f59e0b" :
+              "#64748b",
+          };
+        })()}
         actions={
           <PdfDownloadButton
             contractId={contract.id}

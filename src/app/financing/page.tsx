@@ -12,6 +12,7 @@ import { LenderMixChart } from "@/components/financing/LenderMixChart";
 import InhouseTrackerSection, { type InhouseRow } from "@/components/financing/InhouseTrackerSection";
 import { Badge } from "@/components/ui/badge";
 import { lowDepositInfo } from "@/lib/low-deposit";
+import { getDisplayStatus } from "@/lib/contract-status";
 
 const STATUS_COLORS: Record<string, "default" | "success" | "warning" | "destructive" | "secondary"> = {
   draft: "secondary", pending_signature: "warning", signed: "default",
@@ -401,9 +402,14 @@ export default async function FinancingPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-semibold text-slate-900 text-sm">{c.contract_number}</span>
-                          <Badge variant={STATUS_COLORS[c.status] ?? "secondary"} className="text-xs capitalize">
-                            {c.status.replace(/_/g, " ")}
-                          </Badge>
+                          {(() => {
+                            const display = getDisplayStatus(c);
+                            return (
+                              <Badge variant={STATUS_COLORS[display] ?? "secondary"} className="text-xs capitalize">
+                                {display.replace(/_/g, " ")}
+                              </Badge>
+                            );
+                          })()}
                         </div>
                         <p className="text-sm text-slate-700 mt-0.5">
                           {customer?.first_name} {customer?.last_name}

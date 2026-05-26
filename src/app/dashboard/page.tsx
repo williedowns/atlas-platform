@@ -15,6 +15,7 @@ import { KpiCard } from "@/components/ui/KpiCard";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { getViewAsContext } from "@/lib/view-as";
 import { shouldShowPicker } from "@/lib/active-show";
+import { getDisplayStatus } from "@/lib/contract-status";
 import { todayStartUTC, daysAgoStartUTC, monthStartUTC, todayDateStringInTZ } from "@/lib/dates";
 
 export default async function DashboardPage() {
@@ -197,7 +198,7 @@ export default async function DashboardPage() {
   // so the dashboard widget only surfaces contracts actually run through this system.
   const confirmedQuery = supabase
     .from("contracts")
-    .select("id, contract_number, status, total, deposit_paid, is_contingent, created_at, customer:customers(first_name, last_name), show:shows(name)")
+    .select("id, contract_number, status, total, deposit_paid, financing, is_contingent, created_at, customer:customers(first_name, last_name), show:shows(name)")
     .not("status", "in", '("quote","draft","cancelled")')
     .eq("is_contingent", false)
     .not("contract_number", "like", "BF-%")
@@ -210,7 +211,7 @@ export default async function DashboardPage() {
   // Same BF- exclusion as confirmedQuery — only surface contracts run through this system.
   const contingentQuery = supabase
     .from("contracts")
-    .select("id, contract_number, status, total, deposit_paid, is_contingent, created_at, customer:customers(first_name, last_name), show:shows(name)")
+    .select("id, contract_number, status, total, deposit_paid, financing, is_contingent, created_at, customer:customers(first_name, last_name), show:shows(name)")
     .not("status", "in", '("quote","draft","cancelled")')
     .eq("is_contingent", true)
     .not("contract_number", "like", "BF-%")
@@ -407,9 +408,14 @@ export default async function DashboardPage() {
           </div>
           <div className="flex flex-col items-end gap-1 ml-3">
             <p className="font-semibold text-slate-900">{formatCurrency(contract.total)}</p>
-            <Badge variant={statusColors[contract.status] ?? "secondary"}>
-              {statusLabels[contract.status] ?? contract.status}
-            </Badge>
+            {(() => {
+              const display = getDisplayStatus(contract);
+              return (
+                <Badge variant={statusColors[display] ?? "secondary"}>
+                  {statusLabels[display] ?? display}
+                </Badge>
+              );
+            })()}
           </div>
         </Link>
       </li>

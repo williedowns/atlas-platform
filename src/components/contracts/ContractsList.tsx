@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { getDisplayStatus } from "@/lib/contract-status";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ContractRow = Record<string, any>;
@@ -167,7 +168,7 @@ export function ContractsList({
     if (filter === "contracts") return isConfirmedContract(c);
     if (filter === "contingent") return isContingentContract(c);
     if (filter === "quote") return isQuote(c);
-    if (filter === "deposit_collected") return c.status === "deposit_collected";
+    if (filter === "deposit_collected") return getDisplayStatus(c) === "deposit_collected";
     if (filter === "delivered") return c.status === "delivered";
     if (filter === "cancelled") return c.status === "cancelled";
     return true; // "all"
@@ -211,9 +212,14 @@ export function ContractsList({
               {!!c.is_contingent && (
                 <Badge variant="warning" className="text-xs">Contingent</Badge>
               )}
-              <Badge variant={STATUS_COLORS[c.status] ?? "secondary"}>
-                {STATUS_LABELS[c.status] ?? c.status.replace(/_/g, " ")}
-              </Badge>
+              {(() => {
+                const display = getDisplayStatus(c);
+                return (
+                  <Badge variant={STATUS_COLORS[display] ?? "secondary"}>
+                    {STATUS_LABELS[display] ?? display.replace(/_/g, " ")}
+                  </Badge>
+                );
+              })()}
             </div>
             {c.balance_due > 0 && (
               <p className="text-xs text-amber-600">

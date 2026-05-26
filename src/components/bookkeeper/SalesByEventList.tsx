@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { getDisplayStatus } from "@/lib/contract-status";
 
 type ContractRow = Record<string, any>;
 
@@ -89,8 +90,9 @@ function ContractDetail({ c }: { c: ContractRow }) {
   const items = getLineItems(c);
   const payColor = PAYMENT_COLORS[c.payment_method ?? ""] ?? "bg-slate-100 text-slate-500";
   const payLabel = PAYMENT_LABELS[c.payment_method ?? ""] ?? "—";
-  const statusColor = STATUS_COLORS[c.status ?? ""] ?? "bg-slate-100 text-slate-500";
-  const statusLabel = STATUS_LABELS[c.status ?? ""] ?? c.status ?? "—";
+  const displayStatus = getDisplayStatus(c);
+  const statusColor = STATUS_COLORS[displayStatus] ?? "bg-slate-100 text-slate-500";
+  const statusLabel = STATUS_LABELS[displayStatus] ?? displayStatus ?? "—";
 
   return (
     <Link
