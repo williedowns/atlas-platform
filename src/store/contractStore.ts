@@ -181,7 +181,7 @@ interface ContractStore {
   draft: ContractDraft;
   setShow: (show: Show, location: Location | null) => void;
   setCustomer: (customer: Customer) => void;
-  addLineItem: (product: Product, price: number, waived?: boolean, shell_color?: string, cabinet_color?: string) => void;
+  addLineItem: (product: Product, price: number, waived?: boolean, shell_color?: string, cabinet_color?: string, fromPackage?: ContractLineItem["from_package"]) => void;
   addLineItemWithUnit: (product: Product, price: number, unit: InventoryUnitDetails) => void;
   // Add one Crushed Granite Base line per spa in cart, length locked to each
   // spa's longest side. Skips any spa that already has a linked granite line
@@ -322,7 +322,7 @@ export const useContractStore = create<ContractStore>()(
       setCustomer: (customer) =>
         set((state) => ({ draft: { ...state.draft, customer } })),
 
-      addLineItem: (product, price, waived = false, shell_color?, cabinet_color?) => {
+      addLineItem: (product, price, waived = false, shell_color?, cabinet_color?, fromPackage?) => {
         set((state) => {
           const spaLine: ContractLineItem = {
             product_id: product.id,
@@ -333,6 +333,7 @@ export const useContractStore = create<ContractStore>()(
             ...(waived ? { waived: true } : {}),
             ...(shell_color ? { shell_color } : {}),
             ...(cabinet_color ? { cabinet_color } : {}),
+            ...(fromPackage ? { from_package: fromPackage } : {}),
           };
           const nextLineItems = [...state.draft.line_items, spaLine];
           const newDraft = { ...state.draft, line_items: nextLineItems };
