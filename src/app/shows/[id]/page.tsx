@@ -258,14 +258,19 @@ export default async function ShowDetailPage({
                       </div>
                       <div className="text-right">
                         <p className="font-semibold">{formatCurrency(c.total)}</p>
-                        {(() => {
-                          const display = getDisplayStatus(c);
-                          return (
-                            <Badge variant={STATUS_COLORS[display] ?? "secondary"} className="mt-1 text-xs">
-                              {display.replace(/_/g, " ")}
-                            </Badge>
-                          );
-                        })()}
+                        <div className="mt-1 flex flex-wrap items-center justify-end gap-1">
+                          {!!c.is_contingent && (
+                            <Badge variant="warning" className="text-xs">Contingent</Badge>
+                          )}
+                          {(() => {
+                            const display = getDisplayStatus(c);
+                            return (
+                              <Badge variant={STATUS_COLORS[display] ?? "secondary"} className="text-xs">
+                                {display.replace(/_/g, " ")}
+                              </Badge>
+                            );
+                          })()}
+                        </div>
                       </div>
                     </Link>
                   </li>
