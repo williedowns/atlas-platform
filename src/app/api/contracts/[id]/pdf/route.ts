@@ -357,6 +357,13 @@ export async function GET(
     // doc_fee_tax_amount columns separately for the bookkeeper tax report.
     totalsRow("Document Fee", formatCurrency(docFeeAmount + docFeeTax));
   }
+  const totalAdjustment = Number(contract.total_adjustment_amount ?? 0);
+  if (totalAdjustment !== 0) {
+    const sign = totalAdjustment < 0 ? "-" : "+";
+    totalsRow("Adjustment", `${sign}${formatCurrency(Math.abs(totalAdjustment))}`, {
+      color: totalAdjustment < 0 ? RED : EMERALD,
+    });
+  }
   // Total divider (sits above the TOTAL row, not through it)
   doc.setDrawColor(...NAVY);
   doc.setLineWidth(0.5);

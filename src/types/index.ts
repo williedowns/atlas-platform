@@ -357,6 +357,11 @@ export interface Contract {
   surcharge_amount: number;
   surcharge_rate: number;
   total: number;
+  // Admin-only post-tax adjustment. Reconciles penny mismatches with
+  // financing/payment systems without touching the discount or tax math.
+  // abs(value) capped at $5 by the API. Reason is required when non-zero.
+  total_adjustment_amount?: number;
+  total_adjustment_reason?: string | null;
   deposit_amount: number;
   deposit_paid: number;
   balance_due: number;

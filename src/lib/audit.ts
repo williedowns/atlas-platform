@@ -31,6 +31,7 @@ export type AuditAction =
   | "contract.customer_info_updated"
   | "contract.line_items_updated"
   | "contract.discounts_updated"
+  | "contract.adjustment_updated"
   | "contract.notes_updated"
   | "contract.assignment_updated"
   | "contract.concrete_assignment_updated"

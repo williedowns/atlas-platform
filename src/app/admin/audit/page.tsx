@@ -44,6 +44,7 @@ const ACTION_LABELS: Record<AuditAction, { label: string; variant: "default" | "
   "contract.customer_info_updated": { label: "Customer Info Edited", variant: "warning" },
   "contract.line_items_updated":    { label: "Products Edited",      variant: "warning" },
   "contract.discounts_updated":     { label: "Discounts Edited",     variant: "warning" },
+  "contract.adjustment_updated":    { label: "Adjustment Edited",    variant: "warning" },
   "contract.notes_updated":         { label: "Notes Edited",         variant: "secondary" },
   "contract.assignment_updated":    { label: "Show / Rep Changed",   variant: "warning" },
   "contract.concrete_assignment_updated": { label: "Site Visit Reassigned", variant: "warning" },

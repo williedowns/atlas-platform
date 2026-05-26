@@ -15,6 +15,10 @@ export interface RecalcInput {
   // or discounts changed — caller decides if it needs a fresh Avalara call.
   tax_amount: number;
   tax_exempt: boolean;
+  // Post-tax admin adjustment (penny reconciliation). Required so existing
+  // adjustments are preserved across recalcs — callers must always read the
+  // current value from the contract row and pass it back in.
+  total_adjustment_amount: number;
 }
 
 export interface RecalcOutput {
@@ -42,7 +46,8 @@ export function recalcTotals(input: RecalcInput): RecalcOutput {
     : 0;
   const totalTax = effectiveItemsTax + doc_fee_tax_amount;
 
-  const total = Math.max(0, subtotal - discount_total + totalTax);
+  const adjustment = Number(input.total_adjustment_amount ?? 0);
+  const total = Math.max(0, subtotal - discount_total + totalTax + adjustment);
 
   return {
     subtotal: round2(subtotal),

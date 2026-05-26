@@ -26,6 +26,7 @@ import CustomerInfoEditor from "@/components/contracts/CustomerInfoEditor";
 import { PdfDownloadButton } from "@/components/contracts/PdfDownloadButton";
 import LineItemsEditor from "@/components/contracts/LineItemsEditor";
 import DiscountsEditor from "@/components/contracts/DiscountsEditor";
+import AdjustmentEditor from "@/components/contracts/AdjustmentEditor";
 import NotesEditor from "@/components/contracts/NotesEditor";
 import AssignmentEditor from "@/components/contracts/AssignmentEditor";
 import TaxSettingsEditor from "@/components/contracts/TaxSettingsEditor";
@@ -532,6 +533,15 @@ export default async function ContractDetailPage({
         )}
 
         {canModifyContract && (
+          <AdjustmentEditor
+            contractId={contract.id}
+            amount={Number(contract.total_adjustment_amount ?? 0)}
+            reason={(contract.total_adjustment_reason ?? null) as string | null}
+            canEdit={canModifyContract}
+          />
+        )}
+
+        {canModifyContract && (
           <DiscountsEditor
             contractId={contract.id}
             discounts={discounts as Array<{ label: string; amount: number }>}
@@ -631,6 +641,21 @@ export default async function ContractDetailPage({
                   <span className="text-xs uppercase tracking-wide font-semibold text-amber-700">Waived</span>
                 </div>
               )}
+              {Number(contract.total_adjustment_amount ?? 0) !== 0 && (() => {
+                const adj = Number(contract.total_adjustment_amount);
+                const reason = (contract.total_adjustment_reason ?? "") as string;
+                return (
+                  <div className="pt-1">
+                    <div className={`flex justify-between ${adj < 0 ? "text-red-600" : "text-emerald-700"}`}>
+                      <span>Adjustment</span>
+                      <span>{adj > 0 ? "+" : "−"}{formatCurrency(Math.abs(adj))}</span>
+                    </div>
+                    {reason && (
+                      <p className="text-xs text-slate-500 italic mt-0.5">{reason}</p>
+                    )}
+                  </div>
+                );
+              })()}
               <div className="flex justify-between font-bold text-lg pt-2 border-t border-slate-200 text-slate-900">
                 <span>Total</span>
                 <span>{formatCurrency(contract.total)}</span>

@@ -65,7 +65,7 @@ export async function PATCH(
       id, contract_number, line_items, discounts, tax_rate, tax_exempt,
       tax_amount, doc_fee_amount, doc_fee_waived, deposit_paid,
       contract_pdf_url, contract_pdf_archive_urls, qbo_estimate_id,
-      total, balance_due
+      total, balance_due, total_adjustment_amount
     `)
     .eq("id", id)
     .maybeSingle();
@@ -97,6 +97,7 @@ export async function PATCH(
     tax_rate: taxRate,
     tax_amount: newItemsTax,
     tax_exempt: taxExempt,
+    total_adjustment_amount: Number(contract.total_adjustment_amount ?? 0),
   });
 
   const newBalanceDue = Math.max(0, totals.total - depositPaid);
