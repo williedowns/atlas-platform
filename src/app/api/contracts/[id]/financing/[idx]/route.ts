@@ -24,6 +24,11 @@ const ALLOWED_KEYS = new Set([
   "inhouse_app_sent_at",
   "inhouse_docusign_signed_at",
   "inhouse_app_notes",
+  // Authorized amount. Editable for cases where the lender funded a
+  // different amount than originally authorized (e.g. rep ran the wrong
+  // figure through GreenSky's portal). Validated against funded_amount
+  // on the same entry — can't reduce authorization below what's drawn.
+  "financed_amount",
 ]);
 
 const ALLOWED_INHOUSE_STATUSES = new Set([
@@ -71,23 +76,62 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       return NextResponse.json({ error: "no allowed fields to update" }, { status: 400 });
     }
 
+    const editsFinancedAmount = Object.prototype.hasOwnProperty.call(updates, "financed_amount");
+    if (editsFinancedAmount) {
+      const newFinanced = Number(updates.financed_amount);
+      if (!Number.isFinite(newFinanced) || newFinanced <= 0) {
+        return NextResponse.json(
+          { error: "financed_amount must be a positive number" },
+          { status: 400 }
+        );
+      }
+      updates.financed_amount = Math.round(newFinanced * 100) / 100;
+    }
+
     const { data: contract, error: readError } = await supabase
       .from("contracts")
-      .select("financing, updated_at")
+      .select("financing, updated_at, total, deposit_paid")
       .eq("id", id)
       .single();
     if (readError || !contract) return NextResponse.json({ error: "Contract not found" }, { status: 404 });
 
     const arr = Array.isArray(contract.financing) ? [...contract.financing] : [];
     if (idx >= arr.length) return NextResponse.json({ error: "idx out of bounds" }, { status: 400 });
+
+    if (editsFinancedAmount) {
+      const currentFunded = Number((arr[idx] as { funded_amount?: number })?.funded_amount ?? 0);
+      const newFinanced = Number(updates.financed_amount);
+      if (newFinanced + 0.001 < currentFunded) {
+        return NextResponse.json(
+          {
+            error: `financed_amount ($${newFinanced.toFixed(2)}) cannot be less than already-drawn amount ($${currentFunded.toFixed(2)})`,
+            code: "below_funded_amount",
+          },
+          { status: 400 }
+        );
+      }
+    }
+
     arr[idx] = { ...(arr[idx] ?? {}), ...updates, updated_at: new Date().toISOString(), updated_by: user.id };
+
+    const writePayload: Record<string, unknown> = { financing: arr };
+    if (editsFinancedAmount) {
+      const total = Number(contract.total ?? 0);
+      const depositPaid = Number(contract.deposit_paid ?? 0);
+      const deducting = arr.reduce((sum, f) => {
+        const entry = f as { deduct_from_balance?: boolean; financed_amount?: number };
+        if (entry.deduct_from_balance === false) return sum;
+        return sum + Number(entry.financed_amount ?? 0);
+      }, 0);
+      writePayload.balance_due = Math.max(0, total - depositPaid - deducting);
+    }
 
     // Optimistic concurrency: only commit if updated_at hasn't changed since
     // we read it. If two reps PATCH the same JSONB array concurrently, one
     // wins and the other gets 409 + must refetch & re-apply.
     const { data: updated, error: writeError } = await supabase
       .from("contracts")
-      .update({ financing: arr })
+      .update(writePayload)
       .eq("id", id)
       .eq("updated_at", contract.updated_at)
       .select("id");
