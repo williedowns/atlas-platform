@@ -8,10 +8,35 @@ export async function POST(req: Request) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { contract_id, amount, method, check_number, bank_name } = await req.json();
+  const {
+    contract_id,
+    amount,
+    method,
+    check_number,
+    bank_name,
+    // ACH office-processing fields — saved on the payment row so the office can
+    // run the ACH manually after the contract is signed. Only required when
+    // method === "ach".
+    ach_routing_number,
+    ach_account_number,
+    ach_account_type,
+    ach_account_holder_name,
+  } = await req.json();
 
   if (!contract_id || !amount || !method) {
     return NextResponse.json({ error: "contract_id, amount, and method are required" }, { status: 400 });
+  }
+
+  // ACH via record-manual is the "save for office processing" fallback — the
+  // rep entered bank info but we are NOT calling Intuit. Office runs ACH later.
+  // Require all four bank fields so the office has what it needs.
+  if (method === "ach") {
+    if (!ach_routing_number || !ach_account_number || !ach_account_type || !ach_account_holder_name) {
+      return NextResponse.json(
+        { error: "ach_routing_number, ach_account_number, ach_account_type, and ach_account_holder_name are required when method is ach" },
+        { status: 400 }
+      );
+    }
   }
 
   const { data: contract, error: contractError } = await supabase
@@ -25,6 +50,11 @@ export async function POST(req: Request) {
   }
 
   // Insert payment record
+  // ACH office-processing: status stays "pending" because the actual ACH won't
+  // be run until the office processes it. Bookkeeper flips to "completed" after
+  // they confirm the ACH cleared at the bank. Other manual methods (cash,
+  // check, financing) are "completed" at the point of sale.
+  const isOfficeProcessedAch = method === "ach";
   const { data: payment, error: paymentError } = await supabase
     .from("payments")
     .insert({
@@ -32,10 +62,18 @@ export async function POST(req: Request) {
       amount: Number(amount),
       surcharge_amount: 0,
       method,
-      status: "completed",
+      status: isOfficeProcessedAch ? "pending" : "completed",
       processed_at: new Date().toISOString(),
       ...(check_number ? { check_number } : {}),
       ...(bank_name ? { bank_name } : {}),
+      ...(isOfficeProcessedAch
+        ? {
+            ach_routing_number,
+            ach_account_number,
+            ach_account_type,
+            ach_account_holder_name,
+          }
+        : {}),
     })
     .select()
     .single();

@@ -287,6 +287,59 @@ export default function Step8Payment() {
     router.push("/contracts/new");
   };
 
+  // ── ACH Office-Processing Fallback ────────────────────────────────────────
+  // When Intuit eCheck rejects the bank info (PMT-4000 "bank account not
+  // found" etc.), the salesperson can save the routing+account here and let
+  // the office run the ACH manually. Hits /api/payments/record-manual with
+  // method=ach — that endpoint persists the bank fields on the payment row,
+  // marks the contract deposit_collected, syncs the deposit to QBO, and the
+  // bookkeeper flips the payment from "pending" → "completed" once the ACH
+  // actually clears at the bank.
+  async function handleSaveAchForOffice() {
+    if (!currentSplit) return;
+    const cId = contractId ?? draft.created_contract_id ?? "";
+    if (!cId) {
+      setErrorMessage("No contract ID — refresh and try again.");
+      setState("error");
+      return;
+    }
+    setState("processing");
+    setErrorMessage(null);
+
+    const res = await fetch("/api/payments/record-manual", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contract_id: cId,
+        amount: currentSplit.amount,
+        method: "ach",
+        ach_routing_number: routingNumber,
+        ach_account_number: accountNumber,
+        ach_account_type: accountType,
+        ach_account_holder_name: accountName,
+      }),
+    });
+
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      setState("error");
+      setErrorMessage(data?.error ?? "Save failed. Please try again.");
+      return;
+    }
+
+    const newCompleted = [...completedSplits, currentSplitIdx];
+    setCompletedSplits(newCompleted);
+    if (newCompleted.length === splits.length) {
+      setState("success");
+    } else {
+      setCardNumber(""); setCardExpiry(""); setCardCvc(""); setCardZip("");
+      setRoutingNumber(""); setAccountNumber(""); setAccountName("");
+      setSaveCardForBalance(false);
+      setCurrentSplitIdx(currentSplitIdx + 1);
+      setState("pending");
+    }
+  }
+
   // ── All Done ────────────────────────────────────────────
   if (state === "success") {
     return (
@@ -597,8 +650,25 @@ export default function Step8Payment() {
             )}
 
             {state === "error" && errorMessage && (
-              <div className="rounded-lg bg-red-50 border border-red-200 p-3">
+              <div className="rounded-lg bg-red-50 border border-red-200 p-3 space-y-3">
                 <p className="text-sm text-red-700">{errorMessage}</p>
+                {isAch && achReady && (
+                  <div className="rounded-md bg-white border border-red-200 p-3 space-y-2">
+                    <p className="text-xs text-slate-700">
+                      Can&apos;t verify the bank info through Intuit? Save the routing and account
+                      numbers here and the office will run this ACH manually. The contract will
+                      be marked deposit collected.
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="lg"
+                      className="w-full border-[#00929C] text-[#00929C]"
+                      onClick={handleSaveAchForOffice}
+                    >
+                      Save for Office Processing Instead
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
 
