@@ -1,5 +1,5 @@
 // Keep OFFLINE_DB / store / message types in sync with src/lib/offline-queue.ts
-const CACHE_NAME = "atlas-spas-0c341de";
+const CACHE_NAME = "atlas-spas-0c341df";
 const OFFLINE_DB = "atlas-offline";
 const APP_SHELL = ["/", "/dashboard", "/contracts/new", "/login"];
 const QUEUEABLE_POST_PATHS = ["/api/contracts", "/api/payments", "/api/quotes"];

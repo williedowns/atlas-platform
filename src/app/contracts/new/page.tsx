@@ -73,12 +73,18 @@ function NewContractContent() {
     // parent, skip the fetch + prefill (and skip the resume prompt) — the rep
     // is just navigating back into the wizard mid-flow.
     if (isConcreteAddon && parentContractIdOnDraft === fromContractId) {
+      setLoadingConcreteAddon(false);
       return;
     }
     if (hasDraftProgress()) {
       // Don't touch persisted state — let the rep choose Resume or Start Over.
       // If a ?show= or ?from_contract= prefill was requested, defer the
-      // prefill until the rep chooses Start Over below.
+      // prefill until the rep chooses Start Over below. Clear the loading
+      // flags initialized for those prefills so the spinner doesn't hide the
+      // resume prompt — the loader render check (below) runs before the
+      // resume prompt render check.
+      setLoadingShowPrefill(false);
+      setLoadingConcreteAddon(false);
       setShowResumePrompt(true);
       return;
     }
