@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createECheck } from "@/lib/payments/intuit";
+import { createQBODeposit } from "@/lib/qbo/client";
 import { logAction } from "@/lib/audit";
 
 export async function POST(req: Request) {
@@ -26,7 +27,7 @@ export async function POST(req: Request) {
 
   const { data: contract, error: contractError } = await supabase
     .from("contracts")
-    .select("*, customer:customers(*)")
+    .select("*, customer:customers(*), location:locations(qbo_deposit_account_id, qbo_department_id, qbo_deposit_income_item_id, qbo_deposit_liability_item_id, name), show:shows(qbo_deposit_account_id, qbo_department_id, qbo_deposit_income_item_id, qbo_deposit_liability_item_id, name)")
     .eq("id", contract_id)
     .single();
 
@@ -103,6 +104,34 @@ export async function POST(req: Request) {
       balance_due: Math.max(0, contract.total - financedAtSale - newDepositPaid),
     })
     .eq("id", contract_id);
+
+  // Sync to QBO (best-effort — non-fatal). Mirrors charge/route.ts and
+  // record-manual/route.ts so ACH deposits appear in QuickBooks accounting
+  // alongside card and check deposits.
+  const customer = contract.customer as { qbo_customer_id?: string; first_name?: string; last_name?: string } | null;
+  const show = (contract as any).show as { qbo_deposit_account_id?: string; qbo_department_id?: string; qbo_deposit_income_item_id?: string; qbo_deposit_liability_item_id?: string; name?: string } | null;
+  const location = (contract as any).location as { qbo_deposit_account_id?: string; qbo_department_id?: string; qbo_deposit_income_item_id?: string; qbo_deposit_liability_item_id?: string; name?: string } | null;
+  const qboContext = show ?? location;
+  const locationName = show?.name ?? location?.name ?? undefined;
+  const customerFullName = [customer?.first_name, customer?.last_name].filter(Boolean).join(" ") || undefined;
+  const rawLineItems = (contract as any).line_items as { product_name?: string; quantity?: number }[] | null;
+  const lineItemsSummary = rawLineItems?.length
+    ? rawLineItems.map((i) => `${i.product_name ?? "Item"}${i.quantity && i.quantity > 1 ? ` (${i.quantity})` : ""}`).join(", ")
+    : undefined;
+  if (customer?.qbo_customer_id) {
+    createQBODeposit({
+      qbo_customer_id: customer.qbo_customer_id,
+      deposit_amount: Number(amount),
+      contract_number: (contract as any).contract_number ?? contract_id,
+      customer_name: customerFullName,
+      location_name: locationName,
+      line_items_summary: lineItemsSummary,
+      deposit_account_id: qboContext?.qbo_deposit_account_id ?? undefined,
+      department_id: qboContext?.qbo_department_id ?? undefined,
+      qbo_deposit_income_item_id: qboContext?.qbo_deposit_income_item_id ?? undefined,
+      qbo_deposit_liability_item_id: qboContext?.qbo_deposit_liability_item_id ?? undefined,
+    }).catch((err) => console.error("QBO ACH deposit sync failed (non-fatal):", err));
+  }
 
   logAction({
     userId: user.id,

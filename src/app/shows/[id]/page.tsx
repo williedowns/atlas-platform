@@ -10,6 +10,7 @@ import { ShowDailyTrendChart } from "@/components/shows/ShowDailyTrendChart";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { getActiveShow } from "@/lib/active-show";
+import { getDisplayStatus } from "@/lib/contract-status";
 import SetActiveShowButton from "./_components/SetActiveShowButton";
 
 const STATUS_COLORS: Record<string, "default" | "success" | "warning" | "destructive" | "secondary"> = {
@@ -49,14 +50,40 @@ export default async function ShowDetailPage({
   const activeShow = await getActiveShow();
   const isThisShowActive = activeShow?.id === id;
 
-  const { data: contracts } = await supabase
+  const { data: contractsRaw } = await supabase
     .from("contracts")
     .select("*, customer:customers(first_name, last_name)")
     .eq("show_id", id)
     .order("created_at", { ascending: false });
 
-  const totalRevenue = contracts?.reduce((s, c) => s + (c.total ?? 0), 0) ?? 0;
-  const totalDeposits = contracts?.reduce((s, c) => s + (c.deposit_paid ?? 0), 0) ?? 0;
+  // Hide quotes that have already been converted into a contract for the same
+  // customer. Mirrors /contracts/page.tsx + /dashboard/page.tsx + shows/[id]/floor:
+  // convert-via-/contracts/new keeps customer_id, but rebuild-from-scratch creates
+  // a new customer row with the same name — so match on customer_id OR name.
+  const quoteCustomerKey = (c: any): string => {
+    const cust = Array.isArray(c.customer) ? c.customer[0] : c.customer;
+    const first = (cust?.first_name ?? "").trim().toLowerCase();
+    const last = (cust?.last_name ?? "").trim().toLowerCase();
+    return `${first}|${last}`;
+  };
+  const convertedCustomerIds = new Set<string>();
+  const convertedNameKeys = new Set<string>();
+  for (const r of contractsRaw ?? []) {
+    if (r.status === "quote" || r.status === "draft" || r.status === "cancelled") continue;
+    if (r.customer_id) convertedCustomerIds.add(r.customer_id);
+    const key = quoteCustomerKey(r);
+    if (key !== "|") convertedNameKeys.add(key);
+  }
+  const contracts = (contractsRaw ?? []).filter((c) => {
+    if (c.status !== "quote") return true;
+    if (c.customer_id && convertedCustomerIds.has(c.customer_id)) return false;
+    const key = quoteCustomerKey(c);
+    if (key !== "|" && convertedNameKeys.has(key)) return false;
+    return true;
+  });
+
+  const totalRevenue = contracts.reduce((s, c) => s + (c.total ?? 0), 0);
+  const totalDeposits = contracts.reduce((s, c) => s + (c.deposit_paid ?? 0), 0);
 
   // Daily trend — bucket contracts by day between show start and end (capped at today)
   const trendMap = new Map<string, { revenue: number; contracts: number }>();
@@ -231,9 +258,14 @@ export default async function ShowDetailPage({
                       </div>
                       <div className="text-right">
                         <p className="font-semibold">{formatCurrency(c.total)}</p>
-                        <Badge variant={STATUS_COLORS[c.status] ?? "secondary"} className="mt-1 text-xs">
-                          {c.status.replace(/_/g, " ")}
-                        </Badge>
+                        {(() => {
+                          const display = getDisplayStatus(c);
+                          return (
+                            <Badge variant={STATUS_COLORS[display] ?? "secondary"} className="mt-1 text-xs">
+                              {display.replace(/_/g, " ")}
+                            </Badge>
+                          );
+                        })()}
                       </div>
                     </Link>
                   </li>
