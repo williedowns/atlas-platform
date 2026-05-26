@@ -24,7 +24,7 @@ export const TERMS_AND_CONDITIONS: TermSection[] = [
     clauses: [
       "Customer is responsible for ensuring the delivery path is flat, level, and clear of obstructions before delivery. Atlas Spas & Swim Spas does not remove doors, windows, walls, railings, or perform construction work of any kind. Damage resulting from inadequate access is the customer's responsibility.",
       "Customer is responsible for confirming compliance with all local building codes, including any structural requirements for deck installations.",
-      "All spas and swim spas require a flat, solid surface beneath them. A 4\" reinforced concrete slab is recommended.",
+      "All spas and swim spas must be installed on a base engineered to hold the full filled weight of the unit. The only acceptable bases — each of which must hold the filled weight of the unit — are: (1) a crushed granite base installed per Atlas Spas & Swim Spas' specifications, (2) a concrete pad at least 4 inches thick, or (3) a reinforced deck rated by a licensed contractor. Grass, dirt, loose gravel, sand, and other unprepared surfaces are not acceptable. Atlas Spas & Swim Spas is not responsible for damage to the unit, the surrounding property, or persons resulting from installation on an inadequate base.",
     ],
   },
   {
