@@ -138,6 +138,43 @@ const SWIM_SPA_LINES = new Set([
   "Michael Phelps Swim Spas", "H2X Swim Spas",
 ]);
 
+// White Glove Packages — one tap adds the four standard items every order
+// includes (delivery, steps, chemical kit, locking cover). UI convenience only;
+// the bundle fans out to existing product rows so QBO still bills them
+// individually. Product UUIDs verified against products table 2026-05-26.
+// Items added carry from_package so the contract.created audit log notes which
+// package the rep applied (extracted in /api/contracts/route.ts at submission).
+type WhiteGloveKey = "hot_tub" | "swim_spa";
+const WHITE_GLOVE_PACKAGES: Record<WhiteGloveKey, {
+  label: string;
+  sublabel: string;
+  product_ids: string[];
+  total: number;
+}> = {
+  hot_tub: {
+    label: "Hot Tub White Glove Package",
+    sublabel: "Delivery · Steps · Chemical Kit · Locking Cover",
+    product_ids: [
+      "e65e5127-1609-4468-a537-a5863f5fc22f", // HT Delivery — $600
+      "f5c56f80-077c-40b5-9db5-b0cb80ef1e1a", // HT Steps — $149
+      "6258ae1e-930d-409c-8319-bdd1895673d2", // Start Up Chemical Kit — $149
+      "641557eb-94f1-4c28-abee-b302ffd513ba", // HT Deluxe Taper Locking Cover — $599
+    ],
+    total: 1497,
+  },
+  swim_spa: {
+    label: "Swim Spa White Glove Package",
+    sublabel: "Delivery · Steps · Chemical Kit · Locking Cover",
+    product_ids: [
+      "e8fb26d2-a7a1-40e5-9abd-0445d62867ad", // Swim Spa Delivery — $1,500
+      "b658294a-699d-40b7-9dc4-fbedd819f3ef", // SS Steps — $599
+      "6258ae1e-930d-409c-8319-bdd1895673d2", // Start Up Chemical Kit — $149
+      "ebf0ab0d-cbdc-4509-9e7f-9459e39a227c", // SS Deluxe Taper Locking Cover — $1,499
+    ],
+    total: 3747,
+  },
+};
+
 function filterOtherOption(productName: string, selectedLine: string | null): boolean {
   const name = productName.toUpperCase();
   const isHtItem = name.startsWith("HT ");
@@ -260,6 +297,25 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
     } else {
       handleAddProduct(product, price);
     }
+  }
+
+  function handleAddPackage(key: WhiteGloveKey) {
+    const pkg = WHITE_GLOVE_PACKAGES[key];
+    const existingIds = new Set(draft.line_items.map((li) => li.product_id));
+    // Tag each item with from_package so the contract.created audit log can
+    // report which White Glove Packages the rep applied at submission time.
+    const packageTag = key === "hot_tub" ? "hot_tub_white_glove" : "swim_spa_white_glove";
+    for (const pid of pkg.product_ids) {
+      if (existingIds.has(pid)) continue;
+      const product = products.find((p) => p.id === pid);
+      if (!product) continue;
+      // White Glove items default to waived (FREE) — they're a sales gesture
+      // showing the customer the value they're getting at no cost. Rep can
+      // edit any individual item's price afterward if needed.
+      addLineItem(product, product.msrp, true, undefined, undefined, packageTag);
+    }
+    setAddedFlash(`package-${key}`);
+    setTimeout(() => setAddedFlash(null), 800);
   }
 
   function handleAddDiscount() {
@@ -677,12 +733,72 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
               <p className="text-sm text-slate-400 text-center py-4">
                 Select a product line above to see available add-ons and options.
               </p>
-            ) : optionProducts.length === 0 ? (
-              <p className="text-sm text-slate-400 text-center py-4">
-                No add-ons available for this product line.
-              </p>
             ) : (
-              Object.entries(groupedOptions).map(([cat, catProducts]) => (
+              <>
+                {(HOT_TUB_LINES.has(selectedLine) || SWIM_SPA_LINES.has(selectedLine)) && (() => {
+                  const key: WhiteGloveKey = HOT_TUB_LINES.has(selectedLine) ? "hot_tub" : "swim_spa";
+                  const pkg = WHITE_GLOVE_PACKAGES[key];
+                  // Compute the items the package would actually add and price the
+                  // CTA at the cost of only those — avoids "Add Package — $1,497"
+                  // when 3 of 4 are already in the cart.
+                  const missingIds = pkg.product_ids.filter(
+                    (pid) => !draft.line_items.some((li) => li.product_id === pid),
+                  );
+                  const missingTotal = missingIds.reduce((sum, pid) => {
+                    const p = products.find((x) => x.id === pid);
+                    return sum + (p?.msrp ?? 0);
+                  }, 0);
+                  const allInCart = missingIds.length === 0;
+                  const partial = !allInCart && missingIds.length < pkg.product_ids.length;
+                  const flashed = addedFlash === `package-${key}`;
+                  return (
+                    <div>
+                      <p className="text-xs font-semibold text-[#00929C] uppercase tracking-wide mb-2">
+                        White Glove Package
+                      </p>
+                      <div className="rounded-xl border-2 border-[#00929C] bg-[#00929C]/5 p-4">
+                        <div className="flex items-start justify-between gap-3 mb-3">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-base font-bold text-slate-900">{pkg.label}</p>
+                            <p className="text-xs text-slate-600 mt-0.5">{pkg.sublabel}</p>
+                          </div>
+                          <div className="flex-shrink-0 text-right">
+                            <p className="text-xs font-semibold text-slate-400 line-through">
+                              {formatCurrency(pkg.total)}
+                            </p>
+                            <p className="text-lg font-black text-emerald-600">FREE</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleAddPackage(key)}
+                          disabled={allInCart}
+                          className={`w-full h-11 rounded-lg text-sm font-bold transition-all touch-manipulation active:scale-[0.97] ${
+                            allInCart
+                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-default"
+                              : flashed
+                                ? "bg-emerald-500 text-white"
+                                : "bg-emerald-600 text-white hover:bg-emerald-700"
+                          }`}
+                        >
+                          {allInCart
+                            ? "✓ Package Added"
+                            : flashed
+                              ? "✓ Added!"
+                              : partial
+                                ? `+ Add ${missingIds.length} Missing ${missingIds.length === 1 ? "Item" : "Items"} (Free)`
+                                : `+ Add Free Package — ${formatCurrency(pkg.total)} Value`}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
+                {optionProducts.length === 0 ? (
+                  <p className="text-sm text-slate-400 text-center py-4">
+                    No add-ons available for this product line.
+                  </p>
+                ) : (
+                  Object.entries(groupedOptions).map(([cat, catProducts]) => (
                 <div key={cat}>
                   <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">{cat}</p>
                   <div className="space-y-2">
@@ -719,7 +835,9 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
                     ))}
                   </div>
                 </div>
-              ))
+                  ))
+                )}
+              </>
             )}
           </div>
         )}

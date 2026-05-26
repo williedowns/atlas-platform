@@ -325,6 +325,10 @@ export interface ContractLineItem {
   // customer must complete the Show-to-Customer tap-through before the
   // blem_acknowledgment initial pad enables in Step7Sign.
   blem_line_id?: string;
+  // Provenance marker for items added as part of a White Glove Package
+  // (or any future bundle). Survives into the persisted contract so the
+  // contract.created audit log can report which packages the rep applied.
+  from_package?: "hot_tub_white_glove" | "swim_spa_white_glove";
 }
 
 export interface Contract {

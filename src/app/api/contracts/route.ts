@@ -232,6 +232,20 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  // Extract unique White Glove Packages applied during the draft. Each
+  // package-added line item carries a from_package tag set by the package
+  // button in Step 3. Recording these on the contract.created entry preserves
+  // the sales-tactic context (e.g. which packages were comped) so the
+  // modification history reflects that the package was used, not just that
+  // four free items happened to be added.
+  const packagesAdded = Array.from(
+    new Set(
+      (Array.isArray(line_items) ? line_items : [])
+        .map((li: { from_package?: string }) => li.from_package)
+        .filter((p): p is string => typeof p === "string" && p.length > 0),
+    ),
+  );
+
   // Fire-and-forget audit log
   logAction({
     userId: user.id,
@@ -243,6 +257,7 @@ export async function POST(req: Request) {
       total: contract.total,
       customer_id: contract.customer_id,
       status: contract.status,
+      ...(packagesAdded.length > 0 ? { packages_added: packagesAdded } : {}),
     },
     req,
   });

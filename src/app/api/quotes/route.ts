@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { logAction } from "@/lib/audit";
 import { generateContractNumber } from "@/lib/utils";
 import { assignConcretePadEstimate } from "@/lib/concrete-pad-assignment";
 import { countOutTheDoorDiscounts } from "@/lib/discounts";
@@ -130,6 +131,31 @@ export async function POST(req: Request) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // Mirror the contract.created audit pattern on quote save so White Glove
+  // Package applications show in the audit trail without waiting for full
+  // sign & pay. Same packages_added extraction as /api/contracts.
+  const packagesAdded = Array.from(
+    new Set(
+      (Array.isArray(line_items) ? line_items : [])
+        .map((li: { from_package?: string }) => li.from_package)
+        .filter((p): p is string => typeof p === "string" && p.length > 0),
+    ),
+  );
+  logAction({
+    userId: user.id,
+    action: "contract.created",
+    entityType: "contract",
+    entityId: quote.id,
+    metadata: {
+      contract_number: quote.contract_number,
+      total: quote.total,
+      customer_id: quote.customer_id,
+      status: quote.status,
+      ...(packagesAdded.length > 0 ? { packages_added: packagesAdded } : {}),
+    },
+    req,
+  });
 
   return NextResponse.json({ quote_id: quote.id, contract_number: quoteNumber }, { status: 201 });
 }
