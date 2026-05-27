@@ -39,7 +39,8 @@ export type AuditAction =
   | "contract.tax_settings_updated"
   | "contract.delivery_diagram_updated"
   | "lead.created"
-  | "lead.status_changed";
+  | "lead.status_changed"
+  | "verification.check_updated";
 
 interface LogActionParams {
   userId: string;
