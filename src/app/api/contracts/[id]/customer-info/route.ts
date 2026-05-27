@@ -6,6 +6,8 @@ import { archivePdfUrls } from "@/lib/contract-pdf";
 interface CustomerInfoBody {
   first_name?: string;
   last_name?: string;
+  co_buyer_first_name?: string;
+  co_buyer_last_name?: string;
   email?: string;
   phone?: string;
   address?: string;
@@ -36,12 +38,12 @@ export async function PATCH(
 
   const { data: currentCustomer } = await supabase
     .from("customers")
-    .select("id, first_name, last_name, email, phone, address, city, state, zip")
+    .select("id, first_name, last_name, co_buyer_first_name, co_buyer_last_name, email, phone, address, city, state, zip")
     .eq("id", contract.customer_id)
     .maybeSingle();
   if (!currentCustomer) return NextResponse.json({ error: "Customer not found" }, { status: 404 });
 
-  const update: Record<string, string> = {};
+  const update: Record<string, string | null> = {};
 
   if (body.first_name !== undefined) {
     const v = String(body.first_name).trim();
@@ -56,6 +58,14 @@ export async function PATCH(
       return NextResponse.json({ error: "last_name cannot be empty" }, { status: 400 });
     }
     update.last_name = v;
+  }
+  if (body.co_buyer_first_name !== undefined) {
+    const v = String(body.co_buyer_first_name).trim();
+    update.co_buyer_first_name = v.length === 0 ? null : v;
+  }
+  if (body.co_buyer_last_name !== undefined) {
+    const v = String(body.co_buyer_last_name).trim();
+    update.co_buyer_last_name = v.length === 0 ? null : v;
   }
   if (body.email !== undefined) {
     const v = String(body.email).trim();
@@ -79,6 +89,8 @@ export async function PATCH(
   const materialChange =
     (update.first_name !== undefined && update.first_name !== (currentCustomer.first_name ?? "")) ||
     (update.last_name !== undefined && update.last_name !== (currentCustomer.last_name ?? "")) ||
+    (update.co_buyer_first_name !== undefined && (update.co_buyer_first_name ?? "") !== (currentCustomer.co_buyer_first_name ?? "")) ||
+    (update.co_buyer_last_name !== undefined && (update.co_buyer_last_name ?? "") !== (currentCustomer.co_buyer_last_name ?? "")) ||
     (update.address !== undefined && update.address !== (currentCustomer.address ?? "")) ||
     (update.city !== undefined && update.city !== (currentCustomer.city ?? "")) ||
     (update.state !== undefined && update.state !== (currentCustomer.state ?? "")) ||
@@ -99,7 +111,7 @@ export async function PATCH(
     .from("customers")
     .update(update)
     .eq("id", contract.customer_id)
-    .select("id, first_name, last_name, email, phone, address, city, state, zip")
+    .select("id, first_name, last_name, co_buyer_first_name, co_buyer_last_name, email, phone, address, city, state, zip")
     .maybeSingle();
 
   if (updateError) {
@@ -109,6 +121,8 @@ export async function PATCH(
   const before = {
     first_name: currentCustomer.first_name,
     last_name: currentCustomer.last_name,
+    co_buyer_first_name: currentCustomer.co_buyer_first_name,
+    co_buyer_last_name: currentCustomer.co_buyer_last_name,
     email: currentCustomer.email,
     phone: currentCustomer.phone,
     address: currentCustomer.address,
@@ -119,6 +133,8 @@ export async function PATCH(
   const after = {
     first_name: updated?.first_name ?? currentCustomer.first_name,
     last_name: updated?.last_name ?? currentCustomer.last_name,
+    co_buyer_first_name: updated ? updated.co_buyer_first_name : currentCustomer.co_buyer_first_name,
+    co_buyer_last_name: updated ? updated.co_buyer_last_name : currentCustomer.co_buyer_last_name,
     email: updated?.email ?? currentCustomer.email,
     phone: updated?.phone ?? currentCustomer.phone,
     address: updated?.address ?? currentCustomer.address,
