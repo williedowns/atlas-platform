@@ -20,29 +20,47 @@ const US_STATES = [
   "DC",
 ] as const;
 
-const customerSchema = z.object({
-  first_name: z.string().min(1, "First name is required"),
-  last_name: z.string().min(1, "Last name is required"),
-  // Co-buyer (married-couple purchases) — both optional, but if either
-  // last name OR first name is filled the other isn't required. Atlas's
-  // historical data is full of "Last, His/Hers" pairs.
-  co_buyer_first_name: z.string().optional(),
-  co_buyer_last_name: z.string().optional(),
-  email: z.string().email("Valid email is required"),
-  phone: z.string().min(1, "Phone is required"),
-  // Optional second contact (co-buyer phone, work number).
-  secondary_phone: z.string().optional(),
-  address: z.string(),
-  city: z.string(),
-  state: z.string(),
-  zip: z.string(),
-});
+const customerSchema = z
+  .object({
+    first_name: z.string().min(1, "First name is required"),
+    last_name: z.string().min(1, "Last name is required"),
+    // Co-buyer required by default; rep must check "single buyer" to override.
+    co_buyer_first_name: z.string().optional(),
+    co_buyer_last_name: z.string().optional(),
+    single_buyer: z.boolean(),
+    email: z.string().email("Valid email is required"),
+    phone: z.string().min(1, "Phone is required"),
+    secondary_phone: z.string().optional(),
+    address: z.string(),
+    city: z.string(),
+    state: z.string(),
+    zip: z.string(),
+  })
+  .superRefine((data, ctx) => {
+    if (!data.single_buyer) {
+      if (!data.co_buyer_first_name?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["co_buyer_first_name"],
+          message: "Co-buyer first name is required",
+        });
+      }
+      if (!data.co_buyer_last_name?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["co_buyer_last_name"],
+          message: "Co-buyer last name is required",
+        });
+      }
+    }
+  });
 
 type CustomerFormValues = {
   first_name: string;
   last_name: string;
   co_buyer_first_name?: string;
   co_buyer_last_name?: string;
+  single_buyer: boolean;
   email: string;
   phone: string;
   secondary_phone?: string;
@@ -104,6 +122,7 @@ export default function Step2Customer({ onNext }: Step2CustomerProps) {
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors },
   } = useForm<CustomerFormValues>({
     resolver: zodResolver(customerSchema),
@@ -112,6 +131,7 @@ export default function Step2Customer({ onNext }: Step2CustomerProps) {
       last_name: "",
       co_buyer_first_name: "",
       co_buyer_last_name: "",
+      single_buyer: false,
       email: "",
       phone: "",
       secondary_phone: "",
@@ -121,6 +141,8 @@ export default function Step2Customer({ onNext }: Step2CustomerProps) {
       zip: "",
     },
   });
+
+  const singleBuyer = watch("single_buyer");
 
   async function onSubmitNewCustomer(values: CustomerFormValues) {
     setSubmitting(true);
@@ -321,18 +343,31 @@ export default function Step2Customer({ onNext }: Step2CustomerProps) {
 
           <div className="grid grid-cols-2 gap-4">
             <Input
-              label="Co-Buyer First Name"
-              placeholder="Jane (optional)"
+              label={singleBuyer ? "Co-Buyer First Name" : "Co-Buyer First Name *"}
+              placeholder={singleBuyer ? "Jane (optional)" : "Jane"}
+              disabled={singleBuyer}
               error={errors.co_buyer_first_name?.message}
               {...register("co_buyer_first_name")}
             />
             <Input
-              label="Co-Buyer Last Name"
-              placeholder="Smith (optional)"
+              label={singleBuyer ? "Co-Buyer Last Name" : "Co-Buyer Last Name *"}
+              placeholder={singleBuyer ? "Smith (optional)" : "Smith"}
+              disabled={singleBuyer}
               error={errors.co_buyer_last_name?.message}
               {...register("co_buyer_last_name")}
             />
           </div>
+
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-slate-300 text-[#00929C] focus:ring-2 focus:ring-[#00929C] accent-[#00929C] touch-manipulation"
+              {...register("single_buyer")}
+            />
+            <span className="text-sm text-slate-700">
+              No co-buyer (single buyer only)
+            </span>
+          </label>
 
           <div className="grid grid-cols-2 gap-4">
             <Input
