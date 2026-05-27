@@ -656,8 +656,8 @@ export default function Step8Payment() {
                   <div className="rounded-md bg-white border border-red-200 p-3 space-y-2">
                     <p className="text-xs text-slate-700">
                       Can&apos;t verify the bank info through Intuit? Save the routing and account
-                      numbers here and the office will run this ACH manually. The contract will
-                      be marked deposit collected.
+                      numbers here and Lindy will run this ACH from the office queue. The contract
+                      will be marked deposit collected.
                     </p>
                     <Button
                       variant="outline"
@@ -665,7 +665,7 @@ export default function Step8Payment() {
                       className="w-full border-[#00929C] text-[#00929C]"
                       onClick={handleSaveAchForOffice}
                     >
-                      Save for Office Processing Instead
+                      Save to Run Later
                     </Button>
                   </div>
                 )}
@@ -712,6 +712,26 @@ export default function Step8Payment() {
                 ? `Submit ACH ${formatCurrency(currentSplit.amount)}`
                 : `Record ${formatCurrency(currentSplit.amount)}`}
             </Button>
+
+            {/* Proactive office-processing fallback. Available whenever the
+                ACH bank info is fully entered — rep can skip the Intuit
+                attempt entirely if they know it'll fail (PMT-4000 history,
+                business account) or just prefer the office to run it. */}
+            {isAch && achReady && state !== "processing" && state !== "session_expired" && (
+              <div className="space-y-1">
+                <Button
+                  variant="outline"
+                  size="lg"
+                  className="w-full border-[#00929C] text-[#00929C]"
+                  onClick={handleSaveAchForOffice}
+                >
+                  Save to Run Later
+                </Button>
+                <p className="text-xs text-slate-500 text-center">
+                  Skip Intuit · adds to the office ACH queue for Lindy to run
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

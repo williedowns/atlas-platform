@@ -271,6 +271,41 @@ export function CollectPaymentForm({
     setState("success");
   };
 
+  // ── ACH Office-Processing Fallback ────────────────────────────────────────
+  // Mirrors Step8Payment: rep can skip the Intuit eCheck call entirely and
+  // save the routing+account on the payment for Lindy to run from the office
+  // ACH queue. Triggered by either the secondary "Save to Run Later" button
+  // (proactive) or the in-error fallback button (after Intuit rejection).
+  const handleSaveAchForOffice = async () => {
+    if (!isAch || !achReady || amount <= 0) return;
+    setState("processing");
+    setErrorMessage(null);
+
+    const res = await fetch("/api/payments/record-manual", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contract_id: contractId,
+        amount,
+        method: "ach",
+        ach_routing_number: routingNumber,
+        ach_account_number: accountNumber,
+        ach_account_type: accountType,
+        ach_account_holder_name: accountName,
+      }),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      setState("error");
+      setErrorMessage(data?.error ?? "Save failed. Please try again.");
+      return;
+    }
+    setAmountCollected(amount);
+    setNewBalance(Math.max(0, balanceDue - amount));
+    setSuccessNote("ACH saved for the office to run. Lindy will see it in the ACH queue and mark it ran once processed.");
+    setState("success");
+  };
+
   // ── Success screen ────────────────────────────────────────
   if (state === "success") {
     return (
@@ -687,11 +722,30 @@ export function CollectPaymentForm({
 
       {/* Error */}
       {state === "error" && errorMessage && (
-        <div className="rounded-lg bg-red-50 border border-red-200 p-4">
-          <p className="text-sm text-red-700">{errorMessage}</p>
-          <Button variant="ghost" size="sm" className="mt-2 text-red-700" onClick={() => setState("idle")}>
-            Try Again
-          </Button>
+        <div className="rounded-lg bg-red-50 border border-red-200 p-4 space-y-3">
+          <div>
+            <p className="text-sm text-red-700">{errorMessage}</p>
+            <Button variant="ghost" size="sm" className="mt-2 text-red-700" onClick={() => setState("idle")}>
+              Try Again
+            </Button>
+          </div>
+          {isAch && achReady && (
+            <div className="rounded-md bg-white border border-red-200 p-3 space-y-2">
+              <p className="text-xs text-slate-700">
+                Can&apos;t verify the bank info through Intuit? Save the routing and account
+                numbers here and Lindy will run this ACH from the office queue. The contract
+                will be marked deposit collected.
+              </p>
+              <Button
+                variant="outline"
+                size="lg"
+                className="w-full border-[#00929C] text-[#00929C]"
+                onClick={handleSaveAchForOffice}
+              >
+                Save to Run Later
+              </Button>
+            </div>
+          )}
         </div>
       )}
 
@@ -715,6 +769,25 @@ export function CollectPaymentForm({
           ? `Add ${formatCurrency(amount)} Financing`
           : `Record ${formatCurrency(amount)}`}
       </Button>
+
+      {/* Proactive office-processing fallback. Available whenever ACH bank
+          info is fully entered — rep can skip the Intuit attempt entirely
+          if they prefer Lindy to run it from the office queue. */}
+      {isAch && achReady && state !== "processing" && (
+        <div className="space-y-1">
+          <Button
+            variant="outline"
+            size="lg"
+            className="w-full border-[#00929C] text-[#00929C]"
+            onClick={handleSaveAchForOffice}
+          >
+            Save to Run Later
+          </Button>
+          <p className="text-xs text-slate-500 text-center">
+            Skip Intuit · adds to the office ACH queue for Lindy to run
+          </p>
+        </div>
+      )}
     </div>
   );
 }
