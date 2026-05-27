@@ -170,8 +170,12 @@ export async function GET(req: Request) {
     for (const f of financingEntries) {
       if (f.deduct_from_balance === false) continue;
       if (!f.financed_amount || f.financed_amount <= 0) continue;
+      // Dedup per-financer so split-financed contracts (e.g. WF + GreenSky)
+      // surface every financer instead of dropping index 1+.
       const alreadyRecorded = rows.some(
-        (r) => r.method_type === "Financing" && r.contract_number === c.contract_number
+        (r) => r.method_type === "Financing"
+            && r.contract_number === c.contract_number
+            && r.provider === f.financer_name
       );
       if (alreadyRecorded) continue;
       rows.push({

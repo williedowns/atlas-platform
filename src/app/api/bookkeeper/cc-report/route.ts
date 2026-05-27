@@ -187,9 +187,13 @@ export async function GET(req: Request) {
     for (const f of financingEntries) {
       if (f.deduct_from_balance === false) continue; // skip Foundation Finance
       if (!f.financed_amount || f.financed_amount <= 0) continue;
-      // Skip if this contract already has a financing payment row (avoid double-counting)
+      // Dedup against payments-table financing rows for the SAME financer only.
+      // Split-financed contracts (e.g. Wells Fargo + GreenSky) need every financer
+      // to land on the report — keying on contract_number alone dropped index 1+.
       const alreadyRecorded = rows.some(
-        (r) => r.method_type === "Financing" && r.contract_number === c.contract_number
+        (r) => r.method_type === "Financing"
+            && r.contract_number === c.contract_number
+            && r.provider === f.financer_name
       );
       if (alreadyRecorded) continue;
 
