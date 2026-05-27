@@ -27,6 +27,14 @@ interface PaymentRow {
   intuit_charge_id: string | null;
 }
 
+interface FinancingEntryRow {
+  idx: number;
+  type: string | null;
+  financed_amount: number;
+  approval_number: string | null;
+  missing_approval: boolean;
+}
+
 interface ContractEntry {
   id: string;
   contract_number: string;
@@ -37,6 +45,7 @@ interface ContractEntry {
   is_cash_deal: boolean;
   has_card_payments: boolean;
   payments: PaymentRow[];
+  financing_entries: FinancingEntryRow[];
   checks: CheckRow[];
 }
 
@@ -193,6 +202,40 @@ export default function VerificationDashboard({ showId }: Props) {
     }
   };
 
+  const handleSaveApproval = async (
+    contractId: string,
+    idx: number,
+    approvalNumber: string,
+  ) => {
+    const trimmed = approvalNumber.trim();
+    if (!trimmed) {
+      setError("Approval number can't be empty.");
+      return;
+    }
+    const busyKey = `${contractId}::approval::${idx}`;
+    setBusy((prev) => new Set(prev).add(busyKey));
+    try {
+      const r = await fetch(`/api/contracts/${contractId}/financing/${idx}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ approval_number: trimmed }),
+      });
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        throw new Error(body.error ?? `HTTP ${r.status}`);
+      }
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save approval number");
+    } finally {
+      setBusy((prev) => {
+        const next = new Set(prev);
+        next.delete(busyKey);
+        return next;
+      });
+    }
+  };
+
   const handleVerify = (c: ContractEntry, check: CheckRow) => {
     void persist(c.id, check.key, "verified", check.notes ?? null);
   };
@@ -317,6 +360,7 @@ export default function VerificationDashboard({ showId }: Props) {
               onFlag={(check) => openNoteModal(c, check, "discrepancy")}
               onNa={(check) => handleNa(c, check)}
               onReset={(check) => handleReset(c, check)}
+              onSaveApproval={handleSaveApproval}
               busy={busy}
             />
           ))}
@@ -347,6 +391,7 @@ export default function VerificationDashboard({ showId }: Props) {
                   onFlag={(check) => openNoteModal(c, check, "discrepancy")}
                   onNa={(check) => handleNa(c, check)}
                   onReset={(check) => handleReset(c, check)}
+                  onSaveApproval={handleSaveApproval}
                   busy={busy}
                 />
               ))}
@@ -411,6 +456,7 @@ interface ContractCardProps {
   onFlag: (c: CheckRow) => void;
   onNa: (c: CheckRow) => void;
   onReset: (c: CheckRow) => void;
+  onSaveApproval: (contractId: string, idx: number, approvalNumber: string) => Promise<void>;
   busy: Set<string>;
 }
 
@@ -422,6 +468,7 @@ function ContractCard({
   onFlag,
   onNa,
   onReset,
+  onSaveApproval,
   busy,
 }: ContractCardProps) {
   const verifiedCount = contract.checks.filter(
@@ -548,6 +595,22 @@ function ContractCard({
                           📝 {check.notes}
                         </p>
                       )}
+                      {check.key === "financing_has_approval" &&
+                        contract.financing_entries.some((e) => e.missing_approval) && (
+                          <div className="mt-3 space-y-2">
+                            {contract.financing_entries
+                              .filter((e) => e.missing_approval)
+                              .map((entry) => (
+                                <ApprovalInputRow
+                                  key={entry.idx}
+                                  contractId={contract.id}
+                                  entry={entry}
+                                  isBusy={busy.has(`${contract.id}::approval::${entry.idx}`)}
+                                  onSave={onSaveApproval}
+                                />
+                              ))}
+                          </div>
+                        )}
                     </div>
                   </div>
                   <div className="mt-2 flex flex-wrap gap-2 justify-end">
@@ -598,6 +661,48 @@ function ContractCard({
           </ul>
         </div>
       )}
+    </div>
+  );
+}
+
+interface ApprovalInputRowProps {
+  contractId: string;
+  entry: FinancingEntryRow;
+  isBusy: boolean;
+  onSave: (contractId: string, idx: number, approvalNumber: string) => Promise<void>;
+}
+
+function ApprovalInputRow({ contractId, entry, isBusy, onSave }: ApprovalInputRowProps) {
+  const [value, setValue] = useState("");
+  const lenderLabel = entry.type ? entry.type.replace(/_/g, " ") : "Lender";
+  return (
+    <div className="rounded-md border border-amber-200 bg-amber-50/60 px-3 py-2">
+      <p className="text-xs font-medium text-slate-700 mb-1.5 capitalize">
+        {lenderLabel} · {formatCurrency(entry.financed_amount)}
+      </p>
+      <div className="flex items-center gap-2">
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="Lender approval #"
+          disabled={isBusy}
+          className="flex-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#00929C] disabled:opacity-50 min-h-[36px]"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && value.trim() && !isBusy) {
+              void onSave(contractId, entry.idx, value);
+            }
+          }}
+        />
+        <button
+          type="button"
+          disabled={isBusy || !value.trim()}
+          onClick={() => void onSave(contractId, entry.idx, value)}
+          className="px-3 py-1.5 text-xs font-semibold rounded-md bg-[#00929C] hover:bg-[#007a82] disabled:opacity-50 text-white min-h-[36px] shrink-0"
+        >
+          {isBusy ? "Saving…" : "Save"}
+        </button>
+      </div>
     </div>
   );
 }

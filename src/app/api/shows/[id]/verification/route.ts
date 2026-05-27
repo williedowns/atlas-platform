@@ -7,6 +7,7 @@ import {
   hasCardPayments,
   isCashDeal,
   isReadyForBookkeeper,
+  normalizeFinancing,
   type CheckStatus,
   type ContractSlim,
   type PaymentSlim,
@@ -192,6 +193,25 @@ export async function GET(
 
     const customer = Array.isArray(c.customer) ? c.customer[0] : c.customer;
 
+    // Surface financing entries (with original JSONB index!) so the dashboard
+    // can render inline approval-number entry against the right index when
+    // calling PATCH /api/contracts/[id]/financing/[idx].
+    const rawFinancing = Array.isArray(c.financing) ? c.financing : [];
+    const financingEntries = normalizeFinancing(c.financing).map((entry, normalizedIdx) => {
+      // Map back to the original array index when raw was an array; for
+      // legacy single-object form the idx is 0.
+      const idx = Array.isArray(rawFinancing) && rawFinancing.length > 0 ? normalizedIdx : 0;
+      return {
+        idx,
+        type: entry.type ?? null,
+        financed_amount: Number(entry.financed_amount ?? 0),
+        approval_number: entry.approval_number?.trim() ? entry.approval_number : null,
+        missing_approval:
+          Number(entry.financed_amount ?? 0) > 0 &&
+          (!entry.approval_number || !entry.approval_number.trim()),
+      };
+    });
+
     return {
       id: c.id,
       contract_number: c.contract_number,
@@ -202,6 +222,7 @@ export async function GET(
       day_key: c.created_at ? c.created_at.split("T")[0] : null,
       is_cash_deal: cashDeal,
       has_card_payments: hasCards,
+      financing_entries: financingEntries,
       payments: payments.map((p) => ({
         id: p.id,
         method: p.method,
