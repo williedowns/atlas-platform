@@ -655,9 +655,8 @@ export default function Step8Payment() {
                 {isAch && achReady && (
                   <div className="rounded-md bg-white border border-red-200 p-3 space-y-2">
                     <p className="text-xs text-slate-700">
-                      Can&apos;t verify the bank info through Intuit? Save the routing and account
-                      numbers here and Lindy will run this ACH from the office queue. The contract
-                      will be marked deposit collected.
+                      Save didn&apos;t go through. Try again — the bank info will be saved to the
+                      office ACH queue for Lindy to run.
                     </p>
                     <Button
                       variant="outline"
@@ -665,7 +664,7 @@ export default function Step8Payment() {
                       className="w-full border-[#00929C] text-[#00929C]"
                       onClick={handleSaveAchForOffice}
                     >
-                      Save to Run Later
+                      Try Save Again
                     </Button>
                   </div>
                 )}
@@ -695,40 +694,51 @@ export default function Step8Payment() {
               </div>
             )}
 
-            <Button
-              variant="success"
-              size="xl"
-              className="w-full text-lg"
-              disabled={state === "processing" || state === "session_expired" || !canCharge}
-              onClick={handleStart}
-            >
-              {state === "processing"
-                ? "Processing…"
-                : isFinancing
-                ? `Process Financing ${formatCurrency(totalToCharge)}`
-                : isCard
-                ? `Charge ${formatCurrency(totalToCharge)}`
-                : isAch
-                ? `Submit ACH ${formatCurrency(currentSplit.amount)}`
-                : `Record ${formatCurrency(currentSplit.amount)}`}
-            </Button>
+            {/* Electronic ACH submit is disabled while the Intuit merchant
+                account is linked to the wrong bank. The Save to Run Later
+                path below is the only ACH route until that's reconnected. */}
+            {!isAch && (
+              <Button
+                variant="success"
+                size="xl"
+                className="w-full text-lg"
+                disabled={state === "processing" || state === "session_expired" || !canCharge}
+                onClick={handleStart}
+              >
+                {state === "processing"
+                  ? "Processing…"
+                  : isFinancing
+                  ? `Process Financing ${formatCurrency(totalToCharge)}`
+                  : isCard
+                  ? `Charge ${formatCurrency(totalToCharge)}`
+                  : `Record ${formatCurrency(currentSplit.amount)}`}
+              </Button>
+            )}
 
-            {/* Proactive office-processing fallback. Available whenever the
-                ACH bank info is fully entered — rep can skip the Intuit
-                attempt entirely if they know it'll fail (PMT-4000 history,
-                business account) or just prefer the office to run it. */}
-            {isAch && achReady && state !== "processing" && state !== "session_expired" && (
-              <div className="space-y-1">
+            {/* ACH office-processing path. While Intuit eCheck is disabled,
+                this is the ONLY ACH route — the rep saves routing+account
+                for Lindy to run manually from the office ACH queue. */}
+            {isAch && (
+              <div className="space-y-2">
+                <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
+                  <p className="text-xs text-amber-800">
+                    <span className="font-bold">Electronic ACH processing is temporarily off.</span>{" "}
+                    Save the bank info here and the office will run this ACH from the queue.
+                  </p>
+                </div>
                 <Button
-                  variant="outline"
-                  size="lg"
-                  className="w-full border-[#00929C] text-[#00929C]"
+                  variant="success"
+                  size="xl"
+                  className="w-full text-lg"
+                  disabled={state === "processing" || state === "session_expired" || !achReady}
                   onClick={handleSaveAchForOffice}
                 >
-                  Save to Run Later
+                  {state === "processing"
+                    ? "Saving…"
+                    : `Save ACH ${formatCurrency(currentSplit.amount)} for Office`}
                 </Button>
                 <p className="text-xs text-slate-500 text-center">
-                  Skip Intuit · adds to the office ACH queue for Lindy to run
+                  Adds to the office ACH queue for Lindy to run
                 </p>
               </div>
             )}

@@ -732,9 +732,8 @@ export function CollectPaymentForm({
           {isAch && achReady && (
             <div className="rounded-md bg-white border border-red-200 p-3 space-y-2">
               <p className="text-xs text-slate-700">
-                Can&apos;t verify the bank info through Intuit? Save the routing and account
-                numbers here and Lindy will run this ACH from the office queue. The contract
-                will be marked deposit collected.
+                Save didn&apos;t go through. Try again — the bank info will be saved to the
+                office ACH queue for Lindy to run.
               </p>
               <Button
                 variant="outline"
@@ -742,49 +741,60 @@ export function CollectPaymentForm({
                 className="w-full border-[#00929C] text-[#00929C]"
                 onClick={handleSaveAchForOffice}
               >
-                Save to Run Later
+                Try Save Again
               </Button>
             </div>
           )}
         </div>
       )}
 
-      {/* Submit */}
-      <Button
-        variant="success"
-        size="xl"
-        className="w-full text-lg"
-        disabled={!canSubmit}
-        onClick={handleSubmit}
-      >
-        {state === "processing"
-          ? "Processing…"
-          : useSavedCard
-          ? `Charge ${formatCurrency(totalToCharge)} to ${savedCard?.brand ?? "Card"} ····${savedCard?.last4 ?? ""}`
-          : isCard
-          ? `Charge ${formatCurrency(totalToCharge)}`
-          : isAch
-          ? `Submit ACH ${formatCurrency(amount)}`
-          : isFinancing
-          ? `Add ${formatCurrency(amount)} Financing`
-          : `Record ${formatCurrency(amount)}`}
-      </Button>
+      {/* Electronic ACH submit is disabled while the Intuit merchant account
+          is linked to the wrong bank. ACH method goes straight to the office
+          queue via the Save button below. Other methods unchanged. */}
+      {!isAch && (
+        <Button
+          variant="success"
+          size="xl"
+          className="w-full text-lg"
+          disabled={!canSubmit}
+          onClick={handleSubmit}
+        >
+          {state === "processing"
+            ? "Processing…"
+            : useSavedCard
+            ? `Charge ${formatCurrency(totalToCharge)} to ${savedCard?.brand ?? "Card"} ····${savedCard?.last4 ?? ""}`
+            : isCard
+            ? `Charge ${formatCurrency(totalToCharge)}`
+            : isFinancing
+            ? `Add ${formatCurrency(amount)} Financing`
+            : `Record ${formatCurrency(amount)}`}
+        </Button>
+      )}
 
-      {/* Proactive office-processing fallback. Available whenever ACH bank
-          info is fully entered — rep can skip the Intuit attempt entirely
-          if they prefer Lindy to run it from the office queue. */}
-      {isAch && achReady && state !== "processing" && (
-        <div className="space-y-1">
+      {/* ACH office-processing path. While Intuit eCheck is disabled, this
+          is the ONLY ACH route — the rep saves the bank info for Lindy to
+          run manually from the office ACH queue. */}
+      {isAch && (
+        <div className="space-y-2">
+          <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
+            <p className="text-xs text-amber-800">
+              <span className="font-bold">Electronic ACH processing is temporarily off.</span>{" "}
+              Save the bank info here and the office will run this ACH from the queue.
+            </p>
+          </div>
           <Button
-            variant="outline"
-            size="lg"
-            className="w-full border-[#00929C] text-[#00929C]"
+            variant="success"
+            size="xl"
+            className="w-full text-lg"
+            disabled={!achReady || amount <= 0 || state === "processing"}
             onClick={handleSaveAchForOffice}
           >
-            Save to Run Later
+            {state === "processing"
+              ? "Saving…"
+              : `Save ACH ${formatCurrency(amount)} for Office`}
           </Button>
           <p className="text-xs text-slate-500 text-center">
-            Skip Intuit · adds to the office ACH queue for Lindy to run
+            Adds to the office ACH queue for Lindy to run
           </p>
         </div>
       )}

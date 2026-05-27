@@ -5,7 +5,27 @@ import { createECheck } from "@/lib/payments/intuit";
 import { createQBODeposit } from "@/lib/qbo/client";
 import { logAction } from "@/lib/audit";
 
+// Intuit ACH processing is intentionally disabled. The Intuit Payments
+// merchant account is currently linked to the wrong bank account — running
+// an eCheck through it would deposit funds into the wrong account. Sales
+// reps should use the "Save to Run Later" path (POST /api/payments/record-
+// manual with method=ach) so Lindy can run the ACH manually from the
+// office ACH queue against the correct bank account.
+//
+// To re-enable after the merchant account is re-linked: remove this guard
+// block. The full eCheck submission code below is preserved intact.
+const ACH_INTUIT_DISABLED = true;
+
 export async function POST(req: Request) {
+  if (ACH_INTUIT_DISABLED) {
+    return NextResponse.json(
+      {
+        error: "Electronic ACH processing is temporarily disabled. Use Save to Run Later — the office will process this ACH from the queue.",
+      },
+      { status: 503 }
+    );
+  }
+
   const supabase = await createClient();
   // Service-role client for payments status updates — see charge/route.ts for rationale.
   const adminSupabase = createAdminClient();
