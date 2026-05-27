@@ -166,6 +166,10 @@ export default function ExemptionCertSignModal({
       // editing the cert after the customer signs.
       form.flatten();
 
+      // Drop the unused Resale Certificate front page — only the Exemption
+      // Certification (page 2) is filled out and signed.
+      pdf.removePage(0);
+
       const merged = await pdf.save();
 
       // Build a data URL the existing Step 7 upload pipeline can hand off.

@@ -45,6 +45,7 @@ const page2 = pdf.getPage(1);
 page2.drawImage(sigImage, { x: 78, y: 123, width: 195, height: 20 });
 
 form.flatten();
+pdf.removePage(0);
 
 const merged = await pdf.save();
 await writeFile("/tmp/tx-01-339-test.pdf", merged);
