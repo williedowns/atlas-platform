@@ -211,7 +211,7 @@ export default async function BookkeeperPage() {
 
   // ── Low-deposit watch — contracts where customer didn't put down at least 30%
   const lowDepositContracts = contracts
-    .map((c) => ({ contract: c, info: lowDepositInfo({ total: c.total, deposit_paid: c.deposit_paid, status: c.status }) }))
+    .map((c) => ({ contract: c, info: lowDepositInfo({ total: c.total, deposit_paid: c.deposit_paid, status: c.status, financing: c.financing }) }))
     .filter((r) => r.info.isLow)
     .sort((a, b) => a.info.pct - b.info.pct); // lowest % first
 

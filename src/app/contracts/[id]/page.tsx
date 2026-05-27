@@ -561,6 +561,7 @@ export default async function ContractDetailPage({
                   total: contract.total,
                   deposit_paid: contract.deposit_paid,
                   status: contract.status,
+                  financing: contract.financing,
                 });
                 return ld.isLow ? <LowDepositBadge pct={ld.pct} threshold={ld.threshold} /> : null;
               })()}
