@@ -133,7 +133,7 @@ export interface PaymentSlim {
 
 // ── Auto-compute ───────────────────────────────────────────────────────
 
-function normalizeFinancing(raw: unknown): FinancingEntry[] {
+export function normalizeFinancing(raw: unknown): FinancingEntry[] {
   if (!raw) return [];
   if (Array.isArray(raw)) return raw as FinancingEntry[];
   // Legacy single-object form: {type: 'none'} means no financing
