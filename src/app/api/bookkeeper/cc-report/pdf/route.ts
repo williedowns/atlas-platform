@@ -271,26 +271,62 @@ export async function GET(req: Request) {
     return "Other";
   }
 
-  const groupMap = new Map<string, PdfRow[]>();
-  for (const r of filtered) {
-    const header = groupHeader(r);
-    const arr = groupMap.get(header) ?? [];
-    arr.push(r);
-    groupMap.set(header, arr);
+  type ShowGroup = {
+    header: string;
+    rows: PdfRow[];
+    chargesCount: number;
+    refundsCount: number;
+    subtotal: number;
+  };
+  function buildShowGroups(subset: PdfRow[]): ShowGroup[] {
+    const groupMap = new Map<string, PdfRow[]>();
+    for (const r of subset) {
+      const header = groupHeader(r);
+      const arr = groupMap.get(header) ?? [];
+      arr.push(r);
+      groupMap.set(header, arr);
+    }
+    return [...groupMap.entries()]
+      .sort(([a], [b]) => {
+        if (a === "Other") return 1;
+        if (b === "Other") return -1;
+        return a.localeCompare(b);
+      })
+      .map(([header, gRows]) => ({
+        header,
+        rows: gRows,
+        chargesCount: gRows.filter((r) => !r.is_refund).length,
+        refundsCount: gRows.filter((r) => r.is_refund).length,
+        subtotal: gRows.reduce((s, r) => s + r.amount, 0),
+      }));
   }
-  const groups = [...groupMap.entries()]
-    .sort(([a], [b]) => {
-      if (a === "Other") return 1;
-      if (b === "Other") return -1;
+
+  // Financing filter renders one lender per page (each financier on its own
+  // sheet for delivery to GreenSky, Wells Fargo, etc.). Every other filter
+  // renders a single section containing all show groups (unchanged behavior).
+  type Section = { lenderHeader: string | null; groups: ShowGroup[] };
+  const sections: Section[] = [];
+  if (method === "financing") {
+    const lenderMap = new Map<string, PdfRow[]>();
+    for (const r of filtered) {
+      const lender = (r.provider ?? "").trim() || "Unspecified Lender";
+      const arr = lenderMap.get(lender) ?? [];
+      arr.push(r);
+      lenderMap.set(lender, arr);
+    }
+    const lenderNames = [...lenderMap.keys()].sort((a, b) => {
+      if (a === "Unspecified Lender") return 1;
+      if (b === "Unspecified Lender") return -1;
       return a.localeCompare(b);
-    })
-    .map(([header, gRows]) => ({
-      header,
-      rows: gRows,
-      chargesCount: gRows.filter((r) => !r.is_refund).length,
-      refundsCount: gRows.filter((r) => r.is_refund).length,
-      subtotal: gRows.reduce((s, r) => s + r.amount, 0),
-    }));
+    });
+    for (const lender of lenderNames) {
+      sections.push({ lenderHeader: lender, groups: buildShowGroups(lenderMap.get(lender)!) });
+    }
+  } else {
+    sections.push({ lenderHeader: null, groups: buildShowGroups(filtered) });
+  }
+
+  const totalGroupCount = sections.reduce((s, sec) => s + sec.groups.length, 0);
 
   const total = filtered.reduce((sum, r) => sum + r.amount, 0);
   const grossTotal = filtered.filter((r) => !r.is_refund).reduce((s, r) => s + r.amount, 0);
@@ -371,7 +407,7 @@ export async function GET(req: Request) {
   };
 
   // Empty-state
-  if (groups.length === 0) {
+  if (totalGroupCount === 0) {
     doc.setFontSize(11);
     doc.setTextColor(120, 120, 120);
     doc.text(
@@ -380,7 +416,36 @@ export async function GET(req: Request) {
     );
   }
 
-  for (const group of groups) {
+  let isFirstSection = true;
+  for (const section of sections) {
+    if (!isFirstSection) {
+      doc.addPage();
+      y = 14;
+    }
+    isFirstSection = false;
+
+    if (section.lenderHeader) {
+      // Lender title band — dark navy with white text, sits above show groups.
+      doc.setFillColor(1, 15, 33);
+      doc.rect(6, y - 5, W - 12, 12, "F");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(13);
+      doc.setTextColor(255, 255, 255);
+      doc.text(`LENDER: ${section.lenderHeader.toUpperCase()}`, 9, y + 2);
+
+      const sectionCount = section.groups.reduce((s, g) => s + g.rows.length, 0);
+      const sectionSubtotal = section.groups.reduce((s, g) => s + g.subtotal, 0);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.text(
+        `${sectionCount} transaction${sectionCount !== 1 ? "s" : ""}   ·   Subtotal: ${formatCurrency(sectionSubtotal)}`,
+        W - 9, y + 2, { align: "right" }
+      );
+      doc.setTextColor(30, 30, 30);
+      y += 14;
+    }
+
+  for (const group of section.groups) {
     if (y > PAGE_BOTTOM - 30) {
       doc.addPage();
       y = 14;
@@ -469,9 +534,10 @@ export async function GET(req: Request) {
     doc.setTextColor(30, 30, 30);
     y += 8;
   }
+  }
 
   // ── Grand total ──
-  if (groups.length > 0) {
+  if (totalGroupCount > 0) {
     if (y > PAGE_BOTTOM - 18) {
       doc.addPage();
       y = 14;
@@ -503,8 +569,11 @@ export async function GET(req: Request) {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(10);
     doc.setTextColor(1, 15, 33);
+    const acrossLabel = method === "financing"
+      ? `${sections.length} lender${sections.length !== 1 ? "s" : ""}`
+      : `${totalGroupCount} show${totalGroupCount !== 1 ? "s" : ""}`;
     doc.text(
-      `${hasRefunds ? "NET TOTAL" : `GRAND TOTAL — ${filtered.length} transaction${filtered.length !== 1 ? "s" : ""} across ${groups.length} show${groups.length !== 1 ? "s" : ""}`}`,
+      `${hasRefunds ? "NET TOTAL" : `GRAND TOTAL — ${filtered.length} transaction${filtered.length !== 1 ? "s" : ""} across ${acrossLabel}`}`,
       cols[0].x, y
     );
     doc.text(formatCurrency(total), cols[6].x + cols[6].w, y, { align: "right" });
