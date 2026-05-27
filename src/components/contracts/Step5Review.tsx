@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import CustomerFileVault from "@/components/contracts/CustomerFileVault";
+import ExemptionCertSignModal from "@/components/contracts/ExemptionCertSignModal";
 import {
   formatCurrency,
   formatDate,
@@ -70,6 +71,7 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
   const router = useRouter();
   const { draft, addDepositSplit, removeDepositSplit, updateLineItemSerial, updateLineItemPrice, removeLineItem, setNotes, setExternalNotes, setNeedsPermit, setNeedsHoa, setPermitJurisdiction, setTaxExempt, setDocFeeWaived, setTaxExemptCert, setConcreteEstimatePending, setConcreteEstimateNotes } = useContractStore();
   const [certError, setCertError] = useState<string | null>(null);
+  const [showExemptionSignModal, setShowExemptionSignModal] = useState(false);
 
   // Capture or pick the customer's Texas tax-exemption certificate. The
   // contract row doesn't exist yet at Step 5, so we stage the file as a
@@ -707,6 +709,23 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
                     <>
                       <p className="text-xs font-semibold text-slate-700 mb-2">
                         Attach certificate (Form 01-339)
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setShowExemptionSignModal(true)}
+                        className="w-full inline-flex items-center justify-center px-3 py-2.5 rounded-lg border border-[#00939B] bg-[#00939B] text-white text-xs font-semibold hover:bg-[#007e85] touch-manipulation mb-2"
+                      >
+                        <svg className="w-3.5 h-3.5 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                        </svg>
+                        Sign Form 01-339 Now (Recommended)
+                      </button>
+                      <p className="text-[11px] text-slate-500 mb-3 px-1">
+                        Generates the Texas form with Atlas info prefilled and captures
+                        the customer signature on this iPad.
+                      </p>
+                      <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-2">
+                        Or attach an existing certificate
                       </p>
                       <div className="grid grid-cols-2 gap-2">
                         <label className="inline-flex items-center justify-center px-3 py-2 rounded-lg border border-emerald-500 bg-emerald-500 text-white text-xs font-semibold hover:bg-emerald-600 cursor-pointer touch-manipulation">
@@ -1394,6 +1413,26 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
             ? "Add a deposit or financing to sign \u0026 pay, or save as a quote to print"
             : `Driver's license required before sign \u2014 upload ${secondaryDlRequired ? "primary + co-borrower DLs" : "DL"} above`}
         </p>
+      )}
+
+      {draft.customer && (
+        <ExemptionCertSignModal
+          isOpen={showExemptionSignModal}
+          onClose={() => setShowExemptionSignModal(false)}
+          customer={{
+            first_name: draft.customer.first_name ?? "",
+            last_name: draft.customer.last_name ?? "",
+            address: draft.customer.address ?? "",
+            city: draft.customer.city ?? "",
+            state: draft.customer.state ?? "",
+            zip: draft.customer.zip ?? "",
+            phone: draft.customer.phone ?? "",
+          }}
+          onComplete={(cert) => {
+            setTaxExemptCert(cert);
+            setCertError(null);
+          }}
+        />
       )}
     </div>
   );
