@@ -53,6 +53,7 @@ const ACTION_LABELS: Record<AuditAction, { label: string; variant: "default" | "
   "contract.delivery_diagram_updated": { label: "Diagram Edited",    variant: "secondary" },
   "lead.created":              { label: "Lead Created",           variant: "accent" },
   "lead.status_changed":       { label: "Lead Status",            variant: "secondary" },
+  "verification.check_updated":{ label: "Verification Check",      variant: "secondary" },
 };
 
 function formatTimestamp(iso: string): string {

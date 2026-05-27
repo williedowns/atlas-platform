@@ -12,6 +12,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { getActiveShow } from "@/lib/active-show";
 import { getDisplayStatus } from "@/lib/contract-status";
 import SetActiveShowButton from "./_components/SetActiveShowButton";
+import VerificationDashboard from "@/components/shows/VerificationDashboard";
 
 const STATUS_COLORS: Record<string, "default" | "success" | "warning" | "destructive" | "secondary"> = {
   draft: "secondary",
@@ -231,6 +232,9 @@ export default async function ShowDetailPage({
             </CardContent>
           </Card>
         )}
+
+        {/* Verification Dashboard — daily + post-show finance checks before bookkeeper handoff */}
+        {canExportSpreadsheet && <VerificationDashboard showId={id} />}
 
         {/* Contracts list */}
         <Card>
