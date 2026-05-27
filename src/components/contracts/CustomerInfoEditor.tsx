@@ -7,6 +7,8 @@ interface CustomerInfo {
   id: string;
   first_name: string;
   last_name: string;
+  co_buyer_first_name?: string | null;
+  co_buyer_last_name?: string | null;
   email: string;
   phone: string;
   address?: string | null;
@@ -24,6 +26,8 @@ interface CustomerInfoEditorProps {
 interface FormState {
   first_name: string;
   last_name: string;
+  co_buyer_first_name: string;
+  co_buyer_last_name: string;
   email: string;
   phone: string;
   address: string;
@@ -36,6 +40,8 @@ function toForm(c: CustomerInfo): FormState {
   return {
     first_name: c.first_name ?? "",
     last_name: c.last_name ?? "",
+    co_buyer_first_name: c.co_buyer_first_name ?? "",
+    co_buyer_last_name: c.co_buyer_last_name ?? "",
     email: c.email ?? "",
     phone: c.phone ?? "",
     address: c.address ?? "",
@@ -77,6 +83,8 @@ export default function CustomerInfoEditor({
         body: JSON.stringify({
           first_name: form.first_name,
           last_name: form.last_name,
+          co_buyer_first_name: form.co_buyer_first_name,
+          co_buyer_last_name: form.co_buyer_last_name,
           email: form.email,
           phone: form.phone,
           address: form.address,
@@ -119,6 +127,14 @@ export default function CustomerInfoEditor({
         <div className="space-y-1 text-sm text-slate-700">
           <p className="font-semibold text-slate-900">
             {customer.first_name} {customer.last_name}
+            {(customer.co_buyer_first_name || customer.co_buyer_last_name) && (
+              <span className="font-normal text-slate-500">
+                {" & "}
+                {[customer.co_buyer_first_name, customer.co_buyer_last_name]
+                  .filter(Boolean)
+                  .join(" ")}
+              </span>
+            )}
           </p>
           <p>{customer.email}</p>
           <p>{customer.phone}</p>
@@ -150,6 +166,26 @@ export default function CustomerInfoEditor({
                 type="text"
                 value={form.last_name}
                 onChange={(e) => update("last_name", e.target.value)}
+                className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#00929C]/40"
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs font-semibold text-slate-600">Co-buyer first name</span>
+              <input
+                type="text"
+                value={form.co_buyer_first_name}
+                onChange={(e) => update("co_buyer_first_name", e.target.value)}
+                placeholder="optional"
+                className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#00929C]/40"
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs font-semibold text-slate-600">Co-buyer last name</span>
+              <input
+                type="text"
+                value={form.co_buyer_last_name}
+                onChange={(e) => update("co_buyer_last_name", e.target.value)}
+                placeholder="optional"
                 className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#00929C]/40"
               />
             </label>

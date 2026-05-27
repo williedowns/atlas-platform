@@ -444,6 +444,8 @@ export default async function ContractDetailPage({
               id: contract.customer.id,
               first_name: contract.customer.first_name ?? "",
               last_name: contract.customer.last_name ?? "",
+              co_buyer_first_name: contract.customer.co_buyer_first_name ?? null,
+              co_buyer_last_name: contract.customer.co_buyer_last_name ?? null,
               email: contract.customer.email ?? "",
               phone: contract.customer.phone ?? "",
               address: contract.customer.address ?? null,
