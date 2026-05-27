@@ -160,7 +160,7 @@ export default async function FinancingPage() {
     // Low deposit (Robert Downs 04-28): customer put down less than the suggested
     // 30% — chase risk. Evaluated once per contract; only attached to the first
     // financing entry to avoid duplicate flags when contract has multi-financier splits.
-    const ld = lowDepositInfo({ total: c.total, deposit_paid: c.deposit_paid, status: c.status });
+    const ld = lowDepositInfo({ total: c.total, deposit_paid: c.deposit_paid, status: c.status, financing: c.financing });
     const isFirstEntryForContract = (Array.isArray(c.financing) ? c.financing : []).indexOf(f) === 0;
     if (ld.isLow && isFirstEntryForContract) {
       reasons.push("low_deposit");
