@@ -738,7 +738,7 @@ export default function Step8Payment() {
                     : `Save ACH ${formatCurrency(currentSplit.amount)} for Office`}
                 </Button>
                 <p className="text-xs text-slate-500 text-center">
-                  Adds to the office ACH queue for Lindy to run
+                  Adds to the ACH queue to be ran at the home office
                 </p>
               </div>
             )}
