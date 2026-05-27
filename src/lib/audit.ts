@@ -15,6 +15,7 @@ export type AuditAction =
   | "payment.manual_recorded"
   | "payment.card_saved"
   | "payment.charged_with_saved_card"
+  | "payment.ach_ran"
   | "inventory.transferred"
   | "user.invited"
   | "customer.created"

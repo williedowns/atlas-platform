@@ -235,6 +235,23 @@ export default async function BookkeeperPage() {
   const intuitFrom = intuitFromDate.toISOString().slice(0, 10);
   const intuitTo = intuitToDate.toISOString().slice(0, 10);
 
+  // ── ACH Queue count (Phase 1 of replacing Lindy's Google Sheet) ──
+  // Office-processed ACHs are payments where the salesperson chose "Save for
+  // Office Processing Instead" — method=ach, status=pending, routing set.
+  const { count: pendingAchCount } = await supabase
+    .from("payments")
+    .select("id", { count: "exact", head: true })
+    .eq("method", "ach")
+    .eq("status", "pending")
+    .not("ach_routing_number", "is", null);
+  const { data: pendingAchAmountRows } = await supabase
+    .from("payments")
+    .select("amount")
+    .eq("method", "ach")
+    .eq("status", "pending")
+    .not("ach_routing_number", "is", null);
+  const pendingAchTotal = (pendingAchAmountRows ?? []).reduce((s, p) => s + Number(p.amount ?? 0), 0);
+
   return (
     <AppShell
       role={effectiveRole}
@@ -302,6 +319,33 @@ export default async function BookkeeperPage() {
         ───────────────────────────────────────────────────────────────── */}
         <section className="space-y-4">
           <SectionHeader title="Action Items" subtitle="Urgent: refunds to issue, certs expiring, deliveries blocked, low-deposit risk" />
+
+        {/* ── ACH Queue (office-processed ACHs awaiting Lindy) ── */}
+        <Link
+          href="/bookkeeper/ach-queue"
+          className={`block rounded-xl border-2 p-4 transition-colors ${
+            (pendingAchCount ?? 0) > 0
+              ? "border-amber-300 bg-amber-50 hover:bg-amber-100"
+              : "border-slate-200 bg-white hover:bg-slate-50"
+          }`}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs uppercase tracking-wide font-bold text-amber-700">ACH Queue</p>
+              <p className="text-base font-bold text-slate-900 mt-0.5">
+                {(pendingAchCount ?? 0) === 0
+                  ? "No ACHs waiting on the office"
+                  : `${pendingAchCount} ACH${pendingAchCount === 1 ? "" : "s"} to run — ${formatCurrency(pendingAchTotal)}`}
+              </p>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Office-processed ACH deposits saved by sales reps. Open the queue to run them and sign off.
+              </p>
+            </div>
+            <svg className="w-5 h-5 text-slate-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          </div>
+        </Link>
 
         {/* ── Low Deposit Watch (Robert Downs flag) ── */}
         {lowDepositContracts.length > 0 && (
