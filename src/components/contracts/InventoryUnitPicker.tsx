@@ -110,7 +110,11 @@ export function InventoryUnitPicker({
   // number + location, plus shell/cabinet colors. unit_type is REQUIRED — the
   // Add button stays disabled until the rep picks one.
   const [showColorCapture, setShowColorCapture] = useState(false);
-  const [manualUnitType, setManualUnitType] = useState<"factory_build" | "blem" | "">("");
+  // Manual entry only exists for Factory Build now — every other unit
+  // type (stock, floor, blem, wet) lives in inventory and gets picked
+  // from the list above. Auto-selected so the rep doesn't have to tap
+  // a single radio just to enable the Add button.
+  const [manualUnitType, setManualUnitType] = useState<"factory_build">("factory_build");
   const [manualSerial, setManualSerial] = useState("");
   const [manualError, setManualError] = useState<string | null>(null);
   const [skipShell, setSkipShell] = useState("");
@@ -126,6 +130,92 @@ export function InventoryUnitPicker({
   // unit (the inventory-marked path). The customer must tap through every
   // photo before "I have reviewed all photos" enables.
   const [pendingBlem, setPendingBlem] = useState<{ unit: InventoryUnit; payload: BlemDialogPayload } | null>(null);
+
+  // Sale-time damage reporting on an existing inventory unit — used when a
+  // stock/floor/wet unit picked up NEW damage between inventory entry and
+  // the sale (e.g. a ding noticed on the show floor). Rep captures photos
+  // with the device, customer signs off via the photo-viewing gate, the
+  // line item lands on the contract with unit_type='blem' + the new blem
+  // snapshot fields but keeps the original inventory_unit_id linkage.
+  const [damageUnit, setDamageUnit] = useState<InventoryUnit | null>(null);
+  const [damageDescription, setDamageDescription] = useState("");
+  const [damageFiles, setDamageFiles] = useState<File[]>([]);
+  const [damageError, setDamageError] = useState<string | null>(null);
+  const [pendingDamageReview, setPendingDamageReview] = useState<{
+    unit: InventoryUnit;
+    description: string;
+    urls: string[];
+    captions: string[];
+  } | null>(null);
+
+  function openDamageCapture(unit: InventoryUnit) {
+    setDamageUnit(unit);
+    setDamageDescription("");
+    setDamageFiles([]);
+    setDamageError(null);
+  }
+  function closeDamageCapture() {
+    setDamageUnit(null);
+    setDamageDescription("");
+    setDamageFiles([]);
+    setDamageError(null);
+  }
+
+  async function handleDamageSubmit() {
+    if (!damageUnit) return;
+    if (!damageDescription.trim()) {
+      setDamageError("Please describe the damage before continuing.");
+      return;
+    }
+    if (damageFiles.length === 0) {
+      setDamageError("Please attach at least one photo of the damage.");
+      return;
+    }
+    setDamageError(null);
+    try {
+      const supabase = createClient();
+      const urls: string[] = [];
+      for (const f of damageFiles) {
+        const ext = (f.name.split(".").pop() ?? "jpg").toLowerCase();
+        const key = `sale-time/${crypto.randomUUID()}.${ext}`;
+        const { error: upErr } = await supabase.storage
+          .from("blem-photos")
+          .upload(key, f, { upsert: false, contentType: f.type });
+        if (upErr) throw new Error(upErr.message);
+        const { data: pub } = supabase.storage.from("blem-photos").getPublicUrl(key);
+        urls.push(pub.publicUrl);
+      }
+      setPendingDamageReview({
+        unit: damageUnit,
+        description: damageDescription.trim(),
+        urls,
+        captions: damageFiles.map((f) => f.name),
+      });
+    } catch (err) {
+      setDamageError(err instanceof Error ? err.message : "Upload failed");
+    }
+  }
+
+  function finalizeDamageReport(viewedAt: string) {
+    if (!pendingDamageReview) return;
+    // Build a blem-flavored snapshot of the inventory unit so the parent's
+    // addLineItemWithUnit call captures both the inventory_unit_id linkage
+    // AND the new damage data. unit_type is overridden to 'blem' so Step 7
+    // routes through the blem acknowledgment flow.
+    const blemUnit: InventoryUnit = {
+      ...pendingDamageReview.unit,
+      unit_type: "blem",
+      blem_description: pendingDamageReview.description,
+      blem_photos: pendingDamageReview.urls.map((u) => ({ photo_url: u })),
+    };
+    onSelect(blemUnit, {
+      blem_description: pendingDamageReview.description,
+      blem_photo_urls: pendingDamageReview.urls,
+      blem_photos_viewed_at: viewedAt,
+    });
+    setPendingDamageReview(null);
+    closeDamageCapture();
+  }
 
   useEffect(() => {
     async function load() {
@@ -271,20 +361,9 @@ export function InventoryUnitPicker({
     setPendingSaleTimeBlem(null);
   }
 
-  // Manual-entry submit. unit_type is required. Blem routes into the
-  // existing photo-capture flow; Factory Build is the only other case
-  // (the serial is optional — assigned later when the factory ships).
+  // Manual-entry submit. Factory Build is the only case — serial is
+  // optional (assigned by the factory downstream).
   function handleAddManual() {
-    if (!manualUnitType) {
-      setManualError("Please pick a unit type to continue.");
-      return;
-    }
-    if (manualUnitType === "blem") {
-      // Validation + Storage upload + Show-to-Customer dialog are handled by
-      // the existing sale-time blem flow.
-      void handleSkipBlemConfirm();
-      return;
-    }
     setManualError(null);
     onManualEntry({
       unit_type: "factory_build",
@@ -303,9 +382,9 @@ export function InventoryUnitPicker({
         >
           <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
             <div>
-              <h2 className="text-lg font-bold text-slate-900">Add Unit Details</h2>
+              <h2 className="text-lg font-bold text-slate-900">Add as Factory Build</h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                Pick a unit type (required) and capture the serial — mirrors the paper Sales Agreement.
+                For a new unit being ordered from the factory. Serial is assigned later.
               </p>
             </div>
             <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100">
@@ -315,89 +394,29 @@ export function InventoryUnitPicker({
             </button>
           </div>
           <div className="px-5 py-4 space-y-4">
-            {/* Helper note steering reps toward the inventory list when the
-                unit IS already on the books. The manual sheet exists only
-                for units that don't have an inventory row yet. */}
+            {/* Helper note steering reps toward the inventory list for every
+                other unit type. Manual entry now exists only for factory
+                builds — stock, floor model, blem, and wet model units are
+                all already in the inventory list. */}
             <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2.5">
               <p className="text-xs text-amber-900 leading-snug">
-                <span className="font-semibold">Use this sheet only when the unit isn't in inventory yet.</span>{" "}
-                For New In-Stock or Floor Model units, close this sheet and pick the unit from the inventory list above — that captures the serial, colors, and unit type automatically.
+                <span className="font-semibold">Use this sheet only for factory orders.</span>{" "}
+                For In-Stock, Floor Model, Blemish, or Wet Model units, close this sheet and pick the unit from the inventory list above — that captures the serial, colors, and unit type automatically.
               </p>
             </div>
-            {/* Unit Type — required radio group. Only the cases where the unit
-                has no inventory row appear: Factory Build (being ordered) and
-                Sale-Time Blemish (new damage discovered, not yet in inventory).
-                In-Stock and Floor Model live in inventory — the list above is
-                their entry point. */}
+
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                Unit Type <span className="text-red-600">*</span>
+                Serial # / Factory Order #
               </label>
-              <div className="grid grid-cols-1 gap-2">
-                {[
-                  { value: "factory_build" as const, label: "New — Factory Build", hint: "Being ordered — serial assigned later by factory" },
-                  { value: "blem"          as const, label: "Blemish / As-Is (Sale-Time)", hint: "Damage on a unit not yet in inventory — description + photos required" },
-                ].map((opt) => {
-                  const active = manualUnitType === opt.value;
-                  const isBlem = opt.value === "blem";
-                  return (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => {
-                        setManualUnitType(opt.value);
-                        setManualError(null);
-                      }}
-                      className={`flex items-start gap-3 px-3 py-2.5 rounded-xl border-2 text-left transition-all ${
-                        active
-                          ? isBlem
-                            ? "border-red-500 bg-red-50"
-                            : "border-[#00929C] bg-[#00929C]/5"
-                          : "border-slate-200 bg-white hover:border-slate-300"
-                      }`}
-                    >
-                      <span
-                        className={`mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full border-2 ${
-                          active ? (isBlem ? "border-red-500 bg-red-500" : "border-[#00929C] bg-[#00929C]") : "border-slate-300 bg-white"
-                        }`}
-                      >
-                        {active && (
-                          <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                          </svg>
-                        )}
-                      </span>
-                      <div>
-                        <p className={`text-sm font-semibold ${active && isBlem ? "text-red-900" : "text-slate-900"}`}>
-                          {opt.label}
-                        </p>
-                        <p className="text-[11px] text-slate-500 mt-0.5">{opt.hint}</p>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
+              <input
+                type="text"
+                value={manualSerial}
+                onChange={(e) => setManualSerial(e.target.value)}
+                placeholder="Leave blank — assigned at factory"
+                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#00929C]/40"
+              />
             </div>
-
-            {/* Serial — only Factory Build flows through this input now.
-                Blank is fine; the factory issues the serial when the unit
-                ships and the PDF prints "Serial # — Pending Factory" in
-                the meantime. Reps can paste a PO / factory order # here if
-                they have one. */}
-            {manualUnitType === "factory_build" && (
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                  Serial # / Factory Order #
-                </label>
-                <input
-                  type="text"
-                  value={manualSerial}
-                  onChange={(e) => setManualSerial(e.target.value)}
-                  placeholder="Leave blank — assigned at factory"
-                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#00929C]/40"
-                />
-              </div>
-            )}
 
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1.5">Shell Color</label>
@@ -426,47 +445,6 @@ export function InventoryUnitPicker({
               </select>
             </div>
 
-            {/* Blem details — only when the Blemish unit type is picked. */}
-            {manualUnitType === "blem" && (
-              <div className="rounded-xl border border-red-200 bg-white p-3 space-y-3">
-                <div>
-                  <label className="text-xs font-semibold text-slate-700">Damage Description *</label>
-                  <textarea
-                    value={skipBlemDescription}
-                    onChange={(e) => setSkipBlemDescription(e.target.value)}
-                    rows={3}
-                    maxLength={1000}
-                    placeholder="Describe where the damage is and what it looks like."
-                    className="w-full mt-1 px-3 py-2 rounded-lg border border-red-200 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-red-300"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-slate-700">Photos *</label>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={(e) => {
-                      const incoming = Array.from(e.target.files ?? []);
-                      // Append to existing — iOS camera capture returns one
-                      // file per "Take Photo" invocation, so replacing the
-                      // array clobbers prior camera shots. Reset the input
-                      // value afterward so the same file can be re-selected.
-                      setSkipBlemFiles((prev) => [...prev, ...incoming]);
-                      e.target.value = "";
-                    }}
-                    className="mt-1 block w-full text-xs text-slate-600 file:mr-2 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-red-100 file:text-red-700 file:font-semibold"
-                  />
-                  {skipBlemFiles.length > 0 && (
-                    <p className="text-[11px] text-slate-500 mt-1">{skipBlemFiles.length} photo(s) selected</p>
-                  )}
-                </div>
-                {skipBlemError && (
-                  <p className="text-xs text-red-600">{skipBlemError}</p>
-                )}
-              </div>
-            )}
-
             {manualError && (
               <p className="text-xs text-red-600">{manualError}</p>
             )}
@@ -474,14 +452,11 @@ export function InventoryUnitPicker({
           <div className="px-5 pb-6 space-y-2">
             <Button
               onClick={handleAddManual}
-              variant={manualUnitType === "blem" ? "accent" : "default"}
+              variant="default"
               size="lg"
               className="w-full"
-              disabled={!manualUnitType}
             >
-              {manualUnitType === "blem"
-                ? "Upload Photos & Show to Customer"
-                : "Add to Contract"}
+              Add Factory Build to Contract
             </Button>
           </div>
         </div>
@@ -623,6 +598,23 @@ export function InventoryUnitPicker({
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
                       </svg>
                     </button>
+                    {/* Sale-time damage reporting — only for non-blem units.
+                        Lets the rep flag NEW damage discovered between
+                        inventory entry and the sale (e.g. a ding noticed on
+                        the show floor). Tap fires a damage-capture sheet,
+                        photo upload, and customer Show-to-Customer signoff. */}
+                    {!isBlem && (
+                      <button
+                        type="button"
+                        onClick={() => openDamageCapture(unit)}
+                        className="w-full flex items-center justify-center gap-1.5 px-5 py-2 text-[11px] font-semibold text-red-700 bg-red-50 hover:bg-red-100 border-t border-red-100 transition-colors"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M5.07 19h13.86c1.54 0 2.5-1.67 1.73-3L13.73 4a2 2 0 00-3.46 0L3.34 16c-.77 1.33.19 3 1.73 3z" />
+                        </svg>
+                        + Report new damage on this unit
+                      </button>
+                    )}
                   </li>
                 );
               })}
@@ -647,6 +639,98 @@ export function InventoryUnitPicker({
         payload={pendingBlem?.payload ?? null}
         onConfirm={handleBlemConfirm}
         onCancel={() => setPendingBlem(null)}
+        kioskMode
+      />
+
+      {/* Sale-time damage capture sheet — open when the rep tapped
+          "+ Report new damage" on a non-blem inventory row. Description +
+          photos required; submit uploads to the blem-photos bucket and
+          opens the customer Show-to-Customer dialog below. */}
+      {damageUnit && !pendingDamageReview && (
+        <div
+          className="fixed inset-0 z-50 flex flex-col bg-black/60"
+          onClick={closeDamageCapture}
+        >
+          <div
+            className="mt-auto bg-white rounded-t-2xl max-h-[92vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-red-100 bg-red-50/40">
+              <div>
+                <h2 className="text-lg font-bold text-red-900">Report New Damage</h2>
+                <p className="text-xs text-red-700/80 mt-0.5">
+                  {resolveModelName(damageUnit)} · {damageUnit.serial_number ?? damageUnit.order_number ?? "No ID"}
+                </p>
+              </div>
+              <button onClick={closeDamageCapture} className="p-2 rounded-lg hover:bg-red-100">
+                <svg className="w-5 h-5 text-red-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="px-5 py-4 space-y-4">
+              <p className="text-xs text-slate-600 leading-snug">
+                Captures damage that appeared <em>after</em> this unit was added to inventory. Customer reviews the photos and signs off before the contract is finalized.
+              </p>
+              <div>
+                <label className="text-xs font-semibold text-slate-700">Damage Description <span className="text-red-600">*</span></label>
+                <textarea
+                  value={damageDescription}
+                  onChange={(e) => setDamageDescription(e.target.value)}
+                  rows={3}
+                  maxLength={1000}
+                  placeholder="Describe where the damage is and what it looks like."
+                  className="w-full mt-1 px-3 py-2 rounded-lg border border-red-200 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-red-300"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-700">Photos <span className="text-red-600">*</span></label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={(e) => {
+                    const incoming = Array.from(e.target.files ?? []);
+                    // Append rather than replace so multiple camera shots stick.
+                    setDamageFiles((prev) => [...prev, ...incoming]);
+                    e.target.value = "";
+                  }}
+                  className="mt-1 block w-full text-xs text-slate-600 file:mr-2 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-red-100 file:text-red-700 file:font-semibold"
+                />
+                {damageFiles.length > 0 && (
+                  <p className="text-[11px] text-slate-500 mt-1">{damageFiles.length} photo(s) selected</p>
+                )}
+              </div>
+              {damageError && (
+                <p className="text-xs text-red-600">{damageError}</p>
+              )}
+            </div>
+            <div className="px-5 pb-6">
+              <Button
+                onClick={handleDamageSubmit}
+                variant="accent"
+                size="lg"
+                className="w-full"
+              >
+                Upload Photos & Show to Customer
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Show-to-Customer photo gate for sale-time damage. Customer must
+          tap through every photo before the acknowledgment finalizes. */}
+      <BlemConfirmationDialog
+        open={!!pendingDamageReview}
+        payload={pendingDamageReview ? {
+          unitLabel: `${resolveModelName(pendingDamageReview.unit)} · ${pendingDamageReview.unit.serial_number ?? pendingDamageReview.unit.order_number ?? "No ID"}`,
+          blem_description: pendingDamageReview.description,
+          blem_photo_urls: pendingDamageReview.urls,
+          captions: pendingDamageReview.captions,
+        } : null}
+        onConfirm={finalizeDamageReport}
+        onCancel={() => setPendingDamageReview(null)}
         kioskMode
       />
     </div>
