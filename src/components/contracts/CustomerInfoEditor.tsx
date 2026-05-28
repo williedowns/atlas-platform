@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { AddressAutocompleteFields } from "./AddressAutocompleteFields";
 
 interface CustomerInfo {
   id: string;
@@ -207,44 +208,18 @@ export default function CustomerInfoEditor({
                 className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#00929C]/40"
               />
             </label>
-            <label className="block sm:col-span-2">
-              <span className="text-xs font-semibold text-slate-600">Address</span>
-              <input
-                type="text"
-                value={form.address}
-                onChange={(e) => update("address", e.target.value)}
-                className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#00929C]/40"
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs font-semibold text-slate-600">City</span>
-              <input
-                type="text"
-                value={form.city}
-                onChange={(e) => update("city", e.target.value)}
-                className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#00929C]/40"
-              />
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              <label className="block">
-                <span className="text-xs font-semibold text-slate-600">State</span>
-                <input
-                  type="text"
-                  value={form.state}
-                  onChange={(e) => update("state", e.target.value)}
-                  className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#00929C]/40"
-                />
-              </label>
-              <label className="block">
-                <span className="text-xs font-semibold text-slate-600">ZIP</span>
-                <input
-                  type="text"
-                  value={form.zip}
-                  onChange={(e) => update("zip", e.target.value)}
-                  className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#00929C]/40"
-                />
-              </label>
-            </div>
+            <AddressAutocompleteFields
+              variant="compact"
+              values={{
+                address: form.address,
+                city: form.city,
+                state: form.state,
+                zip: form.zip,
+              }}
+              onChange={(next) =>
+                setForm((prev) => ({ ...prev, ...next }))
+              }
+            />
           </div>
 
           {error && (
