@@ -28,6 +28,10 @@ BASE = f"https://{PROJECT_REF}.supabase.co/rest/v1"
 ENV_LOCAL = Path(__file__).resolve().parent.parent / ".env.local"
 BATCH_SIZE = 200
 
+# Atlas Spas org. Required on every inventory_units row — RLS hides any row
+# without it from the running app even when the service-role write succeeded.
+ATLAS_ORG_ID = "1fd36038-0ead-491b-a03f-b438086ab39b"
+
 
 def load_key() -> str:
     for line in ENV_LOCAL.read_text().splitlines():
@@ -63,18 +67,19 @@ def resolve_location_ids(key: str) -> dict[str, str]:
 
 def to_db_row(r: dict, loc_map: dict[str, str]) -> dict:
     out = {
-        "serial_number": r["serial_number"],
-        "order_number":  r["order_number"],
-        "location_id":   loc_map.get(r["location_name"]) if r.get("location_name") else None,
-        "status":        r["status"],
-        "model_code":    r["model_code"],
-        "shell_color":   r["shell_color"],
-        "cabinet_color": r["cabinet_color"],
-        "wrap_status":   r["wrap_status"],
-        "customer_name": r["customer_name"],
-        "fin_balance":   r["fin_balance"],
-        "received_date": r["received_date"],
-        "notes":         r["notes"],
+        "serial_number":   r["serial_number"],
+        "order_number":    r["order_number"],
+        "location_id":     loc_map.get(r["location_name"]) if r.get("location_name") else None,
+        "status":          r["status"],
+        "model_code":      r["model_code"],
+        "shell_color":     r["shell_color"],
+        "cabinet_color":   r["cabinet_color"],
+        "wrap_status":     r["wrap_status"],
+        "customer_name":   r["customer_name"],
+        "fin_balance":     r["fin_balance"],
+        "received_date":   r["received_date"],
+        "notes":           r["notes"],
+        "organization_id": ATLAS_ORG_ID,
     }
     return out
 
