@@ -470,17 +470,17 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
                 {draft.line_items.map((item, idx) => {
                   const isGranite = item.linked_spa_product_id !== undefined;
                   // "+ Report new damage" appears on any spa line that
-                  // isn't already blem. We detect "spa-ness" by the
-                  // presence of any identifying field (inventory_unit_id,
-                  // serial_number, or model_code) — accessories like
-                  // delivery / chemical kit / cover have none of those
-                  // and get filtered out. Factory Builds with no serial
-                  // yet still match via model_code so the rep can flag
-                  // damage on a unit that arrives damaged from factory.
-                  const isSpaLine =
-                    !!item.inventory_unit_id || !!item.serial_number || !!item.model_code;
+                  // isn't already blem. unit_type is set (to stock /
+                  // factory_build / floor_model / wet_model) on every
+                  // spa line — accessories (delivery, chemical kit,
+                  // cover) leave it undefined, so they're filtered out
+                  // automatically without needing a category lookup.
+                  // Including factory_build means a unit that arrives
+                  // damaged from the factory can still be flagged here.
                   const canReportDamage =
-                    !isGranite && isSpaLine && item.unit_type !== "blem";
+                    !isGranite &&
+                    !!item.unit_type &&
+                    item.unit_type !== "blem";
                   return (
                   <Fragment key={idx}>
                   <tr className={canReportDamage ? "border-b-0" : "border-b border-slate-100"}>
