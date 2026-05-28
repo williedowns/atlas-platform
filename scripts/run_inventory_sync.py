@@ -65,7 +65,7 @@ def to_db_row(r: dict, loc_map: dict[str, str]) -> dict:
     out = {
         "serial_number": r["serial_number"],
         "order_number":  r["order_number"],
-        "location_id":   loc_map.get(r["location_name"]),
+        "location_id":   loc_map.get(r["location_name"]) if r.get("location_name") else None,
         "status":        r["status"],
         "model_code":    r["model_code"],
         "shell_color":   r["shell_color"],
@@ -149,7 +149,11 @@ def main() -> None:
 
     print("Resolving locations...", file=sys.stderr)
     loc_map = resolve_location_ids(key)
-    missing = {r["location_name"] for r in serialized + on_order if r["location_name"] not in loc_map}
+    missing = {
+        r["location_name"]
+        for r in serialized + on_order
+        if r.get("location_name") and r["location_name"] not in loc_map
+    }
     if missing:
         sys.exit(f"locations missing in DB: {missing}")
 

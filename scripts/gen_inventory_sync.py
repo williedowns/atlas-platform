@@ -49,9 +49,12 @@ HOME_SHOWROOM_LABELS = {
     "plano", "houston", "ftw", "fort worth",
 }
 
-# Tab → (location_name, default_status)
+# Tab → (location_name or None, default_status)
+# location_name=None means location_id is set to NULL — appropriate for units
+# that aren't physically at any tracked location (delivered to customer homes,
+# or at off-site shows we don't have DB rows for).
 # default_status is used when the XLSX Status column is blank or doesn't override.
-TAB_MAP: dict[str, tuple[str, str]] = {
+TAB_MAP: dict[str, tuple[str | None, str]] = {
     # Physical showrooms
     "Ennis":      ("Ennis Warehouse",       "at_location"),
     "Tyler":      ("Tyler Showroom",       "at_location"),
@@ -65,17 +68,39 @@ TAB_MAP: dict[str, tuple[str, str]] = {
     # Special transit / build statuses
     "Take to Waco":   ("Waco Showroom",   "in_transit"),
     "Factory":        ("Ennis Warehouse",  "in_factory"),
+    # Spas On Order: default to Ennis Warehouse (factory pipeline / receiving),
+    # but per-row code routes to the destination showroom when the XLSX
+    # customer column matches a showroom name.
     "Spas On Order":  ("Ennis Warehouse",  "on_order"),
-    # Shows
-    "Expo 1":      ("Ennis Warehouse", "at_show"),
-    "Expo 2":      ("Ennis Warehouse", "at_show"),
-    "Expo 3":      ("Ennis Warehouse", "at_show"),
-    "Expo 4":      ("Ennis Warehouse", "at_show"),
-    "Expo 5":      ("Ennis Warehouse", "at_show"),
-    "Canton":      ("Ennis Warehouse", "at_show"),
-    "State Fair":  ("Ennis Warehouse", "at_show"),
-    # Historical
-    "Delivered":   ("Ennis Warehouse", "delivered"),
+    # Shows: NULL location — XLSX show names ("Will Rogers", "Bastrop", etc.)
+    # don't match any DB show location. Show name stays in notes as [Show] X.
+    "Expo 1":      (None, "at_show"),
+    "Expo 2":      (None, "at_show"),
+    "Expo 3":      (None, "at_show"),
+    "Expo 4":      (None, "at_show"),
+    "Expo 5":      (None, "at_show"),
+    "Canton":      (None, "at_show"),
+    "State Fair":  (None, "at_show"),
+    # Historical: delivered to customer homes, not at a tracked location.
+    "Delivered":   (None, "delivered"),
+}
+
+# Customer column values in the Spas On Order tab that mean "this factory order
+# is destined for a specific showroom" (not a real customer). When matched,
+# the script routes location_id to that showroom instead of Ennis Warehouse.
+DESTINATION_SHOWROOM_MAP = {
+    "ennis showroom":       "Ennis Warehouse",
+    "ennis warehouse":      "Ennis Warehouse",
+    "tyler showroom":       "Tyler Showroom",
+    "waco showroom":        "Waco Showroom",
+    "kansas showroom":      "Kansas Showroom",
+    "okc showroom":         "OKC Showroom",
+    "georgetown showroom":  "Georgetown Showroom",
+    "plano showroom":       "Plano Showroom",
+    "houston showroom":     "Houston Showroom",
+    "fort worth showroom":  "Fort Worth Showroom",
+    "ftw showroom":         "Fort Worth Showroom",
+    "ftw":                  "Fort Worth Showroom",
 }
 
 # XLSX Status column value → DB status override
@@ -290,10 +315,24 @@ def extract_rows(xlsx_path: Path) -> tuple[list[dict], list[dict]]:
             if est_comp_note:
                 note_chunks.insert(0, ("Est Comp", est_comp_note))
 
+            # Spas On Order: customer column often holds a destination showroom
+            # ("Plano Showroom", "Tyler showroom", etc.). When it matches a
+            # known showroom, route the unit to that location and blank out the
+            # customer_name (it isn't a real customer).
+            row_location_name = location_name
+            if sheet_name == "Spas On Order" and customer_name:
+                # Use the raw customer string before normalization for matching.
+                raw_last = ("" if is_blank(row[COL_LAST_NAME]) else str(row[COL_LAST_NAME]).strip()).lower()
+                # Strip ",,, Tyler Showroom" trailing dedup
+                first_part = raw_last.split(",")[0].strip()
+                if first_part in DESTINATION_SHOWROOM_MAP:
+                    row_location_name = DESTINATION_SHOWROOM_MAP[first_part]
+                    customer_name = None
+
             data = {
                 "serial_number": None,
                 "order_number":  None,
-                "location_name": location_name,
+                "location_name": row_location_name,
                 "status":        status,
                 "model_code":    None if is_blank(row[COL_MODEL])   else str(row[COL_MODEL]).strip(),
                 "shell_color":   None if is_blank(row[COL_SHELL])   else str(row[COL_SHELL]).strip(),
