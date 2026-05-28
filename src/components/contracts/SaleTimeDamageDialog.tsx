@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import { BlemConfirmationDialog } from "@/components/contracts/BlemConfirmationDialog";
@@ -47,6 +47,12 @@ export function SaleTimeDamageDialog({ open, unitLabel, onConfirm, onCancel }: S
     urls: string[];
     captions: string[];
   } | null>(null);
+  // Hidden file inputs: one camera-first (capture="environment" hints the
+  // device's rear camera so the rep snaps a quick shot of the damage) and
+  // one regular gallery picker. Both feed the same `files` state — the
+  // visible buttons just trigger whichever modality the rep prefers.
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
 
   // Reset internal state every time the dialog opens so stale data from a
   // prior capture doesn't leak forward.
@@ -139,20 +145,63 @@ export function SaleTimeDamageDialog({ open, unitLabel, onConfirm, onCancel }: S
               </div>
               <div>
                 <label className="text-xs font-semibold text-slate-700">Photos <span className="text-red-600">*</span></label>
+                {/* Two visible buttons — one drives the camera-first hidden
+                    input, the other opens the gallery picker. Both append
+                    to the same `files` state so the rep can mix camera
+                    shots and library uploads in a single submission. */}
+                <div className="mt-1 grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => cameraInputRef.current?.click()}
+                    className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg border border-red-300 bg-red-100 text-red-800 text-xs font-semibold hover:bg-red-200 transition-colors touch-manipulation"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    Take Photo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => galleryInputRef.current?.click()}
+                    className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-50 transition-colors touch-manipulation"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    Upload from Library
+                  </button>
+                </div>
+                {/* Hidden camera input — capture="environment" hints rear
+                    camera on iOS/Android. accept="image/*" keeps it to
+                    photos only. */}
                 <input
+                  ref={cameraInputRef}
                   type="file"
                   accept="image/*"
-                  multiple
+                  capture="environment"
+                  className="hidden"
                   onChange={(e) => {
                     const incoming = Array.from(e.target.files ?? []);
-                    // Append rather than replace so multiple camera shots stick.
                     setFiles((prev) => [...prev, ...incoming]);
                     e.target.value = "";
                   }}
-                  className="mt-1 block w-full text-xs text-slate-600 file:mr-2 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-red-100 file:text-red-700 file:font-semibold"
+                />
+                {/* Hidden gallery input — no capture attr, multi-select. */}
+                <input
+                  ref={galleryInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => {
+                    const incoming = Array.from(e.target.files ?? []);
+                    setFiles((prev) => [...prev, ...incoming]);
+                    e.target.value = "";
+                  }}
                 />
                 {files.length > 0 && (
-                  <p className="text-[11px] text-slate-500 mt-1">{files.length} photo(s) selected</p>
+                  <p className="text-[11px] text-slate-500 mt-1.5">{files.length} photo(s) selected</p>
                 )}
               </div>
               {error && (
