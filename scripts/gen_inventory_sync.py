@@ -34,6 +34,21 @@ OUT_DELIVERED_PATH = Path(__file__).parent / "inventory_sync_delivered.sql"
 
 META_TABS = {"KEY", "Status", "Settings", "Shell"}
 
+# Tabs where col 0 holds a SHOW NAME header (and the same show name is repeated
+# as col-0 of every row beneath it as a "marker"), rather than a customer name.
+# In these tabs col 12 holds a HOME SHOWROOM name (e.g. "Tyler"), not a finance
+# balance. Special-cased so we don't pollute customer_name / fin_balance.
+SHOW_TABS = {"Expo 1", "Expo 2", "Expo 3", "Expo 4", "Expo 5",
+             "Canton", "State Fair"}
+
+# Known home-showroom labels that may appear in col-12 of Show tabs. If col-12
+# matches one of these (case-insensitive), it's a home-showroom marker, not a
+# balance.
+HOME_SHOWROOM_LABELS = {
+    "ennis", "tyler", "waco", "kansas", "okc", "georgetown",
+    "plano", "houston", "ftw", "fort worth",
+}
+
 # Tab → (location_name, default_status)
 # default_status is used when the XLSX Status column is blank or doesn't override.
 TAB_MAP: dict[str, tuple[str, str]] = {
@@ -207,6 +222,16 @@ def extract_rows(xlsx_path: Path) -> tuple[list[dict], list[dict]]:
 
         location_name, tab_default_status = TAB_MAP[sheet_name]
         ws = wb[sheet_name]
+        is_show_tab = sheet_name in SHOW_TABS
+
+        # For show tabs, the first row often has just the show name in col 0
+        # (no serial) — capture it for use as a [Show] note on every unit below.
+        tab_show_name: str | None = None
+        if is_show_tab:
+            for row in ws.iter_rows(min_row=2, max_row=2, values_only=True):
+                if row and row[0] and not clean_serial(row[COL_SERIAL]):
+                    tab_show_name = str(row[0]).strip()
+                    break
 
         for row in ws.iter_rows(min_row=2, values_only=True):
             if not row or len(row) < 15:
@@ -222,6 +247,7 @@ def extract_rows(xlsx_path: Path) -> tuple[list[dict], list[dict]]:
             # date values; OKC has "Est Comp" header but balance values. Route by
             # value type instead of header.
             col12_val = row[COL_FIN_BAL]
+            home_showroom_note: str | None = None
             if isinstance(col12_val, (datetime, date)):
                 fin_balance = None
                 approx_delivery = parse_date(col12_val)
@@ -231,6 +257,36 @@ def extract_rows(xlsx_path: Path) -> tuple[list[dict], list[dict]]:
             else:
                 fin_balance = str(col12_val).strip()
                 approx_delivery = None
+                # In Show tabs, col 12 is the unit's HOME SHOWROOM (e.g. "Tyler"),
+                # not a balance. Route to a notes label instead.
+                if is_show_tab and fin_balance.lower() in HOME_SHOWROOM_LABELS:
+                    home_showroom_note = fin_balance
+                    fin_balance = None
+
+            # Customer name: in show tabs, col 0 is usually the show name. Only
+            # treat it as a real customer when status is "Sold" AND the value
+            # doesn't match the show header.
+            customer_name = build_customer_name(row[COL_LAST_NAME], row[COL_FIRST_NAME])
+            if is_show_tab and customer_name and tab_show_name:
+                first_word = customer_name.split(",")[0].strip().lower()
+                show_first = tab_show_name.split(",")[0].strip().lower()
+                if first_word == show_first or first_word.startswith(show_first):
+                    customer_name = None
+                elif status not in ("allocated", "delivered"):
+                    # Stock units at a show should never have a customer name —
+                    # whatever's in col 0 is a sticky note, not a buyer.
+                    customer_name = None
+
+            # Build notes with show + home-showroom metadata for show tabs.
+            note_chunks = [
+                ("Fierce", row[COL_NOTES_1]),
+                ("Atlas",  row[COL_ATLAS_NOTES]),
+                ("Expo",   row[COL_EXPO_NOTES]),
+            ]
+            if is_show_tab and tab_show_name:
+                note_chunks.insert(0, ("Show", tab_show_name))
+            if home_showroom_note:
+                note_chunks.insert(1 if is_show_tab else 0, ("Home", home_showroom_note))
 
             data = {
                 "serial_number": None,
@@ -241,16 +297,12 @@ def extract_rows(xlsx_path: Path) -> tuple[list[dict], list[dict]]:
                 "shell_color":   None if is_blank(row[COL_SHELL])   else str(row[COL_SHELL]).strip(),
                 "cabinet_color": None if is_blank(row[COL_CABINET]) else str(row[COL_CABINET]).strip(),
                 "wrap_status":   normalize_wrap(row[COL_WRAP]),
-                "customer_name": build_customer_name(row[COL_LAST_NAME], row[COL_FIRST_NAME]),
+                "customer_name": customer_name,
                 "fin_balance":   fin_balance,
                 "approx_delivery_date": approx_delivery,
                 "received_date": parse_date(row[COL_COMPLETED]),
-                "notes": merge_notes(
-                    ("Fierce", row[COL_NOTES_1]),
-                    ("Atlas",  row[COL_ATLAS_NOTES]),
-                    ("Expo",   row[COL_EXPO_NOTES]),
-                ),
-                "_source_tab": sheet_name,
+                "notes":         merge_notes(*note_chunks),
+                "_source_tab":   sheet_name,
             }
 
             if is_order_number(raw_key):
