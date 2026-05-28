@@ -10,15 +10,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import type { Customer } from "@/types";
-
-const US_STATES = [
-  "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA",
-  "HI","ID","IL","IN","IA","KS","KY","LA","ME","MD",
-  "MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ",
-  "NM","NY","NC","ND","OH","OK","OR","PA","RI","SC",
-  "SD","TN","TX","UT","VT","VA","WA","WV","WI","WY",
-  "DC",
-] as const;
+import { AddressAutocompleteFields } from "./AddressAutocompleteFields";
 
 const customerSchema = z
   .object({
@@ -123,6 +115,7 @@ export default function Step2Customer({ onNext }: Step2CustomerProps) {
     register,
     handleSubmit,
     watch,
+    setValue,
     formState: { errors },
   } = useForm<CustomerFormValues>({
     resolver: zodResolver(customerSchema),
@@ -394,50 +387,27 @@ export default function Step2Customer({ onNext }: Step2CustomerProps) {
             {...register("secondary_phone")}
           />
 
-          <Input
-            label="Address"
-            placeholder="123 Main St"
-            error={errors.address?.message}
-            {...register("address")}
+          <AddressAutocompleteFields
+            variant="labeled"
+            values={{
+              address: watch("address") || "",
+              city: watch("city") || "",
+              state: watch("state") || "",
+              zip: watch("zip") || "",
+            }}
+            onChange={(next) => {
+              setValue("address", next.address, { shouldValidate: true });
+              setValue("city", next.city, { shouldValidate: true });
+              setValue("state", next.state, { shouldValidate: true });
+              setValue("zip", next.zip, { shouldValidate: true });
+            }}
+            errors={{
+              address: errors.address?.message,
+              city: errors.city?.message,
+              state: errors.state?.message,
+              zip: errors.zip?.message,
+            }}
           />
-
-          <div className="grid grid-cols-3 gap-4">
-            <Input
-              label="City"
-              placeholder="Austin"
-              error={errors.city?.message}
-              {...register("city")}
-            />
-            <div className="flex flex-col gap-1.5">
-              <label
-                htmlFor="state"
-                className="text-sm font-medium text-slate-700"
-              >
-                State
-              </label>
-              <select
-                id="state"
-                className="flex h-12 w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#00929C] focus:border-transparent touch-manipulation"
-                {...register("state")}
-              >
-                <option value="">Select</option>
-                {US_STATES.map((st) => (
-                  <option key={st} value={st}>
-                    {st}
-                  </option>
-                ))}
-              </select>
-              {errors.state?.message && (
-                <p className="text-xs text-red-600">{errors.state.message}</p>
-              )}
-            </div>
-            <Input
-              label="Zip"
-              placeholder="78701"
-              error={errors.zip?.message}
-              {...register("zip")}
-            />
-          </div>
 
           {createError && (
             <div className="rounded-lg border-2 border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">
