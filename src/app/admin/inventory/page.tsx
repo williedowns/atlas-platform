@@ -45,8 +45,9 @@ export default async function AdminInventoryPage({
         show:shows(id, name),
         contract:contracts(id, is_per_nat, per_nat_reason)
       `)
+      .neq("status", "delivered")
       .order("created_at", { ascending: false })
-      .limit(500),
+      .limit(1000),
     supabase.from("locations").select("id, name").eq("active", true).order("name"),
     supabase.from("shows").select("id, name").eq("active", true).order("name"),
   ]);
