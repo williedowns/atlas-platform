@@ -53,7 +53,7 @@ HOME_SHOWROOM_LABELS = {
 # default_status is used when the XLSX Status column is blank or doesn't override.
 TAB_MAP: dict[str, tuple[str, str]] = {
     # Physical showrooms
-    "Ennis":      ("Ennis Showroom",       "at_location"),
+    "Ennis":      ("Ennis Warehouse",       "at_location"),
     "Tyler":      ("Tyler Showroom",       "at_location"),
     "Waco":       ("Waco Showroom",        "at_location"),
     "Kansas":     ("Kansas Showroom",      "at_location"),
@@ -64,18 +64,18 @@ TAB_MAP: dict[str, tuple[str, str]] = {
     "FTW":        ("Fort Worth Showroom",  "at_location"),
     # Special transit / build statuses
     "Take to Waco":   ("Waco Showroom",   "in_transit"),
-    "Factory":        ("Ennis Showroom",  "in_factory"),
-    "Spas On Order":  ("Ennis Showroom",  "on_order"),
+    "Factory":        ("Ennis Warehouse",  "in_factory"),
+    "Spas On Order":  ("Ennis Warehouse",  "on_order"),
     # Shows
-    "Expo 1":      ("Ennis Showroom", "at_show"),
-    "Expo 2":      ("Ennis Showroom", "at_show"),
-    "Expo 3":      ("Ennis Showroom", "at_show"),
-    "Expo 4":      ("Ennis Showroom", "at_show"),
-    "Expo 5":      ("Ennis Showroom", "at_show"),
-    "Canton":      ("Ennis Showroom", "at_show"),
-    "State Fair":  ("Ennis Showroom", "at_show"),
+    "Expo 1":      ("Ennis Warehouse", "at_show"),
+    "Expo 2":      ("Ennis Warehouse", "at_show"),
+    "Expo 3":      ("Ennis Warehouse", "at_show"),
+    "Expo 4":      ("Ennis Warehouse", "at_show"),
+    "Expo 5":      ("Ennis Warehouse", "at_show"),
+    "Canton":      ("Ennis Warehouse", "at_show"),
+    "State Fair":  ("Ennis Warehouse", "at_show"),
     # Historical
-    "Delivered":   ("Ennis Showroom", "delivered"),
+    "Delivered":   ("Ennis Warehouse", "delivered"),
 }
 
 # XLSX Status column value → DB status override
@@ -245,18 +245,18 @@ def extract_rows(xlsx_path: Path) -> tuple[list[dict], list[dict]]:
             # Column 12 header varies ("Fin Bal" / "Est Comp") and worse, the value
             # type doesn't always match the header — Factory has "Fin Bal" header but
             # date values; OKC has "Est Comp" header but balance values. Route by
-            # value type instead of header.
+            # value type instead of header. (inventory_units has no approx_delivery_date
+            # column — date values get folded into notes as [Est Comp] instead.)
             col12_val = row[COL_FIN_BAL]
             home_showroom_note: str | None = None
+            est_comp_note: str | None = None
             if isinstance(col12_val, (datetime, date)):
                 fin_balance = None
-                approx_delivery = parse_date(col12_val)
+                est_comp_note = parse_date(col12_val)
             elif is_blank(col12_val):
                 fin_balance = None
-                approx_delivery = None
             else:
                 fin_balance = str(col12_val).strip()
-                approx_delivery = None
                 # In Show tabs, col 12 is the unit's HOME SHOWROOM (e.g. "Tyler"),
                 # not a balance. Route to a notes label instead.
                 if is_show_tab and fin_balance.lower() in HOME_SHOWROOM_LABELS:
@@ -277,7 +277,7 @@ def extract_rows(xlsx_path: Path) -> tuple[list[dict], list[dict]]:
                     # whatever's in col 0 is a sticky note, not a buyer.
                     customer_name = None
 
-            # Build notes with show + home-showroom metadata for show tabs.
+            # Build notes with show + home-showroom + est-comp metadata.
             note_chunks = [
                 ("Fierce", row[COL_NOTES_1]),
                 ("Atlas",  row[COL_ATLAS_NOTES]),
@@ -287,6 +287,8 @@ def extract_rows(xlsx_path: Path) -> tuple[list[dict], list[dict]]:
                 note_chunks.insert(0, ("Show", tab_show_name))
             if home_showroom_note:
                 note_chunks.insert(1 if is_show_tab else 0, ("Home", home_showroom_note))
+            if est_comp_note:
+                note_chunks.insert(0, ("Est Comp", est_comp_note))
 
             data = {
                 "serial_number": None,
@@ -299,7 +301,6 @@ def extract_rows(xlsx_path: Path) -> tuple[list[dict], list[dict]]:
                 "wrap_status":   normalize_wrap(row[COL_WRAP]),
                 "customer_name": customer_name,
                 "fin_balance":   fin_balance,
-                "approx_delivery_date": approx_delivery,
                 "received_date": parse_date(row[COL_COMPLETED]),
                 "notes":         merge_notes(*note_chunks),
                 "_source_tab":   sheet_name,
@@ -337,7 +338,6 @@ def fmt_value_row(d: dict) -> str:
         sql_escape(d["wrap_status"]),
         sql_escape(d["customer_name"]),
         sql_escape(d["fin_balance"]),
-        sql_escape(d["approx_delivery_date"]),
         f"DATE {sql_escape(d['received_date'])}" if d["received_date"] else "NULL",
         sql_escape(d["notes"]),
     ]
@@ -347,7 +347,7 @@ def fmt_value_row(d: dict) -> str:
 COLUMNS = [
     "serial_number", "order_number", "location_id", "status",
     "model_code", "shell_color", "cabinet_color", "wrap_status",
-    "customer_name", "fin_balance", "approx_delivery_date", "received_date", "notes",
+    "customer_name", "fin_balance", "received_date", "notes",
 ]
 
 SELECT_EXPRS = [
@@ -361,7 +361,6 @@ SELECT_EXPRS = [
     "v.wrap_status",
     "v.customer_name",
     "v.fin_balance",
-    "v.approx_delivery_date",
     "v.received_date",
     "v.notes",
 ]
@@ -369,7 +368,7 @@ SELECT_EXPRS = [
 VALUES_COLUMNS = [
     "serial_number", "order_number", "location_name", "status",
     "model_code", "shell_color", "cabinet_color", "wrap_status",
-    "customer_name", "fin_balance", "approx_delivery_date", "received_date", "notes",
+    "customer_name", "fin_balance", "received_date", "notes",
 ]
 
 
@@ -408,18 +407,17 @@ def emit_sql(serialized: list[dict], on_order: list[dict], xlsx_path: Path) -> s
         parts.append(f") AS v({', '.join(VALUES_COLUMNS)})")
         parts.append(f"ON CONFLICT ({conflict_target}) DO UPDATE SET")
         update_fields = [
-            "location_id          = EXCLUDED.location_id",
-            "status               = EXCLUDED.status",
-            "model_code           = COALESCE(EXCLUDED.model_code, public.inventory_units.model_code)",
-            "shell_color          = COALESCE(EXCLUDED.shell_color, public.inventory_units.shell_color)",
-            "cabinet_color        = COALESCE(EXCLUDED.cabinet_color, public.inventory_units.cabinet_color)",
-            "wrap_status          = COALESCE(EXCLUDED.wrap_status, public.inventory_units.wrap_status)",
-            "customer_name        = EXCLUDED.customer_name",
-            "fin_balance          = EXCLUDED.fin_balance",
-            "approx_delivery_date = EXCLUDED.approx_delivery_date",
-            "received_date        = COALESCE(EXCLUDED.received_date, public.inventory_units.received_date)",
-            "notes                = EXCLUDED.notes",
-            "updated_at           = now()",
+            "location_id   = EXCLUDED.location_id",
+            "status        = EXCLUDED.status",
+            "model_code    = COALESCE(EXCLUDED.model_code, public.inventory_units.model_code)",
+            "shell_color   = COALESCE(EXCLUDED.shell_color, public.inventory_units.shell_color)",
+            "cabinet_color = COALESCE(EXCLUDED.cabinet_color, public.inventory_units.cabinet_color)",
+            "wrap_status   = COALESCE(EXCLUDED.wrap_status, public.inventory_units.wrap_status)",
+            "customer_name = EXCLUDED.customer_name",
+            "fin_balance   = EXCLUDED.fin_balance",
+            "received_date = COALESCE(EXCLUDED.received_date, public.inventory_units.received_date)",
+            "notes         = EXCLUDED.notes",
+            "updated_at    = now()",
         ]
         parts.append("  " + ",\n  ".join(update_fields) + ";")
         parts.append("")
