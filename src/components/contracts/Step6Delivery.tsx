@@ -327,18 +327,17 @@ export default function Step6Delivery({ onNext }: Step6DeliveryProps) {
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [fieldValuesByScenario, setFieldValuesByScenario] = useState<Record<number, Record<string, string>>>({});
 
-  // Timeframe state — hydrate from persisted draft so a Resume keeps the picked value.
+  // Timeframe state — hydrate from persisted draft so a Resume keeps the picked
+  // value. The timeframe is now a required multiple-choice selection (no free-
+  // text custom mode) so reps consistently set realistic windows the customer
+  // sees on the portal and printed contract. If a legacy draft persisted a
+  // custom string that no longer matches a preset, the preset stays empty until
+  // the rep makes a selection.
   const initialIsPreset = persistedTimeframe
     ? (TIMEFRAME_PRESETS as readonly string[]).includes(persistedTimeframe)
     : false;
-  const [timeframeMode, setTimeframeMode] = useState<"preset" | "custom">(
-    persistedTimeframe && !initialIsPreset ? "custom" : "preset"
-  );
   const [timeframePreset, setTimeframePreset] = useState<string>(
     initialIsPreset ? (persistedTimeframe as string) : ""
-  );
-  const [timeframeCustom, setTimeframeCustom] = useState<string>(
-    persistedTimeframe && !initialIsPreset ? persistedTimeframe : ""
   );
 
   function commitTimeframe(value: string) {
@@ -370,6 +369,7 @@ export default function Step6Delivery({ onNext }: Step6DeliveryProps) {
 
   function handleContinue() {
     if (selectedScenarios.length === 0) return;
+    if (!timeframePreset) return; // mandatory — block until rep picks a window
     setDeliveryDiagram(
       selectedScenarios.map((scenario) => ({
         scenario_id: scenario.id,
@@ -393,69 +393,40 @@ export default function Step6Delivery({ onNext }: Step6DeliveryProps) {
       {/* ── Estimated Delivery Timeframe ─────────────────────────────────
           Customer-visible (portal + printed contract) until a firm
           delivery date is scheduled. Admin/manager can change this later
-          from the contract detail page if plans shift. */}
+          from the contract detail page if plans shift. Required: rep must
+          pick one of the preset windows before they can advance to signing. */}
       <div className="rounded-2xl border-2 border-[#00929C]/20 bg-[#00929C]/5 p-4 space-y-3">
         <div>
-          <p className="text-sm font-bold text-slate-900">Estimated Delivery Timeframe</p>
+          <p className="text-sm font-bold text-slate-900">
+            Estimated Delivery Timeframe <span className="text-red-600">*</span>
+          </p>
           <p className="text-xs text-slate-500 mt-0.5">
-            Shown to the customer in their portal and printed on the contract. You can update this later if plans change.
+            Required. Shown to the customer in their portal and printed on the contract. You can update this later if plans change.
           </p>
         </div>
 
-        <div className="inline-flex rounded-xl p-1 bg-white w-full border border-slate-200">
-          <button
-            type="button"
-            onClick={() => setTimeframeMode("preset")}
-            className={`flex-1 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
-              timeframeMode === "preset" ? "bg-[#00929C] text-white shadow-sm" : "text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            Quick pick
-          </button>
-          <button
-            type="button"
-            onClick={() => setTimeframeMode("custom")}
-            className={`flex-1 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
-              timeframeMode === "custom" ? "bg-[#00929C] text-white shadow-sm" : "text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            Custom (e.g. Mid-June)
-          </button>
+        <div className="flex flex-wrap gap-2">
+          {TIMEFRAME_PRESETS.map((p) => {
+            const active = timeframePreset === p;
+            return (
+              <button
+                key={p}
+                type="button"
+                onClick={() => {
+                  setTimeframePreset(p);
+                  commitTimeframe(p);
+                }}
+                className={`px-3 py-2 rounded-full text-sm font-medium border transition-colors touch-manipulation ${
+                  active
+                    ? "bg-[#00929C] text-white border-[#00929C]"
+                    : "bg-white text-slate-700 border-slate-200 hover:border-[#00929C]/40"
+                }`}
+              >
+                {p}
+              </button>
+            );
+          })}
         </div>
-
-        {timeframeMode === "preset" ? (
-          <div className="flex flex-wrap gap-2">
-            {TIMEFRAME_PRESETS.map((p) => {
-              const active = timeframePreset === p;
-              return (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => {
-                    setTimeframePreset(p);
-                    commitTimeframe(p);
-                  }}
-                  className={`px-3 py-2 rounded-full text-sm font-medium border transition-colors touch-manipulation ${
-                    active
-                      ? "bg-[#00929C] text-white border-[#00929C]"
-                      : "bg-white text-slate-700 border-slate-200 hover:border-[#00929C]/40"
-                  }`}
-                >
-                  {p}
-                </button>
-              );
-            })}
-          </div>
-        ) : (
-          <input
-            type="text"
-            value={timeframeCustom}
-            onChange={(e) => setTimeframeCustom(e.target.value)}
-            onBlur={(e) => commitTimeframe(e.target.value)}
-            placeholder='e.g. "Mid-June", "After July 4th", "2-4 weeks from order date"'
-            className="w-full px-4 py-3 rounded-xl border border-slate-200 text-base bg-white focus:outline-none focus:ring-2 focus:ring-[#00929C]/40"
-          />
-        )}
 
         {persistedTimeframe && (
           <p className="text-xs text-slate-500">
@@ -544,13 +515,18 @@ export default function Step6Delivery({ onNext }: Step6DeliveryProps) {
       <div className="space-y-2 pt-2">
         <Button
           onClick={handleContinue}
-          disabled={selectedIds.length === 0}
+          disabled={selectedIds.length === 0 || !timeframePreset}
           size="lg"
           className="w-full"
         >
           Continue to Sign
         </Button>
-        {selectedIds.length === 0 && (
+        {!timeframePreset && (
+          <p className="text-center text-xs text-red-600">
+            Pick an estimated delivery timeframe to continue.
+          </p>
+        )}
+        {timeframePreset && selectedIds.length === 0 && (
           <p className="text-center text-xs text-slate-500">
             Select at least one delivery scenario to continue.
           </p>

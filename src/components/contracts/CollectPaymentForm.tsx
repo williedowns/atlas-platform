@@ -302,7 +302,7 @@ export function CollectPaymentForm({
     }
     setAmountCollected(amount);
     setNewBalance(Math.max(0, balanceDue - amount));
-    setSuccessNote("ACH saved for the office to run. Lindy will see it in the ACH queue and mark it ran once processed.");
+    setSuccessNote("ACH saved. The home office will see it in the ACH queue and mark it ran once processed.");
     setState("success");
   };
 
@@ -733,7 +733,7 @@ export function CollectPaymentForm({
             <div className="rounded-md bg-white border border-red-200 p-3 space-y-2">
               <p className="text-xs text-slate-700">
                 Save didn&apos;t go through. Try again — the bank info will be saved to the
-                office ACH queue for Lindy to run.
+                ACH queue to be ran at the home office.
               </p>
               <Button
                 variant="outline"

@@ -248,7 +248,7 @@ function AchQueueRowCard({
 
       {!canMarkRan && isActive && (
         <p className="text-xs text-slate-400 italic">
-          The office (Lindy) runs this one. You&apos;ll see the status update here once it&apos;s done.
+          The home office runs this one. You&apos;ll see the status update here once it&apos;s done.
         </p>
       )}
 

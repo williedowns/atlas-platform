@@ -138,12 +138,21 @@ const SWIM_SPA_LINES = new Set([
   "Michael Phelps Swim Spas", "H2X Swim Spas",
 ]);
 
-// White Glove Packages — one tap adds the four standard items every order
-// includes (delivery, steps, chemical kit, locking cover). UI convenience only;
-// the bundle fans out to existing product rows so QBO still bills them
-// individually. Product UUIDs verified against products table 2026-05-26.
+// White Glove Packages — one tap adds the standard items every order
+// includes (delivery, steps, chemical kit, locking cover, free LED package,
+// and free WiFi when eligible). UI convenience only; the bundle fans out to
+// existing product rows so QBO still bills them individually. Product UUIDs
+// verified against products table 2026-05-26 (LED + WiFi added 2026-05-28).
 // Items added carry from_package so the contract.created audit log notes which
 // package the rep applied (extracted in /api/contracts/route.ts at submission).
+//
+// LED Lighting Package — included free on every spa White Glove Package.
+// WiFi Module — included free on Twilight Series hot tubs AND every swim
+// spa White Glove Package. Twilight detection happens at click time by
+// inspecting the current cart for a Twilight Series line item.
+const LED_PRODUCT_ID = "a4f1c2d8-3e7b-4f5a-9c2e-1d8a7b3f0e91";
+const WIFI_PRODUCT_ID = "b5e2d3a9-4f8c-4a6b-0d3f-2e9b8c4a1f02";
+
 type WhiteGloveKey = "hot_tub" | "swim_spa";
 const WHITE_GLOVE_PACKAGES: Record<WhiteGloveKey, {
   label: string;
@@ -153,25 +162,29 @@ const WHITE_GLOVE_PACKAGES: Record<WhiteGloveKey, {
 }> = {
   hot_tub: {
     label: "Hot Tub White Glove Package",
-    sublabel: "Delivery · Steps · Chemical Kit · Locking Cover",
+    sublabel: "Delivery · Steps · Chemical Kit · Locking Cover · Free LED · Free WiFi on Twilights & LSX",
     product_ids: [
       "e65e5127-1609-4468-a537-a5863f5fc22f", // HT Delivery — $600
       "f5c56f80-077c-40b5-9db5-b0cb80ef1e1a", // HT Steps — $149
       "6258ae1e-930d-409c-8319-bdd1895673d2", // Start Up Chemical Kit — $149
       "641557eb-94f1-4c28-abee-b302ffd513ba", // HT Deluxe Taper Locking Cover — $599
+      LED_PRODUCT_ID,                          // LED Lighting Package — $650 (free)
+      // WiFi appended conditionally in handleAddPackage when a Twilight is in cart.
     ],
-    total: 1497,
+    total: 2147,
   },
   swim_spa: {
     label: "Swim Spa White Glove Package",
-    sublabel: "Delivery · Steps · Chemical Kit · Locking Cover",
+    sublabel: "Delivery · Steps · Chemical Kit · Locking Cover · Free LED · Free WiFi",
     product_ids: [
       "e8fb26d2-a7a1-40e5-9abd-0445d62867ad", // Swim Spa Delivery — $1,500
       "b658294a-699d-40b7-9dc4-fbedd819f3ef", // SS Steps — $599
       "6258ae1e-930d-409c-8319-bdd1895673d2", // Start Up Chemical Kit — $149
       "ebf0ab0d-cbdc-4509-9e7f-9459e39a227c", // SS Deluxe Taper Locking Cover — $1,499
+      LED_PRODUCT_ID,                          // LED Lighting Package — $650 (free)
+      WIFI_PRODUCT_ID,                         // WiFi Module — $500 (free)
     ],
-    total: 3747,
+    total: 4897,
   },
 };
 
@@ -232,6 +245,41 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
     if (draft.line_items.length === 0) { setTax(0, 0); return; }
     setTaxCalculating(true);
     try {
+      // ── Cross-state sourcing decision (per Avalara consultation 2026-05-28) ──
+      // Atlas's default is delivery to the customer's home. When the customer's
+      // state differs from the show/location state AND we can resolve that
+      // state's rate, pass the customer address as ship_to so /api/tax sources
+      // tax to the destination jurisdiction (not the show floor).
+      // Same-state customers: no override — show/location address is correct.
+      // Out-of-coverage customer states: no override — let it fall through to
+      // show/location rate (best we can do without that state's lookup).
+      const COVERED_STATES = new Set(["TX", "LA", "OK", "KS", "AR"]);
+      const customer = draft.customer;
+      const customerState = (customer?.state ?? "").trim().toUpperCase();
+      const venueState = (
+        draft.show?.state ??
+        draft.location?.state ??
+        ""
+      )
+        .trim()
+        .toUpperCase();
+      const shouldShipTo =
+        !!customer &&
+        !!customer.address &&
+        !!customer.city &&
+        /^\d{5}$/.test(customer.zip ?? "") &&
+        COVERED_STATES.has(customerState) &&
+        customerState !== venueState;
+      const ship_to_address = shouldShipTo
+        ? {
+            line1: customer.address,
+            city: customer.city,
+            region: customerState,
+            postalCode: customer.zip,
+            country: "US",
+          }
+        : undefined;
+
       const response = await fetch("/api/tax", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -240,6 +288,7 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
           discounts: draft.discounts,
           show_id: draft.show_id,
           location_id: draft.location_id,
+          ...(ship_to_address ? { ship_to_address } : {}),
         }),
       });
       if (response.ok) {
@@ -247,7 +296,27 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
         if (data.flat_rate) {
           console.info(`[tax] Using flat-rate fallback (${(data.tax_rate * 100).toFixed(2)}%) until Avalara is connected`);
         }
-        setTax(data.total_tax ?? 0, data.tax_rate ?? 0);
+        // When /api/tax returns a high-confidence lookup result, it includes
+        // audit fields (tax_rate_source / _effective_date / _jurisdictions).
+        // Capture them in the draft so they flow through to /api/contracts
+        // and /api/quotes per migration 098.
+        const hasAudit =
+          typeof data.tax_rate_source === "string" ||
+          Array.isArray(data.tax_rate_jurisdictions);
+        if (hasAudit) {
+          setTax(data.total_tax ?? 0, data.tax_rate ?? 0, {
+            source: typeof data.tax_rate_source === "string" ? data.tax_rate_source : null,
+            effective_date:
+              typeof data.tax_rate_effective_date === "string"
+                ? data.tax_rate_effective_date
+                : null,
+            jurisdictions: Array.isArray(data.tax_rate_jurisdictions)
+              ? data.tax_rate_jurisdictions
+              : null,
+          });
+        } else {
+          setTax(data.total_tax ?? 0, data.tax_rate ?? 0);
+        }
       } else {
         const errBody = await response.json().catch(() => ({}));
         console.error("[tax] API error", response.status, errBody);
@@ -257,7 +326,22 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
     } finally {
       setTaxCalculating(false);
     }
-  }, [draft.line_items, draft.discounts, draft.location, setTax]);
+  }, [
+    draft.line_items,
+    draft.discounts,
+    draft.location,
+    draft.show,
+    // Customer address fields drive the cross-state sourcing decision. When
+    // the customer's state/address changes, re-run the calc so ship_to_address
+    // gets re-evaluated and the tax updates.
+    draft.customer?.state,
+    draft.customer?.address,
+    draft.customer?.city,
+    draft.customer?.zip,
+    draft.show_id,
+    draft.location_id,
+    setTax,
+  ]);
 
   useEffect(() => {
     if (taxTimeoutRef.current) clearTimeout(taxTimeoutRef.current);
@@ -305,7 +389,34 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
     // Tag each item with from_package so the contract.created audit log can
     // report which White Glove Packages the rep applied at submission time.
     const packageTag = key === "hot_tub" ? "hot_tub_white_glove" : "swim_spa_white_glove";
-    for (const pid of pkg.product_ids) {
+
+    // Build the effective product_ids list. Hot Tub White Glove conditionally
+    // appends WiFi when an eligible model is already in the cart. WiFi is
+    // free on all Twilight Series and all LSX (Michael Phelps Legend Series)
+    // hot tubs per Willie 2026-05-28. The codebase currently maps the LSX
+    // prefix to category "Michael Phelps Swim Spas" while masterspas.com
+    // lists those same SKUs as Legend Series HOT TUBS — so the conditional
+    // accepts BOTH `MP Legend Series` and `Michael Phelps Swim Spas` as
+    // qualifying hot tub categories to stay correct regardless of which
+    // bucket the SKU lands in. Swim Spa White Glove already includes WiFi
+    // unconditionally for every swim spa category.
+    const WIFI_ELIGIBLE_HOT_TUB_CATEGORIES = new Set([
+      "Twilight Series",
+      "MP Legend Series",
+      "Michael Phelps Swim Spas",
+    ]);
+    const effectiveIds = [...pkg.product_ids];
+    if (key === "hot_tub") {
+      const cartProducts = draft.line_items.map((li) =>
+        products.find((p) => p.id === li.product_id)
+      );
+      const hasWifiEligibleSpa = cartProducts.some(
+        (p) => !!p?.category && WIFI_ELIGIBLE_HOT_TUB_CATEGORIES.has(p.category)
+      );
+      if (hasWifiEligibleSpa) effectiveIds.push(WIFI_PRODUCT_ID);
+    }
+
+    for (const pid of effectiveIds) {
       if (existingIds.has(pid)) continue;
       const product = products.find((p) => p.id === pid);
       if (!product) continue;

@@ -71,8 +71,11 @@ interface SignSubmitBody {
   signature_data_url: string;
   initials: {
     sales_final: string | null;
-    cancellation_forfeit: string | null;
     rx_30_day: string | null;
+    improper_base: string | null;
+    // Legacy — accepted from older sign-form bundles still in flight, but no
+    // longer required. The cancellation language now lives inside sales_final.
+    cancellation_forfeit?: string | null;
     // Present only when the contract has at least one blem line item.
     blem_acknowledgment?: string | null;
     blem_photos_viewed_at?: Record<string, string>;
@@ -116,7 +119,7 @@ export async function POST(
 
   const printedName = (body.printed_name ?? "").trim();
   const signatureDataUrl = body.signature_data_url;
-  const initials = body.initials ?? { sales_final: null, cancellation_forfeit: null, rx_30_day: null };
+  const initials = body.initials ?? { sales_final: null, rx_30_day: null, improper_base: null };
 
   if (!printedName) {
     return NextResponse.json({ error: "Printed name is required" }, { status: 400 });
@@ -133,17 +136,17 @@ export async function POST(
   if (!body.electronic_consent) {
     return NextResponse.json({ error: "Electronic consent is required" }, { status: 400 });
   }
-  if (!initials.sales_final || !initials.cancellation_forfeit || !initials.rx_30_day) {
+  if (!initials.sales_final || !initials.rx_30_day || !initials.improper_base) {
     return NextResponse.json(
-      { error: "All three required acknowledgments must be initialed" },
+      { error: "All required acknowledgments must be initialed" },
       { status: 400 }
     );
   }
   // Same blank-canvas guard for each required initial.
   const requiredInitials: Array<[string, string]> = [
     ["Sales-final acknowledgment", initials.sales_final],
-    ["Cancellation acknowledgment", initials.cancellation_forfeit],
-    ["Texas prescription acknowledgment", initials.rx_30_day],
+    ["Improper-base acknowledgment", initials.improper_base],
+    ["Texas tax exemption acknowledgment", initials.rx_30_day],
   ];
   const firstBlankInitial = requiredInitials.find(([, url]) => isBlankPng(url));
   if (firstBlankInitial) {
@@ -220,12 +223,12 @@ export async function POST(
   const salesFinalUrl =
     (await uploadDataUrl(supabase, initials.sales_final, `${contract.id}/${tsSlug}-sales-final.png`)) ??
     initials.sales_final;
-  const cancelForfeitUrl =
+  const improperBaseUrl =
     (await uploadDataUrl(
       supabase,
-      initials.cancellation_forfeit,
-      `${contract.id}/${tsSlug}-cancel-forfeit.png`
-    )) ?? initials.cancellation_forfeit;
+      initials.improper_base,
+      `${contract.id}/${tsSlug}-improper-base.png`
+    )) ?? initials.improper_base;
   const rx30DayUrl =
     (await uploadDataUrl(supabase, initials.rx_30_day, `${contract.id}/${tsSlug}-rx-30day.png`)) ??
     initials.rx_30_day;
@@ -253,8 +256,8 @@ export async function POST(
     acknowledgments: {
       sales_final: true,
       sales_final_initials_url: salesFinalUrl,
-      cancellation_forfeit: true,
-      cancellation_forfeit_initials_url: cancelForfeitUrl,
+      improper_base: true,
+      improper_base_initials_url: improperBaseUrl,
       rx_30_day: true,
       rx_30_day_initials_url: rx30DayUrl,
       ...(hasBlemItems

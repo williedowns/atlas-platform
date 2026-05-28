@@ -73,8 +73,9 @@ export default function RemoteSignForm({
 
   const initialsRefs = useRef<Record<AckKey, any>>({
     sales_final: null,
-    cancellation_forfeit: null,
+    cancellation_forfeit: null, // legacy slot — kept so existing AckKey union resolves; not rendered
     rx_30_day: null,
+    improper_base: null,
     blem_acknowledgment: null,
   });
 
@@ -83,8 +84,9 @@ export default function RemoteSignForm({
   const [hasConsented, setHasConsented] = useState(false);
   const [initialsUrls, setInitialsUrls] = useState<Record<AckKey, string | null>>({
     sales_final: null,
-    cancellation_forfeit: null,
+    cancellation_forfeit: null, // legacy slot — no longer collected on new signings
     rx_30_day: null,
+    improper_base: null,
     blem_acknowledgment: null,
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -148,8 +150,8 @@ export default function RemoteSignForm({
           electronic_consent: true,
           initials: {
             sales_final: initialsUrls.sales_final,
-            cancellation_forfeit: initialsUrls.cancellation_forfeit,
             rx_30_day: initialsUrls.rx_30_day,
+            improper_base: initialsUrls.improper_base,
             ...(hasBlemItems
               ? {
                   blem_acknowledgment: initialsUrls.blem_acknowledgment,

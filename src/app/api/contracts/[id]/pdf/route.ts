@@ -203,11 +203,51 @@ export async function GET(
   doc.setTextColor(...SLATE_900);
 
   const lineItems = Array.isArray(contract.line_items) ? contract.line_items : [];
+
+  // Compact mode: when the contract carries enough line items / optional
+  // sections to risk pushing the signature onto a second page, shrink the
+  // line-item row height and font so everything stays on one front page.
+  // Trigger heuristic tuned against real show contracts that have produced
+  // a "tiny orphan" page-2 in the past — eight or more line items, any blem
+  // unit (each one renders a 60mm-tall details block on page 1), or a long
+  // external-notes block all bias toward overflow.
+  const externalNotesPreview = (contract.external_notes ?? "").toString();
+  const blemLineCount = lineItems.filter((li: any) => li?.unit_type === "blem").length;
+  const compactPage1 =
+    lineItems.length >= 8 ||
+    blemLineCount > 0 ||
+    externalNotesPreview.length > 200;
+
+  // Unit-type badge — every spa line item (not just blem) prints a small
+  // colored tag so the customer can see at a glance whether they're getting
+  // a stocked unit, a factory build, a floor model, a wet-model display, or
+  // a blem AS-IS sale. Each tag uses the same compact pill geometry as the
+  // existing blem badge for visual consistency.
+  type UnitTagSpec = { text: string; bg: [number, number, number]; fg: [number, number, number] };
+  function getUnitTagSpec(unitType: string | undefined): UnitTagSpec | null {
+    switch (unitType) {
+      case "blem":
+        return { text: "BLEM · AS-IS",         bg: [254, 226, 226], fg: RED };
+      case "floor_model":
+        return { text: "FLOOR MODEL",          bg: [254, 243, 199], fg: AMBER };
+      case "factory_build":
+        return { text: "ORDER FROM FACTORY",   bg: [254, 243, 199], fg: AMBER };
+      case "wet_model":
+        return { text: "WET MODEL",            bg: [226, 232, 240], fg: SLATE_500 };
+      case "stock":
+        return { text: "IN STOCK",             bg: [220, 252, 231], fg: EMERALD };
+      default:
+        return null;
+    }
+  }
+
   let altRow = false;
   for (const item of lineItems) {
     const colorParts = [item.shell_color, item.cabinet_color && `${item.cabinet_color} cabinet`].filter(Boolean) as string[];
     const colorText = colorParts.join(" · ");
-    const rowH = colorText ? 10 : 6.5;
+    const rowH = colorText
+      ? (compactPage1 ? 8   : 10)
+      : (compactPage1 ? 5.4 : 6.5);
     if (y > 240) {
       doc.addPage();
       y = M;
@@ -221,36 +261,39 @@ export async function GET(
     const name = String(item.product_name ?? "");
     const qty = item.quantity ?? 1;
     const lineTotal = (item.sell_price ?? 0) * qty;
-    const isBlem = item.unit_type === "blem";
-    // Reserve space for the "BLEM · AS-IS" tag when present so the product
-    // name doesn't collide with it. Pad the displayName max length down.
-    const nameMax = isBlem ? 36 : 50;
+    const tagSpec = getUnitTagSpec(item.unit_type);
+    // Reserve space for the unit-type tag when present so the product name
+    // doesn't collide with it. Longer tags (ORDER FROM FACTORY) need more
+    // headroom than BLEM, so pad the displayName max length further down.
+    let nameMax = 50;
+    if (tagSpec) nameMax = tagSpec.text.length > 14 ? 28 : 36;
     const displayName = name.length > nameMax ? name.substring(0, nameMax - 3) + "…" : name;
 
+    const bodyFontSize = compactPage1 ? 9 : 10;
     doc.setTextColor(...SLATE_900);
     doc.setFont("helvetica", "normal");
+    doc.setFontSize(bodyFontSize);
     doc.text(displayName, colProduct + 1, y);
-    if (isBlem) {
-      // Small red tag adjacent to product name so the line is visually
-      // marked. Use measured width so the badge stays snug against the
-      // name across all font metrics.
+    if (tagSpec) {
+      // Small colored pill adjacent to product name so the unit type is
+      // visually obvious from across the room when the rep hands over the
+      // printed contract.
       const nameW = doc.getTextWidth(displayName);
       const tagX = colProduct + 1 + nameW + 2;
       const tagY = y - 3.2;
-      const tagText = "BLEM · AS-IS";
       doc.setFont("helvetica", "bold");
       doc.setFontSize(6.5);
-      const tagW = doc.getTextWidth(tagText) + 3;
-      doc.setFillColor(254, 226, 226);  // red-100
-      doc.setDrawColor(...RED);
+      const tagW = doc.getTextWidth(tagSpec.text) + 3;
+      doc.setFillColor(...tagSpec.bg);
+      doc.setDrawColor(...tagSpec.fg);
       doc.setLineWidth(0.2);
       doc.roundedRect(tagX, tagY, tagW, 4, 0.6, 0.6, "FD");
-      doc.setTextColor(...RED);
-      doc.text(tagText, tagX + 1.5, tagY + 2.8);
+      doc.setTextColor(...tagSpec.fg);
+      doc.text(tagSpec.text, tagX + 1.5, tagY + 2.8);
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
+      doc.setFontSize(bodyFontSize);
     }
-    doc.setFontSize(9);
+    doc.setFontSize(compactPage1 ? 8.5 : 9);
     doc.setTextColor(...SLATE_500);
     doc.text(String(item.serial_number ?? ""), colSerial, y);
     doc.text(String(qty), colQty, y, { align: "center" });
@@ -266,11 +309,11 @@ export async function GET(
     }
 
     if (colorText) {
-      doc.setFontSize(8);
+      doc.setFontSize(compactPage1 ? 7 : 8);
       doc.setTextColor(...SLATE_500);
       doc.setFont("helvetica", "normal");
       const displayColor = colorText.length > 55 ? colorText.substring(0, 52) + "…" : colorText;
-      doc.text(displayColor, colProduct + 1, y + 3.5);
+      doc.text(displayColor, colProduct + 1, y + (compactPage1 ? 3 : 3.5));
     }
 
     doc.setFontSize(10);
@@ -293,11 +336,15 @@ export async function GET(
   function totalsRow(label: string, value: string, opts?: { bold?: boolean; color?: [number, number, number]; size?: number }) {
     if (y > 250) { doc.addPage(); y = M; }
     doc.setFont("helvetica", opts?.bold ? "bold" : "normal");
-    doc.setFontSize(opts?.size ?? 10);
+    // Compact mode shaves the body font from 10pt → 9pt on non-bold rows so
+    // the totals card claws back vertical space without losing the bold
+    // TOTAL emphasis at the bottom.
+    const baseSize = opts?.size ?? (compactPage1 && !opts?.bold ? 9 : 10);
+    doc.setFontSize(baseSize);
     doc.setTextColor(...(opts?.color ?? SLATE_900));
     doc.text(label, totalsLeft, y);
     doc.text(value, totalsRight, y, { align: "right" });
-    y += opts?.bold ? 7 : 5.5;
+    y += opts?.bold ? (compactPage1 ? 6 : 7) : (compactPage1 ? 4.5 : 5.5);
   }
 
   // Subtotal here is the items-only subtotal — pull the doc fee back out of
@@ -382,6 +429,15 @@ export async function GET(
       ? `${f.financer_name ?? "Foundation"} (carries to balance)`
       : `Financing — ${f.financer_name ?? "Lender"}`;
     totalsRow(label, `-${formatCurrency(f.financed_amount)}`, { color: TEAL });
+    // Finance plan number is the lender-issued plan identifier (e.g. Wells
+    // Fargo plan code, GreenSky plan code, Foundation tier number). Rendered
+    // as an indented sub-line under the financer label regardless of the
+    // financing company so the agreement clearly states which plan the
+    // customer is being enrolled into.
+    const planNumber = (f.plan_number ?? "").toString().trim();
+    if (planNumber.length > 0) {
+      totalsRow(`  Plan #${planNumber}`, "", { color: SLATE_500, size: 9 });
+    }
   }
 
   const depositPaid = Number(contract.deposit_paid ?? 0);
@@ -565,7 +621,13 @@ export async function GET(
   }
 
   // ─── Signature ───────────────────────────────────────────────────────────
-  if (y > 235) { doc.addPage(); y = M; }
+  // Signature block is ~30mm tall (signature image + name + date lines). In
+  // compact mode the rest of page 1 was already squeezed to leave room here,
+  // so we extend the break threshold an extra 8mm before giving up and
+  // starting a new page — that's what kept the "tiny orphan page" appearing
+  // on dense show contracts.
+  const sigBreakThreshold = compactPage1 ? 248 : 235;
+  if (y > sigBreakThreshold) { doc.addPage(); y = M; }
   sectionLabel(isQuote ? "ACKNOWLEDGEMENT" : "SIGNATURE", M, y);
   y += 5;
 

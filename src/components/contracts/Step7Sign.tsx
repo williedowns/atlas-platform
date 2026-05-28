@@ -71,8 +71,9 @@ export default function Step7Sign({ onNext }: Step7SignProps) {
   // (iPad sleep, accidental tab switch) restores them on remount.
   const initialsRefs = useRef<Record<AckKey, any>>({
     sales_final: null,
-    cancellation_forfeit: null,
+    cancellation_forfeit: null, // legacy slot — kept so existing AckKey union resolves; not rendered
     rx_30_day: null,
+    improper_base: null,
     blem_acknowledgment: null,
   });
 
@@ -85,8 +86,9 @@ export default function Step7Sign({ onNext }: Step7SignProps) {
   const [hasConsented, setHasConsented] = useState(!!draft.electronic_consent);
   const [initialsUrls, setInitialsUrls] = useState<Record<AckKey, string | null>>({
     sales_final: draft.initials_urls?.sales_final ?? null,
-    cancellation_forfeit: draft.initials_urls?.cancellation_forfeit ?? null,
+    cancellation_forfeit: draft.initials_urls?.cancellation_forfeit ?? null, // legacy slot — no longer collected
     rx_30_day: draft.initials_urls?.rx_30_day ?? null,
+    improper_base: draft.initials_urls?.improper_base ?? null,
     blem_acknowledgment: draft.initials_urls?.blem_acknowledgment ?? null,
   });
   const allAcked = activeAcknowledgments.every((a) => !!initialsUrls[a.key]);
@@ -233,10 +235,10 @@ export default function Step7Sign({ onNext }: Step7SignProps) {
           acknowledgments: {
             sales_final: !!initialsUrls.sales_final,
             sales_final_initials_url: initialsUrls.sales_final ?? null,
-            cancellation_forfeit: !!initialsUrls.cancellation_forfeit,
-            cancellation_forfeit_initials_url: initialsUrls.cancellation_forfeit ?? null,
             rx_30_day: !!initialsUrls.rx_30_day,
             rx_30_day_initials_url: initialsUrls.rx_30_day ?? null,
+            improper_base: !!initialsUrls.improper_base,
+            improper_base_initials_url: initialsUrls.improper_base ?? null,
             // Blem-only fields — present alongside the photo-viewed
             // timestamps so legal can prove the customer reviewed AND
             // initialed.

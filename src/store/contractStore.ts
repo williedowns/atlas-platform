@@ -45,6 +45,13 @@ export interface ContractDraft {
   /** Customer has a Texas tax exemption certificate on file */
   tax_exempt: boolean;
 
+  // Audit-log provenance (migration 098). Captured by Step3Products.tsx
+  // when /api/tax returns lookup-backed rates; flows through to /api/contracts
+  // and /api/quotes via the ...draft spread on submit.
+  tax_rate_source?: string | null;
+  tax_rate_effective_date?: string | null;
+  tax_rate_jurisdictions?: Array<{ name: string; type: string; rate: number }> | null;
+
   // Documentation fee — auto-added to every contract at $99 per Atlas's
   // legacy paper agreement. Sales rep can waive it (toggle on Step 5).
   // Doc-fee tax is ALWAYS charged even when tax_exempt is true: TX statute
@@ -111,8 +118,11 @@ export interface ContractDraft {
   electronic_consent?: boolean;
   initials_urls?: {
     sales_final?: string | null;
+    // Legacy — retained for backward compatibility with persisted drafts
+    // that were started before the merge into sales_final.
     cancellation_forfeit?: string | null;
     rx_30_day?: string | null;
+    improper_base?: string | null;
     blem_acknowledgment?: string | null;
   };
 
@@ -215,7 +225,15 @@ interface ContractStore {
   removeDiscount: (index: number) => void;
   addFinancing: (entry: ContractFinancing) => void;
   removeFinancing: (index: number) => void;
-  setTax: (taxAmount: number, taxRate: number) => void;
+  setTax: (
+    taxAmount: number,
+    taxRate: number,
+    audit?: {
+      source: string | null;
+      effective_date: string | null;
+      jurisdictions: Array<{ name: string; type: string; rate: number }> | null;
+    },
+  ) => void;
   setTaxExempt: (exempt: boolean) => void;
   setDocFeeWaived: (waived: boolean) => void;
   setSurcharge: (enabled: boolean, rate: number) => void;
@@ -235,7 +253,12 @@ interface ContractStore {
   setSignedName: (name: string) => void;
   setElectronicConsent: (consent: boolean) => void;
   setInitialUrl: (
-    key: "sales_final" | "cancellation_forfeit" | "rx_30_day" | "blem_acknowledgment",
+    key:
+      | "sales_final"
+      | "cancellation_forfeit"
+      | "rx_30_day"
+      | "improper_base"
+      | "blem_acknowledgment",
     url: string | null
   ) => void;
   setTaxExemptCert: (cert: { dataUrl: string; filename: string; mime: string } | null) => void;
@@ -549,9 +572,24 @@ export const useContractStore = create<ContractStore>()(
         });
       },
 
-      setTax: (tax_amount, tax_rate) => {
+      setTax: (tax_amount, tax_rate, audit) => {
         set((state) => {
-          const newDraft = { ...state.draft, tax_amount, tax_rate };
+          const newDraft = {
+            ...state.draft,
+            tax_amount,
+            tax_rate,
+            // Only overwrite the audit fields when a fresh lookup result was
+            // provided. Re-renders that just recompute amounts (e.g. line-item
+            // edits triggering /api/tax with no audit data attached) leave the
+            // existing source/jurisdictions intact.
+            ...(audit !== undefined
+              ? {
+                  tax_rate_source: audit.source,
+                  tax_rate_effective_date: audit.effective_date,
+                  tax_rate_jurisdictions: audit.jurisdictions,
+                }
+              : {}),
+          };
           return { draft: { ...newDraft, ...computeTotalsFromDraft(newDraft) } };
         });
       },
