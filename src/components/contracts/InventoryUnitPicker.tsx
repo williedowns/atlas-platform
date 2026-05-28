@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { getUnitTypeLabel, getCabinetName, getModelDisplayName, getValidShellColors, getValidCabinets } from "@/lib/inventory-constants";
 import { createClient } from "@/lib/supabase/client";
 import { BlemConfirmationDialog, type BlemDialogPayload } from "@/components/contracts/BlemConfirmationDialog";
+import { SaleTimeDamageDialog } from "@/components/contracts/SaleTimeDamageDialog";
 
 interface BlemPhotoRow {
   id?: string;
@@ -133,88 +134,33 @@ export function InventoryUnitPicker({
 
   // Sale-time damage reporting on an existing inventory unit — used when a
   // stock/floor/wet unit picked up NEW damage between inventory entry and
-  // the sale (e.g. a ding noticed on the show floor). Rep captures photos
-  // with the device, customer signs off via the photo-viewing gate, the
-  // line item lands on the contract with unit_type='blem' + the new blem
-  // snapshot fields but keeps the original inventory_unit_id linkage.
+  // the sale. The capture sheet + upload + Show-to-Customer dialog all
+  // live in SaleTimeDamageDialog; this picker only tracks which unit is
+  // being reported on and converts the result into a blem-flavored unit
+  // that flows through the parent's onSelect callback.
   const [damageUnit, setDamageUnit] = useState<InventoryUnit | null>(null);
-  const [damageDescription, setDamageDescription] = useState("");
-  const [damageFiles, setDamageFiles] = useState<File[]>([]);
-  const [damageError, setDamageError] = useState<string | null>(null);
-  const [pendingDamageReview, setPendingDamageReview] = useState<{
-    unit: InventoryUnit;
-    description: string;
-    urls: string[];
-    captions: string[];
-  } | null>(null);
 
   function openDamageCapture(unit: InventoryUnit) {
     setDamageUnit(unit);
-    setDamageDescription("");
-    setDamageFiles([]);
-    setDamageError(null);
-  }
-  function closeDamageCapture() {
-    setDamageUnit(null);
-    setDamageDescription("");
-    setDamageFiles([]);
-    setDamageError(null);
   }
 
-  async function handleDamageSubmit() {
+  function handleDamageConfirmed(description: string, photo_urls: string[], viewedAt: string) {
     if (!damageUnit) return;
-    if (!damageDescription.trim()) {
-      setDamageError("Please describe the damage before continuing.");
-      return;
-    }
-    if (damageFiles.length === 0) {
-      setDamageError("Please attach at least one photo of the damage.");
-      return;
-    }
-    setDamageError(null);
-    try {
-      const supabase = createClient();
-      const urls: string[] = [];
-      for (const f of damageFiles) {
-        const ext = (f.name.split(".").pop() ?? "jpg").toLowerCase();
-        const key = `sale-time/${crypto.randomUUID()}.${ext}`;
-        const { error: upErr } = await supabase.storage
-          .from("blem-photos")
-          .upload(key, f, { upsert: false, contentType: f.type });
-        if (upErr) throw new Error(upErr.message);
-        const { data: pub } = supabase.storage.from("blem-photos").getPublicUrl(key);
-        urls.push(pub.publicUrl);
-      }
-      setPendingDamageReview({
-        unit: damageUnit,
-        description: damageDescription.trim(),
-        urls,
-        captions: damageFiles.map((f) => f.name),
-      });
-    } catch (err) {
-      setDamageError(err instanceof Error ? err.message : "Upload failed");
-    }
-  }
-
-  function finalizeDamageReport(viewedAt: string) {
-    if (!pendingDamageReview) return;
-    // Build a blem-flavored snapshot of the inventory unit so the parent's
-    // addLineItemWithUnit call captures both the inventory_unit_id linkage
-    // AND the new damage data. unit_type is overridden to 'blem' so Step 7
-    // routes through the blem acknowledgment flow.
+    // Overlay the new damage data onto the inventory unit so addLineItemWithUnit
+    // captures both the original inventory_unit_id linkage AND the new blem
+    // snapshot. unit_type='blem' is what triggers Step 7's blem acknowledgment.
     const blemUnit: InventoryUnit = {
-      ...pendingDamageReview.unit,
+      ...damageUnit,
       unit_type: "blem",
-      blem_description: pendingDamageReview.description,
-      blem_photos: pendingDamageReview.urls.map((u) => ({ photo_url: u })),
+      blem_description: description,
+      blem_photos: photo_urls.map((u) => ({ photo_url: u })),
     };
     onSelect(blemUnit, {
-      blem_description: pendingDamageReview.description,
-      blem_photo_urls: pendingDamageReview.urls,
+      blem_description: description,
+      blem_photo_urls: photo_urls,
       blem_photos_viewed_at: viewedAt,
     });
-    setPendingDamageReview(null);
-    closeDamageCapture();
+    setDamageUnit(null);
   }
 
   useEffect(() => {
@@ -642,96 +588,16 @@ export function InventoryUnitPicker({
         kioskMode
       />
 
-      {/* Sale-time damage capture sheet — open when the rep tapped
-          "+ Report new damage" on a non-blem inventory row. Description +
-          photos required; submit uploads to the blem-photos bucket and
-          opens the customer Show-to-Customer dialog below. */}
-      {damageUnit && !pendingDamageReview && (
-        <div
-          className="fixed inset-0 z-50 flex flex-col bg-black/60"
-          onClick={closeDamageCapture}
-        >
-          <div
-            className="mt-auto bg-white rounded-t-2xl max-h-[92vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between px-5 py-4 border-b border-red-100 bg-red-50/40">
-              <div>
-                <h2 className="text-lg font-bold text-red-900">Report New Damage</h2>
-                <p className="text-xs text-red-700/80 mt-0.5">
-                  {resolveModelName(damageUnit)} · {damageUnit.serial_number ?? damageUnit.order_number ?? "No ID"}
-                </p>
-              </div>
-              <button onClick={closeDamageCapture} className="p-2 rounded-lg hover:bg-red-100">
-                <svg className="w-5 h-5 text-red-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="px-5 py-4 space-y-4">
-              <p className="text-xs text-slate-600 leading-snug">
-                Captures damage that appeared <em>after</em> this unit was added to inventory. Customer reviews the photos and signs off before the contract is finalized.
-              </p>
-              <div>
-                <label className="text-xs font-semibold text-slate-700">Damage Description <span className="text-red-600">*</span></label>
-                <textarea
-                  value={damageDescription}
-                  onChange={(e) => setDamageDescription(e.target.value)}
-                  rows={3}
-                  maxLength={1000}
-                  placeholder="Describe where the damage is and what it looks like."
-                  className="w-full mt-1 px-3 py-2 rounded-lg border border-red-200 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-red-300"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-700">Photos <span className="text-red-600">*</span></label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={(e) => {
-                    const incoming = Array.from(e.target.files ?? []);
-                    // Append rather than replace so multiple camera shots stick.
-                    setDamageFiles((prev) => [...prev, ...incoming]);
-                    e.target.value = "";
-                  }}
-                  className="mt-1 block w-full text-xs text-slate-600 file:mr-2 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-red-100 file:text-red-700 file:font-semibold"
-                />
-                {damageFiles.length > 0 && (
-                  <p className="text-[11px] text-slate-500 mt-1">{damageFiles.length} photo(s) selected</p>
-                )}
-              </div>
-              {damageError && (
-                <p className="text-xs text-red-600">{damageError}</p>
-              )}
-            </div>
-            <div className="px-5 pb-6">
-              <Button
-                onClick={handleDamageSubmit}
-                variant="accent"
-                size="lg"
-                className="w-full"
-              >
-                Upload Photos & Show to Customer
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Show-to-Customer photo gate for sale-time damage. Customer must
-          tap through every photo before the acknowledgment finalizes. */}
-      <BlemConfirmationDialog
-        open={!!pendingDamageReview}
-        payload={pendingDamageReview ? {
-          unitLabel: `${resolveModelName(pendingDamageReview.unit)} · ${pendingDamageReview.unit.serial_number ?? pendingDamageReview.unit.order_number ?? "No ID"}`,
-          blem_description: pendingDamageReview.description,
-          blem_photo_urls: pendingDamageReview.urls,
-          captions: pendingDamageReview.captions,
-        } : null}
-        onConfirm={finalizeDamageReport}
-        onCancel={() => setPendingDamageReview(null)}
-        kioskMode
+      {/* Sale-time damage capture for a stock/floor/wet inventory unit.
+          Shared component owns the capture sheet + photo upload + customer
+          Show-to-Customer gate; we just supply the unit label and convert
+          the confirmed payload into a blem-flavored inventory unit on the
+          way out. */}
+      <SaleTimeDamageDialog
+        open={!!damageUnit}
+        unitLabel={damageUnit ? `${resolveModelName(damageUnit)} · ${damageUnit.serial_number ?? damageUnit.order_number ?? "No ID"}` : ""}
+        onConfirm={handleDamageConfirmed}
+        onCancel={() => setDamageUnit(null)}
       />
     </div>
   );

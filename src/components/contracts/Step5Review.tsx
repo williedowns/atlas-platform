@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useRef } from "react";
+import { Fragment, useState, useMemo, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useContractStore } from "@/store/contractStore";
 import type { DepositSplit } from "@/store/contractStore";
@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import CustomerFileVault from "@/components/contracts/CustomerFileVault";
 import ExemptionCertSignModal from "@/components/contracts/ExemptionCertSignModal";
+import { SaleTimeDamageDialog } from "@/components/contracts/SaleTimeDamageDialog";
 import {
   formatCurrency,
   formatDate,
@@ -69,7 +70,14 @@ function downscaleImageToDataUrl(file: File, maxDim: number, quality: number): P
 
 export default function Step5Review({ onNext }: Step5ReviewProps) {
   const router = useRouter();
-  const { draft, addDepositSplit, removeDepositSplit, updateLineItemSerial, updateLineItemPrice, removeLineItem, setNotes, setExternalNotes, setNeedsPermit, setNeedsHoa, setPermitJurisdiction, setTaxExempt, setDocFeeWaived, setTaxExemptCert, setRxFile, setConcreteEstimatePending, setConcreteEstimateNotes } = useContractStore();
+  const { draft, addDepositSplit, removeDepositSplit, updateLineItemSerial, updateLineItemPrice, removeLineItem, setNotes, setExternalNotes, setNeedsPermit, setNeedsHoa, setPermitJurisdiction, setTaxExempt, setDocFeeWaived, setTaxExemptCert, setRxFile, setConcreteEstimatePending, setConcreteEstimateNotes, markLineItemAsBlem } = useContractStore();
+
+  // Sale-time damage capture state — when a line item index is set, the
+  // SaleTimeDamageDialog opens for that line. On confirm we flip the line
+  // to a blem AS-IS sale via the store. Mirrors the picker's flow so reps
+  // get a second chance to flag damage at the review step if they missed
+  // it during initial unit selection.
+  const [damageLineIdx, setDamageLineIdx] = useState<number | null>(null);
   const [certError, setCertError] = useState<string | null>(null);
   const [rxError, setRxError] = useState<string | null>(null);
   const [showExemptionSignModal, setShowExemptionSignModal] = useState(false);
@@ -461,8 +469,15 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
               <tbody>
                 {draft.line_items.map((item, idx) => {
                   const isGranite = item.linked_spa_product_id !== undefined;
+                  // "+ Report new damage" is only relevant for inventory-
+                  // linked spa lines that haven't already been flagged blem.
+                  // Granite / accessories / already-blem / factory builds
+                  // without an inventory_unit_id don't get the affordance.
+                  const canReportDamage =
+                    !isGranite && !!item.inventory_unit_id && item.unit_type !== "blem";
                   return (
-                  <tr key={idx} className="border-b border-slate-100">
+                  <Fragment key={idx}>
+                  <tr className={canReportDamage ? "border-b-0" : "border-b border-slate-100"}>
                     <td className="py-3 px-4 font-medium">
                       {isGranite ? (
                         <div className="flex items-center gap-2 flex-wrap">
@@ -520,6 +535,23 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
                       {formatCurrency(item.sell_price * item.quantity)}
                     </td>
                   </tr>
+                  {canReportDamage && (
+                    <tr className="border-b border-slate-100">
+                      <td colSpan={4} className="px-4 pb-3">
+                        <button
+                          type="button"
+                          onClick={() => setDamageLineIdx(idx)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 transition-colors touch-manipulation"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M5.07 19h13.86c1.54 0 2.5-1.67 1.73-3L13.73 4a2 2 0 00-3.46 0L3.34 16c-.77 1.33.19 3 1.73 3z" />
+                          </svg>
+                          + Report new damage on this unit
+                        </button>
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                   );
                 })}
               </tbody>
@@ -1615,6 +1647,30 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
           }}
         />
       )}
+
+      {/* Sale-time damage capture for a line item that was added without
+          damage flagged. Reuses the picker's dialog so the customer goes
+          through the same Show-to-Customer photo gate; on confirm the
+          line item flips to a blem AS-IS sale and Step 7 will require
+          the Blem Acceptance initial pad. */}
+      <SaleTimeDamageDialog
+        open={damageLineIdx !== null}
+        unitLabel={
+          damageLineIdx !== null && draft.line_items[damageLineIdx]
+            ? `${draft.line_items[damageLineIdx].product_name}${
+                draft.line_items[damageLineIdx].serial_number
+                  ? ` · Serial #${draft.line_items[damageLineIdx].serial_number}`
+                  : ""
+              }`
+            : ""
+        }
+        onConfirm={(description, photo_urls, viewed_at) => {
+          if (damageLineIdx === null) return;
+          markLineItemAsBlem(damageLineIdx, { description, photo_urls, photos_viewed_at: viewed_at });
+          setDamageLineIdx(null);
+        }}
+        onCancel={() => setDamageLineIdx(null)}
+      />
     </div>
   );
 }

@@ -228,6 +228,15 @@ interface ContractStore {
   ) => void;
   // Mark a blem line's Show-to-Customer photo-viewing gate complete.
   markBlemPhotosViewed: (blem_line_id: string, viewed_at: string) => void;
+  // Convert an existing line item to a blem AS-IS sale by attaching a
+  // damage description + photo URLs. Mints a new blem_line_id, flips
+  // unit_type to 'blem', and stamps the Show-to-Customer gate timestamp.
+  // Used when a stock/floor unit picked up new damage that wasn't
+  // captured at the inventory-picker step.
+  markLineItemAsBlem: (
+    index: number,
+    blem: { description: string; photo_urls: string[]; photos_viewed_at: string },
+  ) => void;
   removeLineItem: (index: number) => void;
   updateLineItemSerial: (index: number, serial: string) => void;
   updateLineItemPrice: (index: number, price: number) => void;
@@ -489,6 +498,37 @@ export const useContractStore = create<ContractStore>()(
             },
           },
         })),
+
+      markLineItemAsBlem: (index, blem) =>
+        set((state) => {
+          const existing = state.draft.line_items[index];
+          if (!existing) return state;
+          // Reuse the existing blem_line_id if one was already minted (defensive
+          // — markLineItemAsBlem could in theory be called twice on the same
+          // row if a rep wants to re-shoot photos); otherwise mint a fresh one.
+          const blem_line_id =
+            existing.blem_line_id
+              ?? (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+                ? crypto.randomUUID()
+                : `blem-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+          const nextItem: ContractLineItem = {
+            ...existing,
+            unit_type: "blem" as UnitType,
+            blem_line_id,
+            blem_description: blem.description,
+            blem_photo_urls: blem.photo_urls,
+          };
+          const line_items = state.draft.line_items.map((li, i) => (i === index ? nextItem : li));
+          const newDraft = {
+            ...state.draft,
+            line_items,
+            blem_photos_viewed_at: {
+              ...(state.draft.blem_photos_viewed_at ?? {}),
+              [blem_line_id]: blem.photos_viewed_at,
+            },
+          };
+          return { draft: { ...newDraft, ...computeTotalsFromDraft(newDraft) } };
+        }),
 
       removeLineItem: (index) => {
         set((state) => {
