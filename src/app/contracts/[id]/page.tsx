@@ -30,6 +30,7 @@ import AdjustmentEditor from "@/components/contracts/AdjustmentEditor";
 import NotesEditor from "@/components/contracts/NotesEditor";
 import AssignmentEditor from "@/components/contracts/AssignmentEditor";
 import TaxSettingsEditor from "@/components/contracts/TaxSettingsEditor";
+import TaxRateProvenance from "@/components/contracts/TaxRateProvenance";
 import DeliveryDiagramEditor from "@/components/contracts/DeliveryDiagramEditor";
 import { LowDepositBadge } from "@/components/contracts/LowDepositBadge";
 import { lowDepositInfo } from "@/lib/low-deposit";
@@ -695,12 +696,35 @@ export default async function ContractDetailPage({
         </Card>
 
         {canModifyContract && (
-          <TaxSettingsEditor
-            contractId={contract.id}
-            taxRate={Number(contract.tax_rate ?? 0)}
-            taxExempt={!!contract.tax_exempt}
-            canEdit={canModifyContract}
-          />
+          <>
+            <TaxRateProvenance
+              taxRate={Number(contract.tax_rate ?? 0)}
+              taxRateSource={
+                (contract as { tax_rate_source?: string | null }).tax_rate_source ?? null
+              }
+              taxRateEffectiveDate={
+                (contract as { tax_rate_effective_date?: string | null })
+                  .tax_rate_effective_date ?? null
+              }
+              taxRateJurisdictions={
+                (contract as {
+                  tax_rate_jurisdictions?:
+                    | { name: string; type: string; rate: number }[]
+                    | null;
+                }).tax_rate_jurisdictions ?? null
+              }
+              taxRateResolvedAt={
+                (contract as { tax_rate_resolved_at?: string | null })
+                  .tax_rate_resolved_at ?? null
+              }
+            />
+            <TaxSettingsEditor
+              contractId={contract.id}
+              taxRate={Number(contract.tax_rate ?? 0)}
+              taxExempt={!!contract.tax_exempt}
+              canEdit={canModifyContract}
+            />
+          </>
         )}
 
         {/* Payments */}
@@ -1065,6 +1089,9 @@ export default async function ContractDetailPage({
                       amount: contract.tax_refund_amount,
                       issued_at: contract.tax_refund_issued_at,
                       notes: contract.tax_refund_notes ?? null,
+                      reason:
+                        (contract as { tax_refund_reason?: string | null })
+                          .tax_refund_reason ?? null,
                     }
                   : null
               }

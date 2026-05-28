@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { formatCurrency } from "@/lib/utils";
 import type { Product, DiscountType, ContractDiscount } from "@/types";
 import { isSpaProduct, isOptionAvailableForModel } from "@/lib/inventory-constants";
+import { decideShipToAddress } from "@/lib/tax/sourcingDecision";
 import { InventoryUnitPicker } from "@/components/contracts/InventoryUnitPicker";
 import { GRANITE_PRICE_TIERS, GRANITE_PRODUCT_ID, isSpaWithDimensions } from "@/lib/granite";
 import { isOutTheDoorDiscount } from "@/lib/discounts";
@@ -246,39 +247,15 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
     setTaxCalculating(true);
     try {
       // ── Cross-state sourcing decision (per Avalara consultation 2026-05-28) ──
-      // Atlas's default is delivery to the customer's home. When the customer's
-      // state differs from the show/location state AND we can resolve that
-      // state's rate, pass the customer address as ship_to so /api/tax sources
-      // tax to the destination jurisdiction (not the show floor).
-      // Same-state customers: no override — show/location address is correct.
-      // Out-of-coverage customer states: no override — let it fall through to
-      // show/location rate (best we can do without that state's lookup).
-      const COVERED_STATES = new Set(["TX", "LA", "OK", "KS", "AR"]);
-      const customer = draft.customer;
-      const customerState = (customer?.state ?? "").trim().toUpperCase();
-      const venueState = (
-        draft.show?.state ??
-        draft.location?.state ??
-        ""
-      )
-        .trim()
-        .toUpperCase();
-      const shouldShipTo =
-        !!customer &&
-        !!customer.address &&
-        !!customer.city &&
-        /^\d{5}$/.test(customer.zip ?? "") &&
-        COVERED_STATES.has(customerState) &&
-        customerState !== venueState;
-      const ship_to_address = shouldShipTo
-        ? {
-            line1: customer.address,
-            city: customer.city,
-            region: customerState,
-            postalCode: customer.zip,
-            country: "US",
-          }
-        : undefined;
+      // Helper at src/lib/tax/sourcingDecision.ts is the single source of truth.
+      // Returns ship_to_address when the customer's state differs from the
+      // show/location state AND we cover the customer's state; otherwise
+      // returns undefined (default to show/location address).
+      const ship_to_address = decideShipToAddress({
+        customer: draft.customer,
+        show: draft.show,
+        location: draft.location,
+      });
 
       const response = await fetch("/api/tax", {
         method: "POST",
@@ -1268,9 +1245,24 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
             setPickerProduct(null);
             collapseAfterModelAdd();
           }}
-          onSkip={(shell, cabinet) => {
+          onManualEntry={(payload) => {
             const { product, price } = pickerProduct;
-            addLineItem(product, price, false, shell, cabinet);
+            // Manual entry carries unit_type (required), serial (required
+            // except factory_build), and location — mirrors the paper Sales
+            // Agreement's checkbox + serial + location fields.
+            addLineItem(
+              product,
+              price,
+              false,
+              payload.shell_color,
+              payload.cabinet_color,
+              undefined,
+              {
+                unit_type: payload.unit_type,
+                serial_number: payload.serial_number,
+                unit_location: payload.unit_location,
+              },
+            );
             const flashKey = product.id + "-" + price;
             setAddedFlash(flashKey);
             setTimeout(() => setAddedFlash(null), 800);

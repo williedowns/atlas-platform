@@ -16,7 +16,30 @@ interface Props {
     amount: number;
     issued_at: string;
     notes: string | null;
+    reason?: string | null;
   } | null;
+}
+
+type RefundReason =
+  | "tx_hydrotherapy_rx"
+  | "ok_disabled_veteran"
+  | "resale_certificate"
+  | "corrected_rate"
+  | "customer_dispute"
+  | "other";
+
+const REFUND_REASONS: Array<{ value: RefundReason; label: string }> = [
+  { value: "tx_hydrotherapy_rx", label: "TX hydrotherapy Rx (received post-sale)" },
+  { value: "ok_disabled_veteran", label: "OK disabled veteran cert" },
+  { value: "resale_certificate", label: "Resale certificate" },
+  { value: "corrected_rate", label: "Wrong rate originally applied" },
+  { value: "customer_dispute", label: "Customer dispute resolved in their favor" },
+  { value: "other", label: "Other (explain in notes)" },
+];
+
+function reasonLabel(value: string | null | undefined): string | null {
+  if (!value) return null;
+  return REFUND_REASONS.find((r) => r.value === value)?.label ?? value;
 }
 
 function formatDate(iso: string) {
@@ -37,6 +60,7 @@ export function TaxRefundButton({ contractId, taxAmount, ccPayment, existingRefu
   const [open, setOpen] = useState(false);
   const [amount, setAmount] = useState(taxAmount > 0 ? taxAmount.toFixed(2) : "");
   const [notes, setNotes] = useState("");
+  const [reason, setReason] = useState<RefundReason | "">("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [issued, setIssued] = useState(existingRefund ?? null);
@@ -48,6 +72,7 @@ export function TaxRefundButton({ contractId, taxAmount, ccPayment, existingRefu
 
   // Already issued — show read-only state
   if (issued) {
+    const issuedReasonLabel = reasonLabel(issued.reason);
     return (
       <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
         <div className="flex items-start gap-3">
@@ -60,8 +85,13 @@ export function TaxRefundButton({ contractId, taxAmount, ccPayment, existingRefu
             <p className="font-semibold text-emerald-800 text-sm">Tax Refund Issued</p>
             <p className="text-emerald-700 text-sm font-bold mt-0.5">{formatCurrency(issued.amount)}</p>
             <p className="text-xs text-emerald-600 mt-0.5">{formatDate(issued.issued_at)}</p>
+            {issuedReasonLabel && (
+              <p className="text-xs text-emerald-700 mt-1">
+                Reason: <span className="font-semibold">{issuedReasonLabel}</span>
+              </p>
+            )}
             {issued.notes && (
-              <p className="text-xs text-slate-500 mt-1 italic">"{issued.notes}"</p>
+              <p className="text-xs text-slate-500 mt-1 italic">&ldquo;{issued.notes}&rdquo;</p>
             )}
           </div>
         </div>
@@ -77,16 +107,25 @@ export function TaxRefundButton({ contractId, taxAmount, ccPayment, existingRefu
       setError("Enter a valid refund amount.");
       return;
     }
+    if (!reason) {
+      setError("Pick a reason — the audit log requires one.");
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch(`/api/contracts/${contractId}/tax-refund`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amount: parsedAmount, notes }),
+        body: JSON.stringify({ amount: parsedAmount, notes, reason }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error ?? "Failed to issue refund."); return; }
-      setIssued({ amount: parsedAmount, issued_at: data.issued_at, notes: (data.notes ?? notes) || null });
+      setIssued({
+        amount: parsedAmount,
+        issued_at: data.issued_at,
+        notes: (data.notes ?? notes) || null,
+        reason,
+      });
       setOpen(false);
     } catch {
       setError("Network error. Please try again.");
@@ -158,13 +197,35 @@ export function TaxRefundButton({ contractId, taxAmount, ccPayment, existingRefu
 
           <div>
             <label className="text-xs font-medium text-slate-600 block mb-1">
+              Reason <span className="text-red-500">*</span>
+            </label>
+            <select
+              value={reason}
+              onChange={(e) => setReason(e.target.value as RefundReason | "")}
+              className="w-full px-3 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+              required
+            >
+              <option value="">— Pick a reason —</option>
+              {REFUND_REASONS.map((r) => (
+                <option key={r.value} value={r.value}>
+                  {r.label}
+                </option>
+              ))}
+            </select>
+            <p className="text-[10px] text-slate-500 mt-1">
+              Required for audit defense — the categorized reason is logged with the refund event.
+            </p>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-slate-600 block mb-1">
               Notes <span className="text-slate-400">(optional)</span>
             </label>
             <input
               type="text"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder={hasCard ? "e.g. TX exemption cert received 4/8/2026" : "e.g. Credit memo in QuickBooks, ACH refund…"}
+              placeholder={hasCard ? "e.g. Rx dated 4/8/2026, customer Jane Smith" : "e.g. Credit memo in QuickBooks, ACH refund…"}
               className="w-full px-3 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
             />
           </div>

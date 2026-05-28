@@ -28,6 +28,13 @@ export async function POST(req: Request) {
     tax_amount,
     tax_rate,
     tax_exempt,
+    // Audit-log provenance (per migration 098). Client SHOULD send these
+    // after calling /api/tax/lookup at the show address. Until the wizard
+    // is wired, these are missing → default to "legacy_default" below so
+    // every new contract has at least a recognizable source.
+    tax_rate_source,
+    tax_rate_effective_date,
+    tax_rate_jurisdictions,
     surcharge_amount,
     surcharge_rate,
     surcharge_enabled,
@@ -167,6 +174,22 @@ export async function POST(req: Request) {
       tax_amount,
       tax_rate,
       tax_exempt: !!tax_exempt,
+      // Audit-log fields (migration 098). Default to "legacy_default" when
+      // the client hasn't done a lookup yet. When the wizard wires
+      // /api/tax/lookup, these will arrive populated and we'll persist them
+      // verbatim. Invariant: tax_rate_source is never NULL on new contracts.
+      tax_rate_source:
+        typeof tax_rate_source === "string" && tax_rate_source.trim()
+          ? tax_rate_source.trim()
+          : "legacy_default",
+      tax_rate_effective_date:
+        typeof tax_rate_effective_date === "string" && tax_rate_effective_date.trim()
+          ? tax_rate_effective_date.trim()
+          : null,
+      tax_rate_jurisdictions: Array.isArray(tax_rate_jurisdictions)
+        ? tax_rate_jurisdictions
+        : null,
+      tax_rate_resolved_at: new Date().toISOString(),
       surcharge_amount: surcharge_enabled ? surcharge_amount : 0,
       surcharge_rate: surcharge_enabled ? surcharge_rate : 0,
       doc_fee_amount: doc_fee_amount ?? 99,

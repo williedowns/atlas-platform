@@ -159,6 +159,22 @@ export default async function AdminPage() {
           </Card>
         </Link>
 
+        {/* Tax Venues */}
+        <Link href="/admin/tax-venues" className="block">
+          <Card className="hover:border-slate-300 transition-colors cursor-pointer">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="font-semibold text-slate-900">Tax Venues</p>
+                <p className="text-sm text-slate-500">Pinned sales tax rates for shows · TX/LA/OK/KS</p>
+              </div>
+              <svg className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </CardContent>
+          </Card>
+        </Link>
+
         {/* Inventory Management */}
         <Link href="/admin/inventory" className="block">
           <Card className={`border-slate-200 hover:border-[#00929C]/40 transition-colors ${reorderCount > 0 ? "border-amber-300" : ""}`}>

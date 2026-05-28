@@ -187,6 +187,9 @@ interface InventoryUnitDetails {
   unit_type?: string | null;
   shell_color?: string | null;
   cabinet_color?: string | null;
+  // Sub-location label (e.g. "Henderson", "Floor", "Backroom") snapshotted
+  // onto the line item so the printed contract mirrors the paper form.
+  sub_location?: string | null;
   // Snapshot copies of blem evidence used when adding a blem unit. The
   // store doesn't fetch these from the DB — the caller (InventoryUnitPicker)
   // passes the values it already loaded so they freeze into the line item
@@ -199,7 +202,18 @@ interface ContractStore {
   draft: ContractDraft;
   setShow: (show: Show, location: Location | null) => void;
   setCustomer: (customer: Customer) => void;
-  addLineItem: (product: Product, price: number, waived?: boolean, shell_color?: string, cabinet_color?: string, fromPackage?: ContractLineItem["from_package"]) => void;
+  addLineItem: (
+    product: Product,
+    price: number,
+    waived?: boolean,
+    shell_color?: string,
+    cabinet_color?: string,
+    fromPackage?: ContractLineItem["from_package"],
+    // Manual-entry unit metadata: rep declared the unit type without
+    // picking a specific inventory unit (e.g. selecting "New Factory
+    // Build" with a pending serial). Mirrors the paper-form checkboxes.
+    manualUnit?: { unit_type?: UnitType; serial_number?: string; unit_location?: string },
+  ) => void;
   addLineItemWithUnit: (product: Product, price: number, unit: InventoryUnitDetails) => void;
   // Add one Crushed Granite Base line per spa in cart, length locked to each
   // spa's longest side. Skips any spa that already has a linked granite line
@@ -362,7 +376,7 @@ export const useContractStore = create<ContractStore>()(
           return { draft: { ...newDraft, ...computeTotalsFromDraft(newDraft) } };
         }),
 
-      addLineItem: (product, price, waived = false, shell_color?, cabinet_color?, fromPackage?) => {
+      addLineItem: (product, price, waived = false, shell_color?, cabinet_color?, fromPackage?, manualUnit?) => {
         set((state) => {
           const spaLine: ContractLineItem = {
             product_id: product.id,
@@ -374,6 +388,13 @@ export const useContractStore = create<ContractStore>()(
             ...(shell_color ? { shell_color } : {}),
             ...(cabinet_color ? { cabinet_color } : {}),
             ...(fromPackage ? { from_package: fromPackage } : {}),
+            // Manual unit metadata — present when the rep declared unit_type
+            // via the picker's "Add Without Selecting a Unit" sheet instead
+            // of picking a specific inventory row. Serial may be blank for
+            // Factory Build; PDF render handles that case explicitly.
+            ...(manualUnit?.unit_type ? { unit_type: manualUnit.unit_type } : {}),
+            ...(manualUnit?.serial_number ? { serial_number: manualUnit.serial_number } : {}),
+            ...(manualUnit?.unit_location ? { unit_location: manualUnit.unit_location } : {}),
           };
           const nextLineItems = [...state.draft.line_items, spaLine];
           const newDraft = { ...state.draft, line_items: nextLineItems };
@@ -400,6 +421,9 @@ export const useContractStore = create<ContractStore>()(
             unit_type: (unit.unit_type ?? undefined) as UnitType | undefined,
             shell_color: unit.shell_color ?? undefined,
             cabinet_color: unit.cabinet_color ?? undefined,
+            // Snapshot the unit's current location label so the printed
+            // contract carries it forward even if the unit later moves.
+            ...(unit.sub_location ? { unit_location: unit.sub_location } : {}),
             ...(isBlem
               ? {
                   blem_line_id,

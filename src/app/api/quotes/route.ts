@@ -23,6 +23,10 @@ export async function POST(req: Request) {
     tax_amount,
     tax_rate,
     tax_exempt,
+    // Audit-log provenance (migration 098) — mirrors /api/contracts.
+    tax_rate_source,
+    tax_rate_effective_date,
+    tax_rate_jurisdictions,
     surcharge_amount,
     surcharge_rate,
     surcharge_enabled,
@@ -107,6 +111,22 @@ export async function POST(req: Request) {
       tax_amount,
       tax_rate,
       tax_exempt: !!tax_exempt,
+      // Audit-log fields (migration 098). Default "legacy_default" until the
+      // wizard wires /api/tax/lookup. Quote→contract conversion will carry
+      // these through via loadFromQuote in src/app/contracts/new/page.tsx
+      // once that path is updated to pass the audit fields.
+      tax_rate_source:
+        typeof tax_rate_source === "string" && tax_rate_source.trim()
+          ? tax_rate_source.trim()
+          : "legacy_default",
+      tax_rate_effective_date:
+        typeof tax_rate_effective_date === "string" && tax_rate_effective_date.trim()
+          ? tax_rate_effective_date.trim()
+          : null,
+      tax_rate_jurisdictions: Array.isArray(tax_rate_jurisdictions)
+        ? tax_rate_jurisdictions
+        : null,
+      tax_rate_resolved_at: new Date().toISOString(),
       surcharge_amount: surcharge_enabled ? surcharge_amount : 0,
       surcharge_rate: surcharge_enabled ? surcharge_rate : 0,
       doc_fee_amount: doc_fee_amount ?? 99,

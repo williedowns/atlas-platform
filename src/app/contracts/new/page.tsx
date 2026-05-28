@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useContractStore } from "@/store/contractStore";
 import { createClient } from "@/lib/supabase/client";
+import { decideShipToAddress } from "@/lib/tax/sourcingDecision";
 import { Button } from "@/components/ui/button";
 import Step1Show from "@/components/contracts/Step1Show";
 import Step2Customer from "@/components/contracts/Step2Customer";
@@ -51,6 +52,16 @@ function NewContractContent() {
   const hasDraftProgress = useContractStore((s) => s.hasDraftProgress);
   const [step, setStep] = useState(1);
   const [loadingQuote, setLoadingQuote] = useState(!!fromQuoteId);
+  // Surfaced when a quote→contract conversion refreshes a stale tax rate.
+  // Avalara consultation 2026-05-28: "if you don't purchase for six months,
+  // those taxes could be different." Atlas's quotes can sit for weeks/months
+  // before signing — at conversion time we re-resolve against the current
+  // state DOR rate and show this notice if the rate changed.
+  const [staleRateNotice, setStaleRateNotice] = useState<{
+    previousRate: number;
+    newRate: number;
+    quoteResolvedAt: string | null;
+  } | null>(null);
   const [loadingShowPrefill, setLoadingShowPrefill] = useState(
     !fromQuoteId && !!prefillShowId
   );
@@ -196,6 +207,19 @@ function NewContractContent() {
           tax_amount: data.tax_amount ?? 0,
           tax_rate: data.tax_rate ?? 0,
           tax_exempt: data.tax_exempt ?? false,
+          // Carry the quote's audit provenance through to the contract draft.
+          // If the re-resolve below succeeds, these get overwritten with
+          // current values; if the lookup fails, the quote's saved provenance
+          // (which may be stale) is preserved as best-available evidence.
+          tax_rate_source: (data as { tax_rate_source?: string | null }).tax_rate_source ?? null,
+          tax_rate_effective_date:
+            (data as { tax_rate_effective_date?: string | null }).tax_rate_effective_date ?? null,
+          tax_rate_jurisdictions:
+            (data as {
+              tax_rate_jurisdictions?:
+                | { name: string; type: string; rate: number }[]
+                | null;
+            }).tax_rate_jurisdictions ?? null,
           // Quote → contract conversion: preserve the saved doc-fee state.
           // Quotes saved before this migration have doc_fee_amount=0 and
           // doc_fee_waived=true (column-level defaults), so converting them
@@ -217,6 +241,83 @@ function NewContractContent() {
           permit_jurisdiction: data.permit_jurisdiction ?? undefined,
         },
       });
+
+      // ── Re-resolve tax against current state DOR ──────────────────────────
+      // Avalara consultation 2026-05-28: rates can change between quote and
+      // sign. We re-resolve at conversion so the customer is charged the
+      // current state-authoritative rate, NOT whatever was saved months ago.
+      // Fire-and-forget (don't block setStep). If the rate changes, the
+      // banner surfaces it; if the re-resolve fails, the saved rate stands.
+      const savedRate = Number(data.tax_rate ?? 0);
+      const savedResolvedAt =
+        (data as { tax_rate_resolved_at?: string | null }).tax_rate_resolved_at ?? null;
+      const lineItemsForTax = Array.isArray(data.line_items) ? data.line_items : [];
+      if (lineItemsForTax.length > 0) {
+        // Cross-state sourcing decision — same helper Step3Products uses.
+        const ship_to_address = decideShipToAddress({
+          customer: data.customer as {
+            state?: string | null;
+            address?: string | null;
+            city?: string | null;
+            zip?: string | null;
+          } | null,
+          show: data.show as { state?: string | null } | null,
+          location: data.location as { state?: string | null } | null,
+        });
+
+        // Fire the re-resolve. Awaiting it inside loadFromQuote does delay
+        // landing on Step 5 by ~1-2s, but ensures the rate shown on Review
+        // is the rate that actually gets persisted. That tradeoff is right.
+        try {
+          const res = await fetch("/api/tax", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              line_items: lineItemsForTax,
+              discounts: Array.isArray(data.discounts) ? data.discounts : [],
+              show_id: data.show_id,
+              location_id: data.location_id,
+              ...(ship_to_address ? { ship_to_address } : {}),
+            }),
+          });
+          if (res.ok) {
+            const tx = await res.json();
+            const newRate = Number(tx.tax_rate ?? savedRate);
+            const newAmount = Number(tx.total_tax ?? data.tax_amount ?? 0);
+            const hasAudit =
+              typeof tx.tax_rate_source === "string" ||
+              Array.isArray(tx.tax_rate_jurisdictions);
+            useContractStore.getState().setTax(
+              newAmount,
+              newRate,
+              hasAudit
+                ? {
+                    source:
+                      typeof tx.tax_rate_source === "string" ? tx.tax_rate_source : null,
+                    effective_date:
+                      typeof tx.tax_rate_effective_date === "string"
+                        ? tx.tax_rate_effective_date
+                        : null,
+                    jurisdictions: Array.isArray(tx.tax_rate_jurisdictions)
+                      ? tx.tax_rate_jurisdictions
+                      : null,
+                  }
+                : undefined,
+            );
+            // Surface a notice if the rate changed materially (> 0.01%).
+            if (Math.abs(newRate - savedRate) > 0.0001) {
+              setStaleRateNotice({
+                previousRate: savedRate,
+                newRate,
+                quoteResolvedAt: savedResolvedAt,
+              });
+            }
+          }
+        } catch (err) {
+          console.warn("[quote→contract] tax re-resolve failed; keeping saved rate", err);
+        }
+      }
+
       setStep(5); // start at Review so they can add deposit and sign
     }
     setLoadingQuote(false);
@@ -362,6 +463,35 @@ function NewContractContent() {
           <span className="text-xs text-amber-400/80">→ Contract</span>
         </div>
       </header>
+
+      {/* Stale-rate notice — shown after a quote→contract re-resolve when
+          the current state DOR rate differs from what the quote saved. */}
+      {staleRateNotice && (
+        <div className="mx-5 mt-4 rounded-md border-2 border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          <div className="flex items-start gap-2">
+            <span className="font-bold">⚠ Tax rate refreshed</span>
+            <button
+              type="button"
+              onClick={() => setStaleRateNotice(null)}
+              className="ml-auto text-xs text-amber-800 underline"
+            >
+              Dismiss
+            </button>
+          </div>
+          <p className="mt-1 text-xs">
+            This quote was saved
+            {staleRateNotice.quoteResolvedAt
+              ? ` on ${staleRateNotice.quoteResolvedAt.slice(0, 10)}`
+              : " previously"}
+            . State DOR rate has changed since then.
+          </p>
+          <p className="mt-1 text-xs">
+            Quote rate: <b>{(staleRateNotice.previousRate * 100).toFixed(3)}%</b>{" "}
+            → Current rate: <b>{(staleRateNotice.newRate * 100).toFixed(3)}%</b>.
+            Totals on Review reflect the updated rate. Review with the customer before signing.
+          </p>
+        </div>
+      )}
 
       {/* Step content */}
       <main className="flex-1 overflow-auto px-5 pt-6 pb-24">

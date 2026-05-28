@@ -25,7 +25,9 @@ export async function POST(
 
   const { data: contract } = await supabase
     .from("contracts")
-    .select("id, tax_refund_amount, tax_amount, contract_number")
+    .select(
+      "id, tax_refund_amount, tax_amount, contract_number, tax_rate, tax_rate_source, tax_rate_jurisdictions, tax_rate_effective_date, tax_rate_resolved_at"
+    )
     .eq("id", id)
     .single();
 
@@ -37,9 +39,31 @@ export async function POST(
   const body = await req.json();
   const amount = parseFloat(body.amount);
   const notes = (body.notes ?? "").trim();
+  const reason = typeof body.reason === "string" ? body.reason.trim() : "";
 
   if (!amount || amount <= 0) {
     return NextResponse.json({ error: "Amount must be greater than zero" }, { status: 400 });
+  }
+
+  // Audit defense: require a categorized reason on every refund. Matches the
+  // CHECK constraint added in migration 099. Free-text notes remain
+  // optional/supplementary; reason carries the audit weight.
+  const ALLOWED_REASONS = new Set([
+    "tx_hydrotherapy_rx",
+    "ok_disabled_veteran",
+    "resale_certificate",
+    "corrected_rate",
+    "customer_dispute",
+    "other",
+  ]);
+  if (!ALLOWED_REASONS.has(reason)) {
+    return NextResponse.json(
+      {
+        error:
+          "Refund reason required. One of: tx_hydrotherapy_rx, ok_disabled_veteran, resale_certificate, corrected_rate, customer_dispute, other",
+      },
+      { status: 400 }
+    );
   }
 
   // Find CC payments on this contract that have an Intuit charge ID
@@ -76,11 +100,17 @@ export async function POST(
       tax_refund_issued_at: new Date().toISOString(),
       tax_refund_notes: refundNotes,
       tax_refund_issued_by: user.id,
+      tax_refund_reason: reason,
     })
     .eq("id", id);
 
   if (dbError) return NextResponse.json({ error: dbError.message }, { status: 500 });
 
+  // Audit-log enrichment: capture the original rate decision chain alongside
+  // the refund event. State auditors asking "why did Atlas refund this tax?"
+  // can pull this single log row and see:
+  //   - refund event: amount, method, reason
+  //   - original rate decision: source, jurisdictions, effective date, resolved at
   await logAction({
     userId: user.id,
     action: "contract.tax_refund_issued",
@@ -89,8 +119,15 @@ export async function POST(
     metadata: {
       amount,
       method: refundMethod,
+      reason,
       card_last4: firstCcPayment?.card_last4 ?? null,
       contract_number: contract.contract_number,
+      // Original rate provenance — the chain back to the state DOR decision
+      original_tax_rate: contract.tax_rate ?? null,
+      original_tax_rate_source: contract.tax_rate_source ?? null,
+      original_tax_rate_effective_date: contract.tax_rate_effective_date ?? null,
+      original_tax_rate_jurisdictions: contract.tax_rate_jurisdictions ?? null,
+      original_tax_rate_resolved_at: contract.tax_rate_resolved_at ?? null,
     },
     req,
   });

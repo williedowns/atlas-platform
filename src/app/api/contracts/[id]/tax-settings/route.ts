@@ -114,7 +114,16 @@ export async function PATCH(
     ...pdfArchive,
     qbo_estimate_id: null,
   };
-  if (hasTaxRate) updatePayload.tax_rate = effectiveTaxRate;
+  if (hasTaxRate) {
+    updatePayload.tax_rate = effectiveTaxRate;
+    // Audit-log: capture that this rate was set manually by an admin override.
+    // The lookup-based sources (tx_api/ks_api/etc) populate these fields at
+    // their own write surfaces; this endpoint always overwrites with manual.
+    updatePayload.tax_rate_source = "manual_admin_override";
+    updatePayload.tax_rate_jurisdictions = null;
+    updatePayload.tax_rate_effective_date = null;
+    updatePayload.tax_rate_resolved_at = new Date().toISOString();
+  }
   if (hasTaxExempt) updatePayload.tax_exempt = effectiveTaxExempt;
 
   const { error: writeError } = await supabase

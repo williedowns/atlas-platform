@@ -52,6 +52,17 @@ export interface OffInventoryBlemPayload {
   blem_photos_viewed_at: string;
 }
 
+// Payload passed back when the rep adds a unit via the manual entry sheet.
+// Mirrors the paper-form fields: unit type checkbox + serial number + location.
+// unit_type is REQUIRED — every spa on a contract now carries one.
+export interface ManualUnitPayload {
+  unit_type: "stock" | "factory_build" | "floor_model"; // blem routes through onAddOffInventoryBlem
+  serial_number?: string;
+  unit_location?: string;
+  shell_color?: string;
+  cabinet_color?: string;
+}
+
 interface InventoryUnitPickerProps {
   productId: string;
   productCategory: string;
@@ -59,7 +70,9 @@ interface InventoryUnitPickerProps {
   showId?: string | null;
   locationId?: string | null;
   onSelect: (unit: InventoryUnit, extras?: PickerSelectExtras) => void;
-  onSkip: (shell?: string, cabinet?: string) => void;
+  // Replaces the prior shell/cabinet-only onSkip. Manual entry now requires
+  // unit_type so every spa contract carries the paper-form data.
+  onManualEntry: (payload: ManualUnitPayload) => void;
   // Optional callback wired up only when the parent supports the sale-time
   // blem fallback. When omitted, the picker still shows the toggle but
   // disables it.
@@ -82,7 +95,7 @@ export function InventoryUnitPicker({
   showId,
   locationId,
   onSelect,
-  onSkip,
+  onManualEntry,
   onAddOffInventoryBlem,
   onClose,
 }: InventoryUnitPickerProps) {
@@ -91,12 +104,18 @@ export function InventoryUnitPicker({
   const [search, setSearch] = useState("");
   const [allLocations, setAllLocations] = useState(false);
 
-  // Color-capture state (shown when rep taps "Add without unit")
+  // Manual-entry state (shown when rep taps "Add Without Selecting a Unit").
+  // The sheet mirrors the paper Sales Agreement: unit type checkbox + serial
+  // number + location, plus shell/cabinet colors. unit_type is REQUIRED — the
+  // Add button stays disabled until the rep picks one.
   const [showColorCapture, setShowColorCapture] = useState(false);
+  const [manualUnitType, setManualUnitType] = useState<"stock" | "factory_build" | "floor_model" | "blem" | "">("");
+  const [manualSerial, setManualSerial] = useState("");
+  const [manualLocation, setManualLocation] = useState("");
+  const [manualError, setManualError] = useState<string | null>(null);
   const [skipShell, setSkipShell] = useState("");
   const [skipCabinet, setSkipCabinet] = useState("");
-  // Sale-time blem toggle inside the color-capture sheet
-  const [skipIsBlem, setSkipIsBlem] = useState(false);
+  // Sale-time blem fields — surfaced when manualUnitType === 'blem'.
   const [skipBlemDescription, setSkipBlemDescription] = useState("");
   // Photos selected for the sale-time blem path. Uploaded to the bucket
   // when the rep confirms — see handleSkipBlemConfirm().
@@ -252,6 +271,36 @@ export function InventoryUnitPicker({
     setPendingSaleTimeBlem(null);
   }
 
+  // Manual-entry submit. unit_type is required; serial is required for
+  // In-Stock and Floor Model but allowed blank for Factory Build (per
+  // paper form — factory serials are assigned later when the unit ships).
+  // Blem radio routes into the existing photo-capture flow.
+  function handleAddManual() {
+    if (!manualUnitType) {
+      setManualError("Please pick a unit type to continue.");
+      return;
+    }
+    if (manualUnitType === "blem") {
+      // Validation + Storage upload + Show-to-Customer dialog are handled by
+      // the existing sale-time blem flow.
+      void handleSkipBlemConfirm();
+      return;
+    }
+    const trimmedSerial = manualSerial.trim();
+    if (manualUnitType !== "factory_build" && !trimmedSerial) {
+      setManualError("Serial number is required for In-Stock and Floor Model units.");
+      return;
+    }
+    setManualError(null);
+    onManualEntry({
+      unit_type: manualUnitType,
+      serial_number: trimmedSerial || undefined,
+      unit_location: manualLocation.trim() || undefined,
+      shell_color: skipShell || undefined,
+      cabinet_color: skipCabinet || undefined,
+    });
+  }
+
   if (showColorCapture) {
     return (
       <div className="fixed inset-0 z-50 flex flex-col bg-black/60" onClick={onClose}>
@@ -261,8 +310,10 @@ export function InventoryUnitPicker({
         >
           <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
             <div>
-              <h2 className="text-lg font-bold text-slate-900">Add Without Selecting a Unit</h2>
-              <p className="text-xs text-slate-500 mt-0.5">Specify colors and (if applicable) blem details</p>
+              <h2 className="text-lg font-bold text-slate-900">Add Unit Details</h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Pick a unit type (required) and capture the serial &amp; location like the paper contract.
+              </p>
             </div>
             <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100">
               <svg className="w-5 h-5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -271,6 +322,94 @@ export function InventoryUnitPicker({
             </button>
           </div>
           <div className="px-5 py-4 space-y-4">
+            {/* Unit Type — required radio group mirroring the paper Sales
+                Agreement's four checkboxes. Add button stays disabled until
+                one is picked. */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                Unit Type <span className="text-red-600">*</span>
+              </label>
+              <div className="grid grid-cols-1 gap-2">
+                {[
+                  { value: "factory_build" as const, label: "New — Factory Build", hint: "Serial assigned later by factory" },
+                  { value: "stock"         as const, label: "New — In-Stock Model", hint: "Serial required" },
+                  { value: "floor_model"   as const, label: "Floor Model",          hint: "Display unit — serial required" },
+                  { value: "blem"          as const, label: "Blemish / As-Is",      hint: "Damage description + photos required" },
+                ].map((opt) => {
+                  const active = manualUnitType === opt.value;
+                  const isBlem = opt.value === "blem";
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => {
+                        setManualUnitType(opt.value);
+                        setManualError(null);
+                      }}
+                      className={`flex items-start gap-3 px-3 py-2.5 rounded-xl border-2 text-left transition-all ${
+                        active
+                          ? isBlem
+                            ? "border-red-500 bg-red-50"
+                            : "border-[#00929C] bg-[#00929C]/5"
+                          : "border-slate-200 bg-white hover:border-slate-300"
+                      }`}
+                    >
+                      <span
+                        className={`mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full border-2 ${
+                          active ? (isBlem ? "border-red-500 bg-red-500" : "border-[#00929C] bg-[#00929C]") : "border-slate-300 bg-white"
+                        }`}
+                      >
+                        {active && (
+                          <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                          </svg>
+                        )}
+                      </span>
+                      <div>
+                        <p className={`text-sm font-semibold ${active && isBlem ? "text-red-900" : "text-slate-900"}`}>
+                          {opt.label}
+                        </p>
+                        <p className="text-[11px] text-slate-500 mt-0.5">{opt.hint}</p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Serial — visible once a non-blem type is picked. Required for
+                In-Stock and Floor Model. Factory Build accepts blank (PDF
+                prints "Pending Factory") but offers a free-text field for an
+                early PO/factory order # if known. */}
+            {manualUnitType && manualUnitType !== "blem" && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                  Serial #{manualUnitType !== "factory_build" && <span className="text-red-600"> *</span>}
+                </label>
+                <input
+                  type="text"
+                  value={manualSerial}
+                  onChange={(e) => setManualSerial(e.target.value)}
+                  placeholder={manualUnitType === "factory_build" ? "Leave blank — assigned at factory" : "e.g. N1822X"}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#00929C]/40"
+                />
+              </div>
+            )}
+
+            {/* Location — free text, e.g. "Henderson", "Plano showroom floor". */}
+            {manualUnitType && manualUnitType !== "blem" && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">Location</label>
+                <input
+                  type="text"
+                  value={manualLocation}
+                  onChange={(e) => setManualLocation(e.target.value)}
+                  placeholder='e.g. "Henderson", "Plano showroom floor"'
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#00929C]/40"
+                />
+              </div>
+            )}
+
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1.5">Shell Color</label>
               <select
@@ -298,23 +437,8 @@ export function InventoryUnitPicker({
               </select>
             </div>
 
-            {/* Sale-time blem toggle */}
-            <label className="flex items-start gap-3 px-3 py-2.5 rounded-xl border border-red-200 bg-red-50/40 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={skipIsBlem}
-                onChange={(e) => setSkipIsBlem(e.target.checked)}
-                className="mt-0.5 h-4 w-4 accent-red-600"
-              />
-              <div className="text-sm text-red-900">
-                <p className="font-semibold">This unit has blemishes / damage</p>
-                <p className="text-xs text-red-700/80">
-                  Toggle on if you're selling a unit not in inventory that has visible damage (e.g. floor model, off-spec unit). You'll need to add a description and photos.
-                </p>
-              </div>
-            </label>
-
-            {skipIsBlem && (
+            {/* Blem details — only when the Blemish unit type is picked. */}
+            {manualUnitType === "blem" && (
               <div className="rounded-xl border border-red-200 bg-white p-3 space-y-3">
                 <div>
                   <label className="text-xs font-semibold text-slate-700">Damage Description *</label>
@@ -353,37 +477,23 @@ export function InventoryUnitPicker({
                 )}
               </div>
             )}
+
+            {manualError && (
+              <p className="text-xs text-red-600">{manualError}</p>
+            )}
           </div>
           <div className="px-5 pb-6 space-y-2">
-            {skipIsBlem ? (
-              <Button
-                onClick={handleSkipBlemConfirm}
-                variant="accent"
-                size="lg"
-                className="w-full"
-              >
-                Upload Photos & Show to Customer
-              </Button>
-            ) : (
-              <>
-                <Button
-                  onClick={() => onSkip(skipShell || undefined, skipCabinet || undefined)}
-                  variant="default"
-                  size="lg"
-                  className="w-full"
-                >
-                  Add to Contract
-                </Button>
-                <Button
-                  onClick={() => onSkip()}
-                  variant="ghost"
-                  size="lg"
-                  className="w-full text-slate-500"
-                >
-                  Skip — Add Without Colors
-                </Button>
-              </>
-            )}
+            <Button
+              onClick={handleAddManual}
+              variant={manualUnitType === "blem" ? "accent" : "default"}
+              size="lg"
+              className="w-full"
+              disabled={!manualUnitType}
+            >
+              {manualUnitType === "blem"
+                ? "Upload Photos & Show to Customer"
+                : "Add to Contract"}
+            </Button>
           </div>
         </div>
 

@@ -307,6 +307,11 @@ export interface ContractLineItem {
   cabinet_color?: string;
   line?: string;             // product line for display on contract
   model_code?: string;
+  // Snapshot of the inventory unit's sub_location (warehouse / floor / room)
+  // at sale time so the printed contract mirrors the paper-form "Location"
+  // line without requiring a DB lookup at PDF render time. May be omitted
+  // for Factory Build units that don't have a physical location yet.
+  unit_location?: string;
   msrp: number;
   sell_price: number; // floor or negotiated price; 0 if waived
   quantity: number;
