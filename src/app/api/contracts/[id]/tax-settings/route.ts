@@ -59,7 +59,8 @@ export async function PATCH(
       id, contract_number, line_items, discounts, tax_rate, tax_exempt, tax_amount,
       doc_fee_amount, doc_fee_waived, deposit_paid, total,
       contract_pdf_url, contract_pdf_archive_urls, qbo_estimate_id,
-      total_adjustment_amount
+      total_adjustment_amount,
+      customer:customers(has_prescription)
     `)
     .eq("id", id)
     .maybeSingle();
@@ -80,7 +81,14 @@ export async function PATCH(
   const depositPaid = Number(contract.deposit_paid ?? 0);
 
   const effectiveTaxRate = nextTaxRate ?? previousTaxRate;
+  // The contracts.tax_exempt column stores the rep's intent (cert collected).
+  // The actual tax-zeroing requires the Rx on file too. See
+  // contractStore.computeTotalsFromDraft for the matching client gate.
   const effectiveTaxExempt = nextTaxExempt ?? previousTaxExempt;
+  const rxOnFile = Array.isArray(contract.customer)
+    ? !!(contract.customer[0] as { has_prescription?: boolean } | undefined)?.has_prescription
+    : !!(contract.customer as { has_prescription?: boolean } | null)?.has_prescription;
+  const recalcTaxExempt = effectiveTaxExempt && rxOnFile;
 
   const newItemsTax = recomputeItemsTaxFlat(lineItems, discounts, effectiveTaxRate);
   const totals = recalcTotals({
@@ -90,7 +98,7 @@ export async function PATCH(
     doc_fee_waived: docFeeWaived,
     tax_rate: effectiveTaxRate,
     tax_amount: newItemsTax,
-    tax_exempt: effectiveTaxExempt,
+    tax_exempt: recalcTaxExempt,
     total_adjustment_amount: Number(contract.total_adjustment_amount ?? 0),
   });
 

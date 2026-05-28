@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useContractStore } from "@/store/contractStore";
 import type { DepositSplit } from "@/store/contractStore";
@@ -69,9 +69,29 @@ function downscaleImageToDataUrl(file: File, maxDim: number, quality: number): P
 
 export default function Step5Review({ onNext }: Step5ReviewProps) {
   const router = useRouter();
-  const { draft, addDepositSplit, removeDepositSplit, updateLineItemSerial, updateLineItemPrice, removeLineItem, setNotes, setExternalNotes, setNeedsPermit, setNeedsHoa, setPermitJurisdiction, setTaxExempt, setDocFeeWaived, setTaxExemptCert, setConcreteEstimatePending, setConcreteEstimateNotes } = useContractStore();
+  const { draft, addDepositSplit, removeDepositSplit, updateLineItemSerial, updateLineItemPrice, removeLineItem, setNotes, setExternalNotes, setNeedsPermit, setNeedsHoa, setPermitJurisdiction, setTaxExempt, setDocFeeWaived, setTaxExemptCert, setRxFile, setConcreteEstimatePending, setConcreteEstimateNotes } = useContractStore();
   const [certError, setCertError] = useState<string | null>(null);
+  const [rxError, setRxError] = useState<string | null>(null);
   const [showExemptionSignModal, setShowExemptionSignModal] = useState(false);
+
+  // Auto-default tax_exempt = true for any TX customer the first time this
+  // step renders with their address. Rep can still flip the toggle off. Uses
+  // a ref to track manual interaction so we don't fight the user — once the
+  // rep touches the toggle (in either direction), we leave it alone.
+  const isTexas =
+    ((draft.location?.state ?? "").toUpperCase() === "TX") ||
+    ((draft.show?.state ?? "").toUpperCase() === "TX") ||
+    ((draft.customer?.state ?? "").toUpperCase() === "TX");
+  const taxExemptManuallyTouched = useRef<boolean>(draft.tax_exempt === true);
+  useEffect(() => {
+    if (isTexas && !draft.tax_exempt && !taxExemptManuallyTouched.current) {
+      setTaxExempt(true);
+    }
+  }, [isTexas, draft.tax_exempt, setTaxExempt]);
+  function handleTaxExemptToggle() {
+    taxExemptManuallyTouched.current = true;
+    setTaxExempt(!draft.tax_exempt);
+  }
 
   // Capture or pick the customer's Texas tax-exemption certificate. The
   // contract row doesn't exist yet at Step 5, so we stage the file as a
@@ -116,6 +136,47 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
   function handleClearCert() {
     setTaxExemptCert(null);
     setCertError(null);
+  }
+
+  // Capture the customer's hydrotherapy Rx. Mirrors handleCertFile — stage as
+  // a data URL in the draft and let Step 7 upload to customers.prescription_url
+  // once the contract is committed.
+  async function handleRxFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setRxError(null);
+    if (file.size > 10 * 1024 * 1024) {
+      setRxError("File too large — max 10MB.");
+      return;
+    }
+    try {
+      const isImage = file.type.startsWith("image/");
+      let dataUrl: string;
+      if (isImage) {
+        dataUrl = await downscaleImageToDataUrl(file, 1600, 0.85);
+      } else {
+        dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = () => reject(new Error("Could not read file"));
+          reader.readAsDataURL(file);
+        });
+      }
+      setRxFile({
+        dataUrl,
+        filename: file.name || (isImage ? "rx.jpg" : "rx.pdf"),
+        mime: file.type || (isImage ? "image/jpeg" : "application/pdf"),
+      });
+    } catch (err: any) {
+      setRxError(err?.message ?? "Could not read file. Please try again.");
+    } finally {
+      e.target.value = "";
+    }
+  }
+
+  function handleClearRx() {
+    setRxFile(null);
+    setRxError(null);
   }
 
   const contractNumber = useMemo(() => generateContractNumber(), []);
@@ -626,17 +687,15 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
 
       {/* ── Texas Tax Exemption toggle ─────────────────────── */}
       {(() => {
-        const isTexas =
-          ((draft.location?.state ?? "").toUpperCase() === "TX") ||
-          ((draft.show?.state ?? "").toUpperCase() === "TX") ||
-          ((draft.customer?.state ?? "").toUpperCase() === "TX");
         if (!isTexas) return null;
+        const rxOnFile = !!draft.customer?.has_prescription || !!draft.rx_data_url;
+        const isEffectivelyExempt = !!draft.tax_exempt && rxOnFile;
         return (
           <Card className={`border-2 transition-all ${draft.tax_exempt ? "border-emerald-400 bg-emerald-50" : "border-slate-200"}`}>
             <CardContent className="p-4 space-y-3">
               <button
                 type="button"
-                onClick={() => setTaxExempt(!draft.tax_exempt)}
+                onClick={handleTaxExemptToggle}
                 className="flex items-center gap-4 w-full text-left touch-manipulation"
               >
                 <div className={`w-12 h-7 rounded-full flex items-center px-1 transition-all flex-shrink-0 ${
@@ -647,9 +706,11 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
                 <div>
                   <p className="font-semibold text-slate-900 text-sm">Texas Tax Exemption Certificate</p>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    {draft.tax_exempt
-                      ? "Tax exempt — certificate on file. Tax zeroed out."
-                      : "Toggle on if customer has a Texas tax exemption certificate on file"}
+                    {!draft.tax_exempt
+                      ? "Toggle on to collect a Texas exemption certificate (Form 01-339)"
+                      : isEffectivelyExempt
+                        ? "Cert + Rx on file — tax zeroed out."
+                        : "Cert collected. Tax still applies until an Rx is on file."}
                   </p>
                 </div>
               </button>
@@ -762,6 +823,126 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
                   )}
                   {certError && (
                     <p className="mt-2 text-xs text-red-700">{certError}</p>
+                  )}
+                </div>
+              )}
+
+              {/* ── Rx (prescription) ──────────────────────────────── */}
+              {draft.tax_exempt && (
+                <div className={`rounded-xl border p-3 ${
+                  rxOnFile ? "bg-white border-emerald-200" : "bg-amber-50 border-amber-200"
+                }`}>
+                  {draft.customer?.has_prescription && !draft.rx_data_url ? (
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
+                        Rx
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-emerald-800">
+                          ✓ Rx on file from a prior purchase
+                        </p>
+                        <p className="text-[11px] text-slate-500">
+                          Tax is zeroed automatically. Upload a new Rx if the doctor's
+                          prescription has changed.
+                        </p>
+                      </div>
+                      <label className="text-xs font-semibold text-[#00929C] hover:underline cursor-pointer flex-shrink-0">
+                        Replace
+                        <input
+                          type="file"
+                          accept="image/*,application/pdf"
+                          className="hidden"
+                          onChange={handleRxFile}
+                        />
+                      </label>
+                    </div>
+                  ) : draft.rx_data_url ? (
+                    <div className="flex items-center gap-3">
+                      {draft.rx_mime?.startsWith("image/") ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={draft.rx_data_url}
+                          alt="Prescription"
+                          className="h-16 w-24 object-cover rounded border border-slate-200"
+                        />
+                      ) : (
+                        <div className="h-16 w-24 rounded border border-slate-200 bg-slate-50 flex items-center justify-center text-[10px] font-bold text-slate-600">
+                          PDF
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-emerald-800 truncate">
+                          ✓ Rx captured — tax zeroed
+                        </p>
+                        {draft.rx_filename && (
+                          <p className="text-[11px] text-slate-500 truncate">
+                            {draft.rx_filename}
+                          </p>
+                        )}
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          Will save to customer record on contract sign.
+                        </p>
+                      </div>
+                      <div className="flex flex-col gap-1 flex-shrink-0">
+                        <label className="text-xs font-semibold text-[#00929C] hover:underline cursor-pointer">
+                          Replace
+                          <input
+                            type="file"
+                            accept="image/*,application/pdf"
+                            className="hidden"
+                            onChange={handleRxFile}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={handleClearRx}
+                          className="text-xs font-semibold text-slate-500 hover:text-red-600 text-left"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-xs font-semibold text-amber-900 mb-1">
+                        Add doctor's prescription to zero out tax
+                      </p>
+                      <p className="text-[11px] text-amber-800 mb-2">
+                        Without an Rx on file, the cert is kept on record but tax still
+                        applies. Adding the Rx flips this contract to fully tax-exempt.
+                      </p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <label className="inline-flex items-center justify-center px-3 py-2 rounded-lg border border-amber-500 bg-amber-500 text-white text-xs font-semibold hover:bg-amber-600 cursor-pointer touch-manipulation">
+                          <svg className="w-3.5 h-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                          </svg>
+                          Take Photo of Rx
+                          <input
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            className="hidden"
+                            onChange={handleRxFile}
+                          />
+                        </label>
+                        <label className="inline-flex items-center justify-center px-3 py-2 rounded-lg border border-amber-500 bg-white text-amber-700 text-xs font-semibold hover:bg-amber-50 cursor-pointer touch-manipulation">
+                          <svg className="w-3.5 h-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                          </svg>
+                          Upload Rx File
+                          <input
+                            type="file"
+                            accept="image/*,application/pdf"
+                            className="hidden"
+                            onChange={handleRxFile}
+                          />
+                        </label>
+                      </div>
+                    </>
+                  )}
+                  {rxError && (
+                    <p className="mt-2 text-xs text-red-700">{rxError}</p>
                   )}
                 </div>
               )}

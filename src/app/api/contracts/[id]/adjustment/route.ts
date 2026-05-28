@@ -55,11 +55,20 @@ export async function PATCH(
       id, contract_number, line_items, discounts, tax_rate, tax_exempt,
       tax_amount, doc_fee_amount, doc_fee_waived, deposit_paid,
       contract_pdf_url, contract_pdf_archive_urls, qbo_estimate_id,
-      total, balance_due, total_adjustment_amount, total_adjustment_reason
+      total, balance_due, total_adjustment_amount, total_adjustment_reason,
+      customer:customers(has_prescription)
     `)
     .eq("id", id)
     .maybeSingle();
   if (!contract) return NextResponse.json({ error: "Contract not found" }, { status: 404 });
+
+  // Tax-exempt requires BOTH the signed cert AND the Rx on file. Cert alone
+  // keeps tax in place — see contractStore.computeTotalsFromDraft for the
+  // matching client-side gate.
+  const rxOnFile = Array.isArray(contract.customer)
+    ? !!(contract.customer[0] as { has_prescription?: boolean } | undefined)?.has_prescription
+    : !!(contract.customer as { has_prescription?: boolean } | null)?.has_prescription;
+  const effectiveTaxExempt = !!contract.tax_exempt && rxOnFile;
 
   const lineItems: ContractLineItem[] = Array.isArray(contract.line_items)
     ? (contract.line_items as ContractLineItem[])
@@ -80,7 +89,7 @@ export async function PATCH(
     doc_fee_waived: !!contract.doc_fee_waived,
     tax_rate: Number(contract.tax_rate ?? 0),
     tax_amount: Number(contract.tax_amount ?? 0),
-    tax_exempt: !!contract.tax_exempt,
+    tax_exempt: effectiveTaxExempt,
     total_adjustment_amount: roundedAmount,
   });
 

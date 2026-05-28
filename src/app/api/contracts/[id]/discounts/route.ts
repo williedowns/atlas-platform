@@ -65,7 +65,8 @@ export async function PATCH(
       id, contract_number, line_items, discounts, tax_rate, tax_exempt,
       tax_amount, doc_fee_amount, doc_fee_waived, deposit_paid,
       contract_pdf_url, contract_pdf_archive_urls, qbo_estimate_id,
-      total, balance_due, total_adjustment_amount
+      total, balance_due, total_adjustment_amount,
+      customer:customers(has_prescription)
     `)
     .eq("id", id)
     .maybeSingle();
@@ -78,7 +79,12 @@ export async function PATCH(
     ? (contract.discounts as ContractDiscount[])
     : [];
   const taxRate = Number(contract.tax_rate ?? 0);
-  const taxExempt = !!contract.tax_exempt;
+  // Tax-exempt requires both the signed cert AND the Rx on file. See
+  // contractStore.computeTotalsFromDraft for the matching client gate.
+  const rxOnFile = Array.isArray(contract.customer)
+    ? !!(contract.customer[0] as { has_prescription?: boolean } | undefined)?.has_prescription
+    : !!(contract.customer as { has_prescription?: boolean } | null)?.has_prescription;
+  const taxExempt = !!contract.tax_exempt && rxOnFile;
   const docFeeAmount = Number(contract.doc_fee_amount ?? 0);
   const docFeeWaived = !!contract.doc_fee_waived;
   const depositPaid = Number(contract.deposit_paid ?? 0);

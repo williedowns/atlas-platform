@@ -133,6 +133,14 @@ export interface ContractDraft {
   tax_exempt_cert_filename?: string;
   tax_exempt_cert_mime?: string;
 
+  // Doctor's prescription (Rx) staged for upload. The cert alone does NOT
+  // zero the tax — only cert + Rx together qualify the customer for the
+  // hydrotherapy exemption. Persists to customers.prescription_url +
+  // customers.has_prescription via /api/customers/[id]/rx in Step 7.
+  rx_data_url?: string;
+  rx_filename?: string;
+  rx_mime?: string;
+
   // Concrete pad estimate — toggled at Step 5 when the customer wants
   // concrete instead of crushed granite. No line item, no money collected.
   // Flag + notes carry to the contract row for back-office follow-up.
@@ -231,6 +239,7 @@ interface ContractStore {
     url: string | null
   ) => void;
   setTaxExemptCert: (cert: { dataUrl: string; filename: string; mime: string } | null) => void;
+  setRxFile: (rx: { dataUrl: string; filename: string; mime: string } | null) => void;
   setConcreteEstimatePending: (pending: boolean) => void;
   setConcreteEstimateNotes: (notes: string) => void;
   prefillForConcreteAddon: (parentContract: Contract) => void;
@@ -279,9 +288,12 @@ function computeTotalsFromDraft(draft: ContractDraft): Partial<ContractDraft> {
     ? Math.round(surchargeBase * draft.surcharge_rate * 100) / 100
     : 0;
   // Items tax — what /api/tax computed for the goods. Tax-exempt customers
-  // (TX Rx on file) zero this out; the items tax is the portion eligible
-  // for refund once Atlas receives the Rx certificate.
-  const effectiveItemsTax = draft.tax_exempt ? 0 : (draft.tax_amount ?? 0);
+  // zero this out, but the cert alone is not enough: the Rx must also be on
+  // file. Cert + Rx = exempt; cert only = tax still applies (Atlas keeps the
+  // cert on file alongside the contract for audit, and Lori can refund later
+  // if the Rx arrives within 30 days).
+  const rxOnFile = !!draft.customer?.has_prescription || !!draft.rx_data_url;
+  const effectiveItemsTax = (draft.tax_exempt && rxOnFile) ? 0 : (draft.tax_amount ?? 0);
   // Doc-fee tax is collected on EVERY contract regardless of tax_exempt
   // and is the portion that is never refunded when the Rx arrives.
   const doc_fee_tax_amount = docFeeAmount > 0
@@ -320,7 +332,12 @@ export const useContractStore = create<ContractStore>()(
         })),
 
       setCustomer: (customer) =>
-        set((state) => ({ draft: { ...state.draft, customer } })),
+        set((state) => {
+          const newDraft = { ...state.draft, customer };
+          // Changing the customer can flip the rx-on-file gate (their
+          // has_prescription column), so totals must recompute.
+          return { draft: { ...newDraft, ...computeTotalsFromDraft(newDraft) } };
+        }),
 
       addLineItem: (product, price, waived = false, shell_color?, cabinet_color?, fromPackage?) => {
         set((state) => {
@@ -635,6 +652,19 @@ export const useContractStore = create<ContractStore>()(
             tax_exempt_cert_mime: cert?.mime,
           },
         })),
+
+      setRxFile: (rx) =>
+        set((state) => {
+          const next = {
+            ...state.draft,
+            rx_data_url: rx?.dataUrl,
+            rx_filename: rx?.filename,
+            rx_mime: rx?.mime,
+          };
+          // Staging an Rx flips the effective-exempt gate, so totals need to
+          // re-compute immediately to reflect the now-zeroed items tax.
+          return { draft: { ...next, ...computeTotalsFromDraft(next) } };
+        }),
 
       setConcreteEstimatePending: (concrete_estimate_pending) =>
         set((state) => ({ draft: { ...state.draft, concrete_estimate_pending } })),

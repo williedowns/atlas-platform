@@ -325,6 +325,28 @@ export default function Step7Sign({ onNext }: Step7SignProps) {
         })();
       }
 
+      // Rx captured at Step 5 — pushes to customers.prescription_url +
+      // sets has_prescription = true so future purchases auto-qualify.
+      // Fire-and-forget for the same reason as the cert above.
+      if (draft.rx_data_url && draft.customer?.id) {
+        (async () => {
+          try {
+            const blob = await fetch(draft.rx_data_url!).then((r) => r.blob());
+            const file = new File(
+              [blob],
+              draft.rx_filename ?? "rx.jpg",
+              { type: draft.rx_mime ?? blob.type ?? "image/jpeg" }
+            );
+            const fd = new FormData();
+            fd.append("file", file);
+            await fetch(`/api/customers/${draft.customer!.id}/rx`, {
+              method: "POST",
+              body: fd,
+            });
+          } catch {/* non-fatal — rep can re-upload from customer page later */}
+        })();
+      }
+
       onNext();
     } catch (err: any) {
       const message = err?.message ?? "Something went wrong. Please try again.";

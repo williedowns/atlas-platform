@@ -19,6 +19,7 @@ export type AuditAction =
   | "inventory.transferred"
   | "user.invited"
   | "customer.created"
+  | "customer.rx_uploaded"
   | "cert.uploaded"
   | "cert.marked_received"
   | "contract.refund_marked"
