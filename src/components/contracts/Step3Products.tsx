@@ -12,6 +12,7 @@ import { isSpaProduct, isOptionAvailableForModel } from "@/lib/inventory-constan
 import { InventoryUnitPicker } from "@/components/contracts/InventoryUnitPicker";
 import { GRANITE_PRICE_TIERS, GRANITE_PRODUCT_ID, isSpaWithDimensions } from "@/lib/granite";
 import { isOutTheDoorDiscount } from "@/lib/discounts";
+import { decideShipToAddress } from "@/lib/tax/sourcingDecision";
 
 interface Step3ProductsProps {
   onNext: () => void;
@@ -245,6 +246,14 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
     if (draft.line_items.length === 0) { setTax(0, 0); return; }
     setTaxCalculating(true);
     try {
+      // Cross-state sourcing: if the customer is in a covered state different
+      // from the show/location state, use the customer's address for tax —
+      // destination wins over origin per Avalara consultation 2026-05-28.
+      const shipTo = decideShipToAddress({
+        customer: draft.customer ?? null,
+        show: draft.show ?? null,
+        location: draft.location ?? null,
+      });
       const response = await fetch("/api/tax", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -253,6 +262,14 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
           discounts: draft.discounts,
           show_id: draft.show_id,
           location_id: draft.location_id,
+          // Optional explicit override (built by decideShipToAddress when the
+          // customer differs from the venue). Falls back server-side to the
+          // raw customer_* fields, then to the venue address.
+          ship_to_address: shipTo,
+          customer_state: draft.customer?.state ?? null,
+          customer_address: draft.customer?.address ?? null,
+          customer_city: draft.customer?.city ?? null,
+          customer_zip: draft.customer?.zip ?? null,
         }),
       });
       if (response.ok) {
@@ -1143,26 +1160,35 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
               </span>
             </div>
           )}
-          {((draft.tax_amount ?? 0) > 0 || draft.tax_exempt) && (
-            <div className="flex justify-between items-center">
-              <span className={`text-base ${draft.tax_exempt ? "text-emerald-700 font-medium" : "text-slate-600"}`}>
-                {draft.tax_exempt
-                  ? `Tax (${(draft.tax_rate * 100).toFixed(2)}%) — Exempt (Rx on file)`
-                  : `Tax (${(draft.tax_rate * 100).toFixed(2)}%)`}
-              </span>
-              <span className={`text-base font-semibold ${draft.tax_exempt ? "text-emerald-700" : "text-slate-900"}`}>
-                {taxCalculating ? (
-                  <span className="flex items-center gap-2 text-slate-400">
-                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                    Calculating...
-                  </span>
-                ) : formatCurrency(draft.tax_exempt ? 0 : (draft.tax_amount ?? 0))}
-              </span>
-            </div>
-          )}
+          {/* Exempt label only shows when the customer is ACTUALLY exempt
+              (cert intent + Rx on file). tax_exempt alone is just intent —
+              without an Rx, the tax is still charged (contractStore.ts
+              effectiveItemsTax). Showing "Exempt (Rx on file)" with no Rx
+              misleads the rep about what the customer is paying. */}
+          {(() => {
+            const rxOnFile = !!draft.customer?.has_prescription || !!draft.rx_data_url;
+            const effectivelyExempt = draft.tax_exempt && rxOnFile;
+            return ((draft.tax_amount ?? 0) > 0 || effectivelyExempt) && (
+              <div className="flex justify-between items-center">
+                <span className={`text-base ${effectivelyExempt ? "text-emerald-700 font-medium" : "text-slate-600"}`}>
+                  {effectivelyExempt
+                    ? `Tax (${(draft.tax_rate * 100).toFixed(2)}%) — Exempt (Rx on file)`
+                    : `Tax (${(draft.tax_rate * 100).toFixed(2)}%)`}
+                </span>
+                <span className={`text-base font-semibold ${effectivelyExempt ? "text-emerald-700" : "text-slate-900"}`}>
+                  {taxCalculating ? (
+                    <span className="flex items-center gap-2 text-slate-400">
+                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      Calculating...
+                    </span>
+                  ) : formatCurrency(effectivelyExempt ? 0 : (draft.tax_amount ?? 0))}
+                </span>
+              </div>
+            );
+          })()}
           <div className="border-t border-slate-200 pt-3 flex justify-between items-center">
             <span className="text-xl font-bold text-[#00929C]">Total</span>
             <span className="text-xl font-bold text-[#00929C]">{formatCurrency(draft.total)}</span>

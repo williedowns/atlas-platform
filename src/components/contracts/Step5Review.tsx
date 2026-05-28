@@ -1065,27 +1065,29 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
               </span>
             </div>
 
-            {/* Items tax. When tax-exempt (Rx on file) the row still renders
-                so the breakdown reads cleanly, but the dollar amount shows
-                $0.00 — the exempt-status hint sits in the label rather than
-                the value column. When granite line items are present and the
-                contract is not exempt, the tax row splits into Spa + Granite
-                for audit visibility (customer total unchanged). */}
-            {(draft.tax_amount > 0 || draft.tax_exempt) && (() => {
+            {/* Items tax. The "Exempt (Rx on file)" label only shows when the
+                customer is ACTUALLY exempt — both tax_exempt=true AND the Rx
+                is on file. tax_exempt alone is just intent; without the Rx,
+                tax is still being charged (contractStore.ts effectiveItemsTax).
+                Granite breakdown still requires non-exempt + tax > 0. */}
+            {(() => {
+              const rxOnFile = !!draft.customer?.has_prescription || !!draft.rx_data_url;
+              const effectivelyExempt = draft.tax_exempt && rxOnFile;
+              if (!(draft.tax_amount > 0 || effectivelyExempt)) return null;
               const graniteSubtotal = draft.line_items
                 .filter((item) => item.linked_spa_product_id !== undefined)
                 .reduce((sum, item) => sum + item.sell_price * item.quantity, 0);
-              const showGraniteBreakdown = graniteSubtotal > 0 && !draft.tax_exempt && draft.tax_amount > 0;
+              const showGraniteBreakdown = graniteSubtotal > 0 && !effectivelyExempt && draft.tax_amount > 0;
               if (!showGraniteBreakdown) {
                 return (
                   <div className="flex justify-between">
-                    <span className={draft.tax_exempt ? "text-emerald-700 font-medium" : "text-slate-600"}>
-                      {draft.tax_exempt
+                    <span className={effectivelyExempt ? "text-emerald-700 font-medium" : "text-slate-600"}>
+                      {effectivelyExempt
                         ? `Tax (${(draft.tax_rate * 100).toFixed(2)}%) — Exempt (Rx on file)`
                         : `Tax (${(draft.tax_rate * 100).toFixed(2)}%)`}
                     </span>
-                    <span className={`font-medium ${draft.tax_exempt ? "text-emerald-700" : ""}`}>
-                      {formatCurrency(draft.tax_exempt ? 0 : draft.tax_amount)}
+                    <span className={`font-medium ${effectivelyExempt ? "text-emerald-700" : ""}`}>
+                      {formatCurrency(effectivelyExempt ? 0 : draft.tax_amount)}
                     </span>
                   </div>
                 );
