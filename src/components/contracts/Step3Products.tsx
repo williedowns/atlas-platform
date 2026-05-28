@@ -245,41 +245,6 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
     if (draft.line_items.length === 0) { setTax(0, 0); return; }
     setTaxCalculating(true);
     try {
-      // ── Cross-state sourcing decision (per Avalara consultation 2026-05-28) ──
-      // Atlas's default is delivery to the customer's home. When the customer's
-      // state differs from the show/location state AND we can resolve that
-      // state's rate, pass the customer address as ship_to so /api/tax sources
-      // tax to the destination jurisdiction (not the show floor).
-      // Same-state customers: no override — show/location address is correct.
-      // Out-of-coverage customer states: no override — let it fall through to
-      // show/location rate (best we can do without that state's lookup).
-      const COVERED_STATES = new Set(["TX", "LA", "OK", "KS", "AR"]);
-      const customer = draft.customer;
-      const customerState = (customer?.state ?? "").trim().toUpperCase();
-      const venueState = (
-        draft.show?.state ??
-        draft.location?.state ??
-        ""
-      )
-        .trim()
-        .toUpperCase();
-      const shouldShipTo =
-        !!customer &&
-        !!customer.address &&
-        !!customer.city &&
-        /^\d{5}$/.test(customer.zip ?? "") &&
-        COVERED_STATES.has(customerState) &&
-        customerState !== venueState;
-      const ship_to_address = shouldShipTo
-        ? {
-            line1: customer.address,
-            city: customer.city,
-            region: customerState,
-            postalCode: customer.zip,
-            country: "US",
-          }
-        : undefined;
-
       const response = await fetch("/api/tax", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -288,7 +253,6 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
           discounts: draft.discounts,
           show_id: draft.show_id,
           location_id: draft.location_id,
-          ...(ship_to_address ? { ship_to_address } : {}),
         }),
       });
       if (response.ok) {
@@ -1268,9 +1232,24 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
             setPickerProduct(null);
             collapseAfterModelAdd();
           }}
-          onSkip={(shell, cabinet) => {
+          onManualEntry={(payload) => {
             const { product, price } = pickerProduct;
-            addLineItem(product, price, false, shell, cabinet);
+            // Manual entry carries unit_type (required) and serial (required
+            // except factory_build). The sale location is already captured
+            // at the contract level (show / showroom) so the picker doesn't
+            // ask for it again.
+            addLineItem(
+              product,
+              price,
+              false,
+              payload.shell_color,
+              payload.cabinet_color,
+              undefined,
+              {
+                unit_type: payload.unit_type,
+                serial_number: payload.serial_number,
+              },
+            );
             const flashKey = product.id + "-" + price;
             setAddedFlash(flashKey);
             setTimeout(() => setAddedFlash(null), 800);

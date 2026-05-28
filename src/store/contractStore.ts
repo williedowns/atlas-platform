@@ -199,7 +199,18 @@ interface ContractStore {
   draft: ContractDraft;
   setShow: (show: Show, location: Location | null) => void;
   setCustomer: (customer: Customer) => void;
-  addLineItem: (product: Product, price: number, waived?: boolean, shell_color?: string, cabinet_color?: string, fromPackage?: ContractLineItem["from_package"]) => void;
+  addLineItem: (
+    product: Product,
+    price: number,
+    waived?: boolean,
+    shell_color?: string,
+    cabinet_color?: string,
+    fromPackage?: ContractLineItem["from_package"],
+    // Manual-entry unit metadata: rep declared the unit type without
+    // picking a specific inventory unit (e.g. selecting "New Factory
+    // Build" with a pending serial). Mirrors the paper-form checkboxes.
+    manualUnit?: { unit_type?: UnitType; serial_number?: string },
+  ) => void;
   addLineItemWithUnit: (product: Product, price: number, unit: InventoryUnitDetails) => void;
   // Add one Crushed Granite Base line per spa in cart, length locked to each
   // spa's longest side. Skips any spa that already has a linked granite line
@@ -362,7 +373,7 @@ export const useContractStore = create<ContractStore>()(
           return { draft: { ...newDraft, ...computeTotalsFromDraft(newDraft) } };
         }),
 
-      addLineItem: (product, price, waived = false, shell_color?, cabinet_color?, fromPackage?) => {
+      addLineItem: (product, price, waived = false, shell_color?, cabinet_color?, fromPackage?, manualUnit?) => {
         set((state) => {
           const spaLine: ContractLineItem = {
             product_id: product.id,
@@ -374,6 +385,12 @@ export const useContractStore = create<ContractStore>()(
             ...(shell_color ? { shell_color } : {}),
             ...(cabinet_color ? { cabinet_color } : {}),
             ...(fromPackage ? { from_package: fromPackage } : {}),
+            // Manual unit metadata — present when the rep declared unit_type
+            // via the picker's "Add Without Selecting a Unit" sheet instead
+            // of picking a specific inventory row. Serial may be blank for
+            // Factory Build; PDF render handles that case explicitly.
+            ...(manualUnit?.unit_type ? { unit_type: manualUnit.unit_type } : {}),
+            ...(manualUnit?.serial_number ? { serial_number: manualUnit.serial_number } : {}),
           };
           const nextLineItems = [...state.draft.line_items, spaLine];
           const newDraft = { ...state.draft, line_items: nextLineItems };

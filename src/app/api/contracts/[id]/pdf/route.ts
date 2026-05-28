@@ -218,36 +218,58 @@ export async function GET(
     blemLineCount > 0 ||
     externalNotesPreview.length > 200;
 
-  // Unit-type badge — every spa line item (not just blem) prints a small
-  // colored tag so the customer can see at a glance whether they're getting
-  // a stocked unit, a factory build, a floor model, a wet-model display, or
-  // a blem AS-IS sale. Each tag uses the same compact pill geometry as the
-  // existing blem badge for visual consistency.
-  type UnitTagSpec = { text: string; bg: [number, number, number]; fg: [number, number, number] };
+  // Unit-type badge — every spa line item with a declared unit_type prints
+  // a small colored tag adjacent to the product name AND a dedicated
+  // detail sub-line beneath the colors. The detail line mirrors the paper
+  // Sales Agreement's "☑ New In-Stock Model · Serial #NIXX · Location:
+  // Henderson" so the printed contract has parity with the old paper form.
+  type UnitTagSpec = { text: string; bg: [number, number, number]; fg: [number, number, number]; full: string };
   function getUnitTagSpec(unitType: string | undefined): UnitTagSpec | null {
     switch (unitType) {
       case "blem":
-        return { text: "BLEM · AS-IS",         bg: [254, 226, 226], fg: RED };
+        return { text: "BLEM · AS-IS",         bg: [254, 226, 226], fg: RED,        full: "Blemish / As-Is Model" };
       case "floor_model":
-        return { text: "FLOOR MODEL",          bg: [254, 243, 199], fg: AMBER };
+        return { text: "FLOOR MODEL",          bg: [254, 243, 199], fg: AMBER,      full: "Floor Model" };
       case "factory_build":
-        return { text: "ORDER FROM FACTORY",   bg: [254, 243, 199], fg: AMBER };
+        return { text: "ORDER FROM FACTORY",   bg: [254, 243, 199], fg: AMBER,      full: "New — Factory Build" };
       case "wet_model":
-        return { text: "WET MODEL",            bg: [226, 232, 240], fg: SLATE_500 };
+        return { text: "WET MODEL",            bg: [226, 232, 240], fg: SLATE_500,  full: "Wet Model" };
       case "stock":
-        return { text: "IN STOCK",             bg: [220, 252, 231], fg: EMERALD };
+        return { text: "IN STOCK",             bg: [220, 252, 231], fg: EMERALD,    full: "New — In-Stock Model" };
       default:
         return null;
     }
+  }
+
+  // Build the printed sub-line that mirrors the paper-form unit row.
+  // Format: "☑ {Unit Type Label} · Serial #{NIXX or "Pending Factory"}"
+  // The sale location lives in the contract header (Bill To / Location) so
+  // the line-item sub-line doesn't repeat it.
+  function buildUnitDetailText(item: any, spec: UnitTagSpec): string {
+    const parts: string[] = [`☑ ${spec.full}`];
+    const serial = String(item.serial_number ?? "").trim();
+    if (serial) {
+      parts.push(`Serial #${serial}`);
+    } else if (item.unit_type === "factory_build") {
+      parts.push("Serial # — Pending Factory");
+    }
+    return parts.join(" · ");
   }
 
   let altRow = false;
   for (const item of lineItems) {
     const colorParts = [item.shell_color, item.cabinet_color && `${item.cabinet_color} cabinet`].filter(Boolean) as string[];
     const colorText = colorParts.join(" · ");
-    const rowH = colorText
-      ? (compactPage1 ? 8   : 10)
-      : (compactPage1 ? 5.4 : 6.5);
+    const tagSpec = getUnitTagSpec(item.unit_type);
+    const hasUnitDetail = !!tagSpec;
+    // Row height grows by ~3.5mm for each sub-line we render under the
+    // product name. The two sub-lines available are (a) shell/cabinet
+    // colors and (b) the paper-form-style unit detail line — independently
+    // present based on data.
+    const subLineCount = (colorText ? 1 : 0) + (hasUnitDetail ? 1 : 0);
+    const baseH = compactPage1 ? 5.4 : 6.5;
+    const subLineH = compactPage1 ? 3   : 3.5;
+    const rowH = baseH + subLineCount * subLineH;
     if (y > 240) {
       doc.addPage();
       y = M;
@@ -261,7 +283,6 @@ export async function GET(
     const name = String(item.product_name ?? "");
     const qty = item.quantity ?? 1;
     const lineTotal = (item.sell_price ?? 0) * qty;
-    const tagSpec = getUnitTagSpec(item.unit_type);
     // Reserve space for the unit-type tag when present so the product name
     // doesn't collide with it. Longer tags (ORDER FROM FACTORY) need more
     // headroom than BLEM, so pad the displayName max length further down.
@@ -308,12 +329,26 @@ export async function GET(
       doc.text(formatCurrency(lineTotal), colPrice - 1, y, { align: "right" });
     }
 
+    // Sub-line 1: shell / cabinet colors (when present).
+    let subY = y + subLineH;
     if (colorText) {
       doc.setFontSize(compactPage1 ? 7 : 8);
       doc.setTextColor(...SLATE_500);
       doc.setFont("helvetica", "normal");
       const displayColor = colorText.length > 55 ? colorText.substring(0, 52) + "…" : colorText;
-      doc.text(displayColor, colProduct + 1, y + (compactPage1 ? 3 : 3.5));
+      doc.text(displayColor, colProduct + 1, subY);
+      subY += subLineH;
+    }
+    // Sub-line 2: paper-form-style unit detail row (when unit_type set).
+    // Printed slightly darker than the color line so the data customers
+    // care about (serial + location) is easy to read.
+    if (hasUnitDetail) {
+      doc.setFontSize(compactPage1 ? 7 : 8);
+      doc.setTextColor(...tagSpec!.fg);
+      doc.setFont("helvetica", "bold");
+      const detailText = buildUnitDetailText(item, tagSpec!);
+      const displayDetail = detailText.length > 95 ? detailText.substring(0, 92) + "…" : detailText;
+      doc.text(displayDetail, colProduct + 1, subY);
     }
 
     doc.setFontSize(10);
