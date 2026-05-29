@@ -11,7 +11,7 @@ const ROLES = [
 ] as const;
 
 const ROLE_COLORS: Record<string, string> = {
-  admin: "bg-slate-800 text-white",
+  admin: "bg-indigo-100 text-indigo-800",
   manager: "bg-amber-100 text-amber-800",
   sales_rep: "bg-emerald-100 text-emerald-800",
   bookkeeper: "bg-slate-100 text-slate-700",
