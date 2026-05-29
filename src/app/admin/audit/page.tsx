@@ -33,6 +33,7 @@ const ACTION_LABELS: Record<AuditAction, { label: string; variant: "default" | "
   "user.invited":              { label: "User Invited",           variant: "secondary" },
   "customer.created":          { label: "Customer Created",       variant: "accent" },
   "customer.rx_uploaded":      { label: "Rx Uploaded",            variant: "secondary" },
+  "contract.tax_auto_exempted":{ label: "Tax Auto-Exempted",      variant: "success" },
   "cert.uploaded":             { label: "Cert Uploaded",          variant: "secondary" },
   "cert.marked_received":      { label: "Cert Received",          variant: "success" },
   "contract.refund_marked":    { label: "Refund Marked",          variant: "warning" },

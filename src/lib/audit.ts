@@ -20,6 +20,7 @@ export type AuditAction =
   | "user.invited"
   | "customer.created"
   | "customer.rx_uploaded"
+  | "contract.tax_auto_exempted"
   | "cert.uploaded"
   | "cert.marked_received"
   | "contract.refund_marked"

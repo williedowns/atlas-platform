@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { logAction } from "@/lib/audit";
+import { applyAutoExemptionForContract } from "@/lib/auto-exemption";
 
 export async function POST(req: Request) {
   const supabase = await createClient();
@@ -86,15 +87,33 @@ export async function POST(req: Request) {
     req,
   });
 
+  // ── Auto-exempt if the customer's Rx is on file AND tax wasn't paid yet ──
+  // Cert+Rx+balance-still-owes-tax → zero the tax pre-payment instead of
+  // putting Lori through a refund cycle for money never collected.
+  const autoExemption = await applyAutoExemptionForContract(supabase, contractId);
+  if (autoExemption?.applied) {
+    logAction({
+      userId: user.id,
+      action: "contract.tax_auto_exempted",
+      entityType: "contract",
+      entityId: contractId,
+      metadata: {
+        contract_number: (contract as any).contract_number,
+        tax_amount_exempted: autoExemption.taxAmount,
+        trigger: "cert_uploaded",
+      },
+      req,
+    });
+  }
+
   // ── Notify bookkeeper (Resend) ─────────────────────────────────────────────
   // Only fire when a refund is actually owed: tax was collected AND no
-  // refund has been issued yet. Skipping when tax_amount = 0 avoids
-  // false-alarm emails for contracts that were already booked exempt at
-  // sale time (e.g., the in-flow Sign-cert path or backfill on an
-  // already-zeroed contract).
+  // refund has been issued yet. If we just auto-exempted (no payment had
+  // been made), no email — there's nothing to refund. Pre-payment exempt
+  // contracts that were already booked exempt at sale also skip the email.
   const contractTaxAmount = Number((contract as { tax_amount?: number }).tax_amount ?? 0);
   const contractRefundIssued = (contract as { tax_refund_amount?: number | null }).tax_refund_amount != null;
-  const refundOwed = contractTaxAmount > 0 && !contractRefundIssued;
+  const refundOwed = contractTaxAmount > 0 && !contractRefundIssued && !autoExemption?.applied;
 
   const resendKey = process.env.RESEND_API_KEY;
   const loriEmail = process.env.BOOKKEEPER_EMAIL ?? "lori@atlasswimspas.com";
