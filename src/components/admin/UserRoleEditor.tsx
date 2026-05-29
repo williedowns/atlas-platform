@@ -5,6 +5,7 @@ import { useState } from "react";
 const ROLES = [
   { value: "sales_rep", label: "Sales Rep" },
   { value: "manager", label: "Manager" },
+  { value: "show_manager", label: "Show Manager" },
   { value: "bookkeeper", label: "Bookkeeper" },
   { value: "field_crew", label: "Field Crew" },
   { value: "admin", label: "Admin" },
@@ -13,6 +14,7 @@ const ROLES = [
 const ROLE_COLORS: Record<string, string> = {
   admin: "bg-indigo-100 text-indigo-800",
   manager: "bg-amber-100 text-amber-800",
+  show_manager: "bg-teal-100 text-teal-800",
   sales_rep: "bg-emerald-100 text-emerald-800",
   bookkeeper: "bg-slate-100 text-slate-700",
   field_crew: "bg-slate-100 text-slate-700",

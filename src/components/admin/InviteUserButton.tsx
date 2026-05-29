@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 const ROLES = [
   { value: "sales_rep", label: "Sales Rep" },
   { value: "manager", label: "Manager" },
+  { value: "show_manager", label: "Show Manager" },
   { value: "bookkeeper", label: "Bookkeeper" },
   { value: "field_crew", label: "Field Crew" },
   { value: "admin", label: "Admin" },
