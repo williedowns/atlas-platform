@@ -53,7 +53,7 @@ export default function CertUpload({ contractId, certReceived: initialReceived, 
             <svg className="w-5 h-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
           </div>
           <div>
-            <p className="font-semibold text-emerald-800">Tax Exemption Certificate Received</p>
+            <p className="font-semibold text-emerald-800">Prescription (Rx) Received</p>
             {certReceivedAt && <p className="text-xs text-emerald-600 mt-0.5">Received {new Date(certReceivedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</p>}
           </div>
         </div>
@@ -63,9 +63,9 @@ export default function CertUpload({ contractId, certReceived: initialReceived, 
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 p-5">
-      <h2 className="font-bold text-slate-900 mb-1">Texas Tax Exemption Certificate</h2>
+      <h2 className="font-bold text-slate-900 mb-1">Hydrotherapy Prescription (Rx)</h2>
       <p className="text-sm text-slate-500 mb-4 leading-relaxed">
-        If you qualify for a Texas sales tax exemption (e.g., hydrotherapy prescription), upload your completed Form 01-339 within 30 days of purchase. Our team will process your exemption and issue a refund of the tax amount paid.
+        If a doctor has prescribed hydrotherapy, upload your prescription (Rx) within 30 days of purchase to qualify for a sales tax exemption. Our team will process your exemption — refunding any tax you've already paid, or removing it from your balance if it hasn't been charged yet.
       </p>
 
       {success ? (
@@ -77,9 +77,9 @@ export default function CertUpload({ contractId, certReceived: initialReceived, 
               </svg>
             </div>
             <div>
-              <p className="font-semibold text-emerald-800">Certificate uploaded successfully!</p>
+              <p className="font-semibold text-emerald-800">Prescription uploaded successfully!</p>
               <p className="text-sm text-emerald-600 mt-1 leading-relaxed">
-                Our bookkeeper has been notified and will review your certificate and issue your tax refund shortly.
+                Our bookkeeper has been notified and will review your prescription and process your tax exemption shortly.
               </p>
             </div>
           </div>
@@ -89,7 +89,7 @@ export default function CertUpload({ contractId, certReceived: initialReceived, 
           <svg className="w-8 h-8 text-slate-400 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
           </svg>
-          <p className="font-semibold text-slate-700 text-sm">{uploading ? "Uploading..." : "Upload Certificate"}</p>
+          <p className="font-semibold text-slate-700 text-sm">{uploading ? "Uploading..." : "Upload Prescription"}</p>
           <p className="text-xs text-slate-400 mt-1">PDF, JPG, or PNG -- Max 10MB</p>
           <input
             type="file"

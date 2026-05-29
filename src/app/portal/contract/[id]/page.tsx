@@ -246,7 +246,7 @@ export default async function PortalContractPage({ params }: { params: Promise<{
           </a>
         )}
 
-        {/* TX Tax Exemption Cert Upload */}
+        {/* Hydrotherapy Prescription (Rx) Upload — triggers tax exemption/refund */}
         <CertUpload
           contractId={c.id}
           certReceived={!!c.tax_exempt_cert_received}
