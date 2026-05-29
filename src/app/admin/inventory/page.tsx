@@ -81,6 +81,22 @@ export default async function AdminInventoryPage({
     return acc;
   }, {});
 
+  const showCounts = allUnits.reduce<Record<string, number>>((acc, u) => {
+    const key = (u.show as any)?.id;
+    if (key) acc[key] = (acc[key] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  // Only surface locations/shows that actually hold inventory — zero-count
+  // entries are noise on a board with 100+ shows. The currently-selected chip
+  // is always kept so an active filter never silently disappears.
+  const visibleLocations = (locations ?? []).filter(
+    (loc) => (locationCounts[loc.id] ?? 0) > 0 || locationFilter === loc.id,
+  );
+  const visibleShows = (shows ?? []).filter(
+    (show) => (showCounts[show.id] ?? 0) > 0 || locationFilter === `show-${show.id}`,
+  );
+
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="bg-[#010F21] text-white px-4 py-4 sticky top-0 z-10 shadow-lg">
@@ -135,7 +151,7 @@ export default async function AdminInventoryPage({
               >
                 All ({allUnits.length})
               </Link>
-              {locations?.map((loc) => (
+              {visibleLocations.map((loc) => (
                 <Link
                   key={loc.id}
                   href={`/admin/inventory?loc=${loc.id}&status=${statusFilter}`}
@@ -144,13 +160,13 @@ export default async function AdminInventoryPage({
                   {loc.name} ({locationCounts[loc.id] ?? 0})
                 </Link>
               ))}
-              {shows?.map((show) => (
+              {visibleShows.map((show) => (
                 <Link
                   key={show.id}
                   href={`/admin/inventory?loc=show-${show.id}&status=${statusFilter}`}
                   className={`px-3 py-1.5 rounded-full text-sm font-medium ${locationFilter === `show-${show.id}` ? "bg-[#00929C] text-white" : "bg-[#00929C]/10 text-[#00929C]"}`}
                 >
-                  📍 {show.name}
+                  📍 {show.name} ({showCounts[show.id] ?? 0})
                 </Link>
               ))}
             </div>

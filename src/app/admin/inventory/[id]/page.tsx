@@ -47,7 +47,7 @@ export default async function InventoryUnitDetailPage({
       .order("created_at", { ascending: false })
       .limit(20),
     supabase.from("locations").select("id, name, city, state").eq("active", true).order("name"),
-    supabase.from("shows").select("id, name, venue_name").eq("active", true).order("name"),
+    supabase.from("shows").select("id, name, venue_name, start_date, end_date").eq("active", true).order("start_date"),
     // Active blem photos for this unit (soft-deleted entries are excluded)
     supabase
       .from("inventory_blem_photos")
@@ -62,6 +62,48 @@ export default async function InventoryUnitDetailPage({
   const product = unit.product as any;
   const location = unit.location as any;
   const show = unit.show as any;
+
+  // Trim the transfer "Assign to Show" dropdown to what's actually relevant:
+  // this week's ongoing/upcoming shows, plus previous-week shows that still
+  // hold inventory, plus the unit's own current show so it stays movable.
+  // Store locations are intentionally left as the full list.
+  const parseShowDate = (s: string) => {
+    const [y, m, d] = s.split("-").map(Number);
+    return new Date(y, m - 1, d);
+  };
+  const startOfToday = (() => {
+    const n = new Date();
+    return new Date(n.getFullYear(), n.getMonth(), n.getDate());
+  })();
+  const inSevenDays = new Date(startOfToday); inSevenDays.setDate(inSevenDays.getDate() + 7);
+  const sevenDaysAgo = new Date(startOfToday); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+  // Shows that ended within the last 7 days are candidates to keep only if
+  // they still physically hold inventory. Look that up scoped to just those
+  // shows (bounded — avoids the default 1000-row cap on a full-table scan).
+  const prevWeekShowIds = ((shows ?? []) as any[])
+    .filter((s) => s.end_date && parseShowDate(s.end_date) >= sevenDaysAgo && parseShowDate(s.end_date) < startOfToday)
+    .map((s) => s.id);
+  let inventoryShowIds = new Set<string>();
+  if (prevWeekShowIds.length > 0) {
+    const { data: inv } = await supabase
+      .from("inventory_units")
+      .select("show_id")
+      .in("show_id", prevWeekShowIds);
+    inventoryShowIds = new Set(
+      ((inv ?? []) as { show_id: string | null }[]).map((r) => r.show_id).filter(Boolean) as string[]
+    );
+  }
+
+  const transferShows = ((shows ?? []) as any[]).filter((s) => {
+    if (s.id === unit.show_id) return true;
+    if (!s.start_date || !s.end_date) return false;
+    const start = parseShowDate(s.start_date);
+    const end = parseShowDate(s.end_date);
+    const upcomingThisWeek = end >= startOfToday && start <= inSevenDays;
+    const prevWeekWithInventory = inventoryShowIds.has(s.id) && end >= sevenDaysAgo && end < startOfToday;
+    return upcomingThisWeek || prevWeekWithInventory;
+  });
   const contract = unit.contract as any;
 
   function formatDate(d: string) {
@@ -309,7 +351,7 @@ export default async function InventoryUnitDetailPage({
               blem_description: (unit as any).blem_description ?? null,
             }}
             locations={locations ?? []}
-            shows={shows ?? []}
+            shows={transferShows}
             initialBlemPhotos={(blemPhotos ?? []) as any}
           />
         )}
