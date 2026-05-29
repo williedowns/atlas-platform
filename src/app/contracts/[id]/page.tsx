@@ -599,25 +599,69 @@ export default async function ContractDetailPage({
                   </div>
                 );
               })()}
-              {/* Items tax. When tax-exempt the row still renders with $0
-                  in the value column so the totals breakdown stays
-                  consistent — the exempt-status hint moves into the label. */}
-              {((contract.tax_amount ?? 0) > 0 || contract.tax_exempt) && (
-                <div className={`flex justify-between ${contract.tax_exempt ? "text-emerald-700" : "text-slate-600"}`}>
-                  <span>
-                    Tax ({((contract.tax_rate ?? 0) * 100).toFixed(2)}%)
-                    {contract.tax_exempt ? " — Exempt (Rx)" : ""}
-                  </span>
-                  <span>{formatCurrency(contract.tax_exempt ? 0 : contract.tax_amount)}</span>
-                </div>
-              )}
+              {/* Items tax. Three display states to avoid hiding that tax
+                  was paid:
+                  - Refund owed: cert received + tax_amount > 0 + no refund issued yet
+                  - Refunded: tax_refund_amount is set
+                  - Exempt clean: exempt and tax_amount = 0 (never collected)
+                  - Standard: just the tax amount, taxable contract */}
+              {(() => {
+                const taxAmount = Number(contract.tax_amount ?? 0);
+                const refundAmount = (contract as { tax_refund_amount?: number | null }).tax_refund_amount;
+                const refundIssued = refundAmount != null;
+                const certReceived = !!contract.tax_exempt_cert_received;
+                const refundOwed = !refundIssued && certReceived && taxAmount > 0;
+                const exemptClean = contract.tax_exempt && taxAmount === 0;
+
+                if (refundOwed) {
+                  return (
+                    <div className="flex justify-between text-amber-700">
+                      <span>
+                        Tax ({((contract.tax_rate ?? 0) * 100).toFixed(2)}%) — Refund Owed
+                      </span>
+                      <span>{formatCurrency(taxAmount)}</span>
+                    </div>
+                  );
+                }
+                if (refundIssued) {
+                  return (
+                    <div className="flex justify-between text-emerald-700">
+                      <span>
+                        Tax ({((contract.tax_rate ?? 0) * 100).toFixed(2)}%) — Refunded
+                      </span>
+                      <span className="line-through">{formatCurrency(taxAmount)}</span>
+                    </div>
+                  );
+                }
+                if (exemptClean) {
+                  return (
+                    <div className="flex justify-between text-emerald-700">
+                      <span>
+                        Tax ({((contract.tax_rate ?? 0) * 100).toFixed(2)}%) — Exempt (Rx)
+                      </span>
+                      <span>{formatCurrency(0)}</span>
+                    </div>
+                  );
+                }
+                if (taxAmount > 0) {
+                  return (
+                    <div className="flex justify-between text-slate-600">
+                      <span>Tax ({((contract.tax_rate ?? 0) * 100).toFixed(2)}%)</span>
+                      <span>{formatCurrency(taxAmount)}</span>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
               {contract.tax_exempt_cert_received && (
                 <div className="flex justify-between items-center text-sm">
                   <span className="flex items-center gap-1.5 text-emerald-700">
                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                     </svg>
-                    TX Exemption Cert Received
+                    {contract.customer?.has_prescription
+                      ? "TX Exemption Cert & Rx Received"
+                      : "TX Exemption Cert Received"}
                   </span>
                   {contract.tax_exempt_cert_url ? (
                     <CertViewButton contractId={id} />

@@ -29,7 +29,7 @@ export async function POST(req: Request) {
   // Fetch the contract (and its customer's email) to validate ownership
   const { data: contract } = await supabase
     .from("contracts")
-    .select("id, contract_number, customer_id, customer:customers(id, email)")
+    .select("id, contract_number, tax_amount, tax_refund_amount, customer_id, customer:customers(id, email)")
     .eq("id", contractId)
     .single();
 
@@ -87,11 +87,20 @@ export async function POST(req: Request) {
   });
 
   // ── Notify bookkeeper (Resend) ─────────────────────────────────────────────
+  // Only fire when a refund is actually owed: tax was collected AND no
+  // refund has been issued yet. Skipping when tax_amount = 0 avoids
+  // false-alarm emails for contracts that were already booked exempt at
+  // sale time (e.g., the in-flow Sign-cert path or backfill on an
+  // already-zeroed contract).
+  const contractTaxAmount = Number((contract as { tax_amount?: number }).tax_amount ?? 0);
+  const contractRefundIssued = (contract as { tax_refund_amount?: number | null }).tax_refund_amount != null;
+  const refundOwed = contractTaxAmount > 0 && !contractRefundIssued;
+
   const resendKey = process.env.RESEND_API_KEY;
   const loriEmail = process.env.BOOKKEEPER_EMAIL ?? "lori@atlasswimspas.com";
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
 
-  if (resendKey) {
+  if (resendKey && refundOwed) {
     await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${resendKey}`, "Content-Type": "application/json" },
@@ -101,6 +110,7 @@ export async function POST(req: Request) {
         subject: `⚠️ Tax Refund Needed — Contract ${(contract as any).contract_number}`,
         html: `
           <p>A tax exemption certificate has been uploaded for contract <strong>${(contract as any).contract_number}</strong>.</p>
+          <p><strong>Tax collected at sale:</strong> $${contractTaxAmount.toFixed(2)}</p>
           <p><strong>Action required:</strong> Please review the certificate and issue the tax refund in QuickBooks.</p>
           <p><a href="${appUrl}/bookkeeper" style="background:#00929C;color:white;padding:10px 20px;border-radius:8px;text-decoration:none;display:inline-block;margin-top:8px;">Open Bookkeeper Dashboard</a></p>
           <p style="margin-top:12px;">Certificate file: <a href="${certUrl}">${certUrl}</a></p>
