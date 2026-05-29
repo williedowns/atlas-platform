@@ -11,17 +11,22 @@ export const FEATURES: { key: Feature; label: string; description: string }[] = 
 ];
 
 export const ROLES_WITH_PERMISSIONS = [
-  { key: "manager",    label: "Manager" },
-  { key: "sales_rep",  label: "Sales Rep" },
-  { key: "bookkeeper", label: "Bookkeeper" },
-  { key: "field_crew", label: "Field Crew" },
+  { key: "manager",      label: "Manager" },
+  { key: "sales_rep",    label: "Sales Rep" },
+  { key: "show_manager", label: "Show Manager" },
+  { key: "bookkeeper",   label: "Bookkeeper" },
+  { key: "field_crew",   label: "Field Crew" },
 ];
 
 export const DEFAULT_PERMISSIONS: RolePermissions = {
-  manager:    { contracts: true,  leads: true,  shows: true,  analytics: true,  inventory: true,  bookkeeper: true  },
-  sales_rep:  { contracts: true,  leads: true,  shows: true,  analytics: false, inventory: false, bookkeeper: false },
-  bookkeeper: { contracts: true,  leads: false, shows: false, analytics: false, inventory: false, bookkeeper: true  },
-  field_crew: { contracts: false, leads: false, shows: false, analytics: false, inventory: false, bookkeeper: false },
+  manager:      { contracts: true,  leads: true,  shows: true,  analytics: true,  inventory: true,  bookkeeper: true  },
+  sales_rep:    { contracts: true,  leads: true,  shows: true,  analytics: false, inventory: false, bookkeeper: false },
+  // Show manager sees only their shows + those shows' deals (row-scoping is
+  // enforced in RLS, migration 108). Feature flags here just gate which nav
+  // items appear — never analytics/inventory/bookkeeper (company books).
+  show_manager: { contracts: true,  leads: true,  shows: true,  analytics: false, inventory: false, bookkeeper: false },
+  bookkeeper:   { contracts: true,  leads: false, shows: false, analytics: false, inventory: false, bookkeeper: true  },
+  field_crew:   { contracts: false, leads: false, shows: false, analytics: false, inventory: false, bookkeeper: false },
 };
 
 /**

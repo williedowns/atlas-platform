@@ -47,6 +47,12 @@ export default async function ContractsPage({
     !viewAs.isImpersonatingUser &&
     ["admin", "manager", "bookkeeper"].includes(effectiveRole ?? "");
 
+  // Show managers are scoped to their managed shows' deals by RLS (migration
+  // 108). Skip the per-rep filter so they see every deal at their shows, not
+  // just the ones they personally sold — RLS still hides everything else.
+  const isShowManager =
+    !viewAs.isImpersonatingUser && effectiveRole === "show_manager";
+
   const filterUserId = viewAs.isImpersonatingUser
     ? viewAs.effectiveUserId
     : user.id;
@@ -74,7 +80,7 @@ export default async function ContractsPage({
     .from("contracts")
     .select("id", { count: "exact", head: true })
     .not("idempotency_key", "is", null);
-  if (!isAdminEffective && filterUserId) {
+  if (!isAdminEffective && !isShowManager && filterUserId) {
     countQuery = countQuery.eq("sales_rep_id", filterUserId);
   }
   const { count } = await countQuery;
@@ -90,7 +96,7 @@ export default async function ContractsPage({
         .order("created_at", { ascending: false })
         .order("id", { ascending: false })
         .range(i * PAGE_SIZE, (i + 1) * PAGE_SIZE - 1);
-      if (!isAdminEffective && filterUserId) {
+      if (!isAdminEffective && !isShowManager && filterUserId) {
         q = q.eq("sales_rep_id", filterUserId);
       }
       return q;

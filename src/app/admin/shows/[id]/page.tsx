@@ -11,6 +11,7 @@ import { AddressAutocompleteFields } from "@/components/contracts/AddressAutocom
 
 type QBOAccount = { id: string; name: string; account_type: string; account_number?: string };
 type QBODepartment = { id: string; name: string; fully_qualified_name: string };
+type OrgUser = { id: string; full_name: string | null; role: string };
 
 export default function EditShowPage() {
   const router = useRouter();
@@ -45,6 +46,19 @@ export default function EditShowPage() {
   const [qboDepartments, setQboDepartments] = useState<QBODepartment[]>([]);
   const [qboDeptLoading, setQboDeptLoading] = useState(false);
 
+  // Show-manager assignment. A manager assigned here can see this show + its
+  // deals (scoped by RLS, migration 108). orgId is stamped on each junction row.
+  const [orgId, setOrgId] = useState<string | null>(null);
+  const [orgUsers, setOrgUsers] = useState<OrgUser[]>([]);
+  const [managerIds, setManagerIds] = useState<string[]>([]);
+  const [initialManagerIds, setInitialManagerIds] = useState<string[]>([]);
+
+  function toggleManager(userId: string) {
+    setManagerIds((ids) =>
+      ids.includes(userId) ? ids.filter((i) => i !== userId) : [...ids, userId],
+    );
+  }
+
   function set<K extends keyof typeof form>(key: K, value: typeof form[K]) {
     setForm((f) => ({ ...f, [key]: value }));
   }
@@ -57,6 +71,7 @@ export default function EditShowPage() {
       .single()
       .then(({ data }) => {
         if (data) {
+          setOrgId((data as any).organization_id ?? null);
           setForm({
             name: data.name ?? "",
             venue_name: data.venue_name ?? "",
@@ -94,6 +109,30 @@ export default function EditShowPage() {
       .then((d) => { if (d.departments) setQboDepartments(d.departments); })
       .catch(() => {})
       .finally(() => setQboDeptLoading(false));
+
+    // Load assignable users for the manager picker (exclude end-customers and
+    // field crews — they're never show managers).
+    fetch("/api/admin/users")
+      .then((r) => r.json())
+      .then((d) => {
+        if (Array.isArray(d)) {
+          setOrgUsers(
+            (d as OrgUser[]).filter((u) => !["customer", "field_crew"].includes(u.role)),
+          );
+        }
+      })
+      .catch(() => {});
+
+    // Load managers already assigned to this show.
+    supabase
+      .from("show_managers")
+      .select("user_id")
+      .eq("show_id", params.id)
+      .then(({ data }) => {
+        const ids = (data ?? []).map((r: { user_id: string }) => r.user_id);
+        setManagerIds(ids);
+        setInitialManagerIds(ids);
+      });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleSubmit(e: React.FormEvent) {
@@ -130,9 +169,42 @@ export default function EditShowPage() {
     if (error) {
       setError(error.message);
       setSaving(false);
-    } else {
-      router.push("/shows");
+      return;
     }
+
+    // Sync show-manager assignments: add newly checked, remove unchecked.
+    const toAdd = managerIds.filter((uid) => !initialManagerIds.includes(uid));
+    const toRemove = initialManagerIds.filter((uid) => !managerIds.includes(uid));
+
+    if (toAdd.length > 0) {
+      const { error: addErr } = await supabase.from("show_managers").insert(
+        toAdd.map((uid) => ({
+          show_id: params.id as string,
+          user_id: uid,
+          organization_id: orgId,
+        })),
+      );
+      if (addErr) {
+        setError(`Show saved, but assigning managers failed: ${addErr.message}`);
+        setSaving(false);
+        return;
+      }
+    }
+
+    if (toRemove.length > 0) {
+      const { error: removeErr } = await supabase
+        .from("show_managers")
+        .delete()
+        .eq("show_id", params.id as string)
+        .in("user_id", toRemove);
+      if (removeErr) {
+        setError(`Show saved, but removing managers failed: ${removeErr.message}`);
+        setSaving(false);
+        return;
+      }
+    }
+
+    router.push("/shows");
   }
 
   if (loading) {
@@ -213,6 +285,44 @@ export default function EditShowPage() {
                   required
                 />
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Show Managers */}
+          <Card>
+            <CardContent className="p-4 space-y-3">
+              <div>
+                <h2 className="font-semibold text-slate-700">Show Managers</h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Managers assigned here see only this show and the deals sold at
+                  it — never company-wide books or other shows.
+                </p>
+              </div>
+              {orgUsers.length === 0 ? (
+                <p className="text-sm text-slate-400">No assignable users found.</p>
+              ) : (
+                <div className="flex flex-col gap-1.5 max-h-64 overflow-y-auto">
+                  {orgUsers.map((u) => (
+                    <label
+                      key={u.id}
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-50 touch-manipulation"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={managerIds.includes(u.id)}
+                        onChange={() => toggleManager(u.id)}
+                        className="w-5 h-5 accent-[#00929C]"
+                      />
+                      <span className="text-sm text-slate-700 flex-1">
+                        {u.full_name ?? "(no name)"}
+                      </span>
+                      <span className="text-xs text-slate-400 capitalize">
+                        {u.role.replace("_", " ")}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
 

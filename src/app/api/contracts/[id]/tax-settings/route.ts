@@ -15,7 +15,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const guard = await requireAdminOrManager();
+  const guard = await requireAdminOrManager(id);
   if (guard instanceof NextResponse) return guard;
   const { user, supabase } = guard;
 
