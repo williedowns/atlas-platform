@@ -66,9 +66,12 @@ export default async function ContractsPage({
       .eq("user_id", filterUserId);
     managedShowIds = (managedRows ?? []).map((r) => r.show_id as string);
   }
-  // Sentinel that matches nothing — used when a show manager is assigned to no
-  // shows, so we return zero rows instead of accidentally returning everything.
-  const NO_MATCH = "00000000-0000-0000-0000-000000000000";
+  // Show managers see their OWN deals (rep behavior) PLUS every deal at the
+  // shows they manage. OR filter: sales_rep_id = me OR show_id ∈ managed shows.
+  const showManagerOr =
+    managedShowIds.length > 0
+      ? `sales_rep_id.eq.${filterUserId},show_id.in.(${managedShowIds.join(",")})`
+      : `sales_rep_id.eq.${filterUserId}`;
 
   // PostgREST caps each request at 1000 rows on this project, so we paginate
   // in 1000-row chunks fetched in parallel after a fast count() query.
@@ -93,8 +96,8 @@ export default async function ContractsPage({
     .from("contracts")
     .select("id", { count: "exact", head: true })
     .not("idempotency_key", "is", null);
-  if (isShowManager) {
-    countQuery = countQuery.in("show_id", managedShowIds.length > 0 ? managedShowIds : [NO_MATCH]);
+  if (isShowManager && filterUserId) {
+    countQuery = countQuery.or(showManagerOr);
   } else if (!isAdminEffective && filterUserId) {
     countQuery = countQuery.eq("sales_rep_id", filterUserId);
   }
@@ -111,8 +114,8 @@ export default async function ContractsPage({
         .order("created_at", { ascending: false })
         .order("id", { ascending: false })
         .range(i * PAGE_SIZE, (i + 1) * PAGE_SIZE - 1);
-      if (isShowManager) {
-        q = q.in("show_id", managedShowIds.length > 0 ? managedShowIds : [NO_MATCH]);
+      if (isShowManager && filterUserId) {
+        q = q.or(showManagerOr);
       } else if (!isAdminEffective && filterUserId) {
         q = q.eq("sales_rep_id", filterUserId);
       }

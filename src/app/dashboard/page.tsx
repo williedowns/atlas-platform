@@ -63,12 +63,16 @@ export default async function DashboardPage() {
       .eq("user_id", effectiveUserId);
     managedShowIds = (managedRows ?? []).map((r) => r.show_id as string);
   }
-  // Sentinel matching nothing — a manager assigned to no shows sees zero rows.
-  const NO_MATCH = "00000000-0000-0000-0000-000000000000";
+  // Show managers see their OWN deals (rep behavior) PLUS every deal at the
+  // shows they manage. OR filter for contracts; an analogous one for leads below.
+  const showManagerContractsOr =
+    managedShowIds.length > 0
+      ? `sales_rep_id.eq.${effectiveUserId},show_id.in.(${managedShowIds.join(",")})`
+      : `sales_rep_id.eq.${effectiveUserId}`;
   // Apply the right viewer scope to a contracts query builder (mutates + returns).
   const scopeContracts = (q: any) => {
     if (isAdmin) return q;
-    if (isShowManager) return q.in("show_id", managedShowIds.length > 0 ? managedShowIds : [NO_MATCH]);
+    if (isShowManager) return q.or(showManagerContractsOr);
     return q.eq("sales_rep_id", effectiveUserId);
   };
 
@@ -266,7 +270,11 @@ export default async function DashboardPage() {
     .limit(30);
 
   if (isShowManager) {
-    leadsQuery.in("show_id", managedShowIds.length > 0 ? managedShowIds : [NO_MATCH]);
+    leadsQuery.or(
+      managedShowIds.length > 0
+        ? `assigned_to.eq.${effectiveUserId},show_id.in.(${managedShowIds.join(",")})`
+        : `assigned_to.eq.${effectiveUserId}`,
+    );
   } else if (!isAdmin) {
     leadsQuery.eq("assigned_to", effectiveUserId);
   }
