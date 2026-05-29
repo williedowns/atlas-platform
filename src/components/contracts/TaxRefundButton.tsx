@@ -164,7 +164,7 @@ export function TaxRefundButton({ contractId, taxAmount, ccPayment, existingRefu
               type="text"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder={hasCard ? "e.g. TX exemption cert received 4/8/2026" : "e.g. Credit memo in QuickBooks, ACH refund…"}
+              placeholder={hasCard ? "e.g. TX exemption cert received 4/8/2026" : "e.g. Check mailed, Credit memo to Wells Fargo, ACH refund"}
               className="w-full px-3 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
             />
           </div>
