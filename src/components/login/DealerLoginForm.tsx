@@ -36,12 +36,28 @@ export function DealerLoginForm({ demoMode }: DealerLoginFormProps) {
     setLoading(true);
     setError("");
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data: signInData, error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error) {
       setError(error.message);
       setLoading(false);
     } else {
+      // Block disabled accounts: a former rep with valid credentials must not
+      // get in. Their session was just created, so sign back out before redirect.
+      const uid = signInData.user?.id;
+      if (uid) {
+        const { data: prof } = await supabase
+          .from("profiles")
+          .select("active")
+          .eq("id", uid)
+          .single();
+        if (prof?.active === false) {
+          await supabase.auth.signOut();
+          setError("This account has been disabled. Contact your administrator.");
+          setLoading(false);
+          return;
+        }
+      }
       // Clear any leftover contract draft from a prior rep on this device.
       // Belt-and-suspenders alongside the signOut clear in AppShell — covers
       // direct logins on a shared iPad where the prior session was abandoned

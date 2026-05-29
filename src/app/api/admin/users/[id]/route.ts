@@ -24,10 +24,17 @@ export async function PATCH(
 
   const { id } = await params;
   const body = await req.json();
-  const { role, email } = body as { role?: string; email?: string };
+  const { role, email, active } = body as {
+    role?: string;
+    email?: string;
+    active?: boolean;
+  };
 
-  if (!role && !email) {
-    return NextResponse.json({ error: "role or email is required" }, { status: 400 });
+  if (role === undefined && email === undefined && active === undefined) {
+    return NextResponse.json(
+      { error: "role, email, or active is required" },
+      { status: 400 }
+    );
   }
 
   // Profile writes must bypass RLS — profiles_update_own only allows a user
@@ -77,6 +84,27 @@ export async function PATCH(
       .select("id");
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     if (!roleRows || roleRows.length === 0) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+  }
+
+  if (active !== undefined) {
+    // Guard against self-lockout — an admin disabling their own account would
+    // be unable to re-enable it without DB access.
+    if (active === false && id === user.id) {
+      return NextResponse.json(
+        { error: "You can't disable your own account" },
+        { status: 400 }
+      );
+    }
+
+    const { data: activeRows, error } = await admin
+      .from("profiles")
+      .update({ active })
+      .eq("id", id)
+      .select("id");
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!activeRows || activeRows.length === 0) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
   }

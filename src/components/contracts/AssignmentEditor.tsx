@@ -64,6 +64,7 @@ export default function AssignmentEditor({
         .from("profiles")
         .select("id, full_name")
         .in("role", ["sales_rep", "manager", "admin"])
+        .eq("active", true)
         .order("full_name"),
     ]).then(([showsRes, locationsRes, repsRes]) => {
       if (cancelled) return;

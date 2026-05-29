@@ -7,6 +7,7 @@ import { UserRoleEditor } from "@/components/admin/UserRoleEditor";
 import { UserEmailEditor } from "@/components/admin/UserEmailEditor";
 import { GetLoginLinkButton } from "@/components/admin/GetLoginLinkButton";
 import { SetPasswordButton } from "@/components/admin/SetPasswordButton";
+import { UserActiveToggle } from "@/components/admin/UserActiveToggle";
 
 function Initials({ name, email }: { name?: string | null; email?: string | null }) {
   const src = name || email || "?";
@@ -71,19 +72,27 @@ export default async function AdminUsersPage() {
         {profiles?.map((p) => {
           const roleLabel = p.role?.replace("_", " ") ?? "unknown";
           const badgeClass = ROLE_BADGE[p.role ?? ""] ?? "bg-slate-100 text-slate-600";
+          const disabled = p.active === false;
 
           return (
             <div
               key={p.id}
-              className="bg-white rounded-2xl border border-slate-200 px-4 py-3 flex items-center gap-3"
+              className={`bg-white rounded-2xl border border-slate-200 px-4 py-3 flex items-center gap-3 ${
+                disabled ? "opacity-60" : ""
+              }`}
             >
               {/* Avatar */}
               <Initials name={p.full_name} email={p.email} />
 
               {/* Info */}
               <div className="flex-1 min-w-0">
-                <p className="font-semibold text-slate-900 truncate">
+                <p className="font-semibold text-slate-900 truncate flex items-center gap-2">
                   {p.full_name || <span className="text-slate-400 italic">No name</span>}
+                  {disabled && (
+                    <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-red-100 text-red-700">
+                      Disabled
+                    </span>
+                  )}
                 </p>
                 <UserEmailEditor
                   userId={p.id}
@@ -107,6 +116,12 @@ export default async function AdminUsersPage() {
                 <GetLoginLinkButton
                   email={p.email}
                   userId={p.id}
+                  currentUserId={user.id}
+                />
+                <UserActiveToggle
+                  userId={p.id}
+                  userName={p.full_name || p.email}
+                  active={p.active !== false}
                   currentUserId={user.id}
                 />
               </div>

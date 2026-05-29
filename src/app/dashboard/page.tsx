@@ -29,6 +29,13 @@ export default async function DashboardPage() {
     .eq("id", user.id)
     .single();
 
+  // Disabled accounts can't use the app even with a still-valid session.
+  // Clear the cookie server-side and bounce to login.
+  if (profile && (profile as any).active === false) {
+    await supabase.auth.signOut();
+    redirect("/login");
+  }
+
   const orgPerms = (profile?.organization as any)?.role_permissions ?? null;
 
   // View-as override — admins can preview the dashboard as another role/user.
