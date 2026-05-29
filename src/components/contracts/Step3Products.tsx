@@ -207,7 +207,7 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
   const [lineCollapsed, setLineCollapsed] = useState(false);
   const [modelCollapsed, setModelCollapsed] = useState(false);
   const [addedFlash, setAddedFlash] = useState<string | null>(null);
-  const [showDiscountForm, setShowDiscountForm] = useState(false);
+  const [showDiscountForm, setShowDiscountForm] = useState(true);
   const [discountType, setDiscountType] = useState<DiscountType>("show_special");
   const [discountAmount, setDiscountAmount] = useState("");
   const [targetPrice, setTargetPrice] = useState(""); // final price customer was promised — computes discount
