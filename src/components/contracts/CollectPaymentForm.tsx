@@ -14,6 +14,7 @@ import { formatCurrency } from "@/lib/utils";
 const PAYMENT_METHODS = [
   { value: "credit_card", label: "Credit Card" },
   { value: "debit_card", label: "Debit Card" },
+  { value: "credit_card_terminal", label: "CC Terminal" },
   { value: "ach", label: "ACH / eCheck" },
   { value: "check", label: "Check" },
   { value: "cash", label: "Cash" },
@@ -99,6 +100,12 @@ export function CollectPaymentForm({
   const [checkNumber, setCheckNumber] = useState("");
   const [bankName, setBankName] = useState("");
 
+  // ── CC Terminal fields ────────────────────────────────────
+  // The card was run on an external credit card terminal. We don't charge
+  // through Intuit — we record the payment and keep the last 4 for the record.
+  const [terminalLast4, setTerminalLast4] = useState("");
+  const [terminalBrand, setTerminalBrand] = useState("");
+
   // ── Financing fields ──────────────────────────────────────
   const [financer, setFinancer] = useState<string>(KNOWN_FINANCERS[0]);
   const [otherFinancer, setOtherFinancer] = useState("");
@@ -128,6 +135,7 @@ export function CollectPaymentForm({
   const isCard = method === "credit_card" || method === "debit_card";
   const isAch = method === "ach";
   const isCheck = method === "check";
+  const isTerminal = method === "credit_card_terminal";
 
   // ── Card expiry formatter ─────────────────────────────────
   const handleExpiryChange = (val: string) => {
@@ -166,10 +174,12 @@ export function CollectPaymentForm({
     amount > 0 &&
     (financer !== "Other" || otherFinancer.trim().length > 0);
 
+  const terminalReady = isTerminal && terminalLast4.length === 4;
+
   const canSubmit =
     amount > 0 &&
     state !== "processing" &&
-    (useSavedCard ? true : isCard ? cardReady : isAch ? achReady : isFinancing ? financingReady : true);
+    (useSavedCard ? true : isCard ? cardReady : isAch ? achReady : isFinancing ? financingReady : isTerminal ? terminalReady : true);
 
   // ── Submit ────────────────────────────────────────────────
   const handleSubmit = async () => {
@@ -232,6 +242,16 @@ export function CollectPaymentForm({
         account_number: accountNumber,
         account_type: accountType,
         account_holder_name: accountName,
+      };
+    } else if (isTerminal) {
+      // Card was run on an external CC terminal — record only, no Intuit call.
+      // card_brand defaults to "Card" so the contract page renders the last 4.
+      body = {
+        contract_id: contractId,
+        amount,
+        method: "credit_card_terminal",
+        card_last4: terminalLast4,
+        card_brand: terminalBrand || "Card",
       };
     } else {
       // Cash or Check — record manually, no charge processing.
@@ -492,6 +512,7 @@ export function CollectPaymentForm({
                     setCardNumber(""); setCardExpiry(""); setCardCvc(""); setCardZip("");
                     setRoutingNumber(""); setAccountNumber(""); setAccountName("");
                     setCheckNumber(""); setBankName("");
+                    setTerminalLast4(""); setTerminalBrand("");
                   }}
                   className={`h-14 rounded-full text-base font-semibold transition-all touch-manipulation ${
                     method === m.value
@@ -633,6 +654,46 @@ export function CollectPaymentForm({
               onChange={(e) => setBankName(e.target.value)}
               placeholder="Bank name"
             />
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── CC Terminal Fields (only when method = credit_card_terminal) ── */}
+      {!useSavedCard && isTerminal && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">Credit Card Terminal</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="rounded-lg bg-blue-50 border border-blue-200 px-4 py-3">
+              <p className="text-xs text-blue-700">
+                Run the card on the external terminal first, then record it here. This does not charge through the app — it logs the payment with the card&apos;s last 4.
+              </p>
+            </div>
+            <Input
+              label="Last 4 of Card *"
+              type="tel"
+              inputMode="numeric"
+              placeholder="1234"
+              maxLength={4}
+              value={terminalLast4}
+              onChange={(e) => setTerminalLast4(e.target.value.replace(/\D/g, "").slice(0, 4))}
+            />
+            <label className="block text-sm">
+              <span className="text-slate-700 font-medium block mb-1">Card Brand (optional)</span>
+              <select
+                value={terminalBrand}
+                onChange={(e) => setTerminalBrand(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-base focus:outline-none focus:ring-2 focus:ring-[#00929C]/30"
+              >
+                <option value="">Select…</option>
+                <option value="Visa">Visa</option>
+                <option value="Mastercard">Mastercard</option>
+                <option value="American Express">American Express</option>
+                <option value="Discover">Discover</option>
+                <option value="Other">Other</option>
+              </select>
+            </label>
           </CardContent>
         </Card>
       )}
