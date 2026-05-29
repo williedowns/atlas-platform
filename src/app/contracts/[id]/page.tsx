@@ -752,6 +752,30 @@ export default async function ContractDetailPage({
           </CardContent>
         </Card>
 
+        {canRecordRefund && "tax_refund_amount" in contract && (contract.tax_amount > 0 || contract.tax_refund_amount != null) && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg">Tax Refund</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <TaxRefundButton
+                contractId={contract.id}
+                taxAmount={contract.tax_amount ?? 0}
+                ccPayment={ccPayment ? { card_brand: ccPayment.card_brand, card_last4: ccPayment.card_last4 } : null}
+                existingRefund={
+                  contract.tax_refund_amount != null
+                    ? {
+                        amount: contract.tax_refund_amount,
+                        issued_at: contract.tax_refund_issued_at,
+                        notes: contract.tax_refund_notes ?? null,
+                      }
+                    : null
+                }
+              />
+            </CardContent>
+          </Card>
+        )}
+
         {canModifyContract && (
           <TaxSettingsEditor
             contractId={contract.id}
@@ -1110,22 +1134,6 @@ export default async function ContractDetailPage({
             <DeleteContractButton
               contractId={contract.id}
               contractNumber={contract.contract_number}
-            />
-          )}
-          {canRecordRefund && "tax_refund_amount" in contract && (contract.tax_amount > 0 || contract.tax_refund_amount != null) && (
-            <TaxRefundButton
-              contractId={contract.id}
-              taxAmount={contract.tax_amount ?? 0}
-              ccPayment={ccPayment ? { card_brand: ccPayment.card_brand, card_last4: ccPayment.card_last4 } : null}
-              existingRefund={
-                contract.tax_refund_amount != null
-                  ? {
-                      amount: contract.tax_refund_amount,
-                      issued_at: contract.tax_refund_issued_at,
-                      notes: contract.tax_refund_notes ?? null,
-                    }
-                  : null
-              }
             />
           )}
           <Link href={`/portal/contract/${id}`} target="_blank" className="block">
