@@ -68,12 +68,23 @@ export async function GET(req: Request) {
         if (u.model_code === modelCode) return true;
         if (u.product?.model_code === modelCode) return true;
       }
-      if (productId) return false;
+      // Only short-circuit when the unit is LINKED to a (different) product —
+      // those definitively belong elsewhere. Legacy show-floor units have
+      // product_id NULL (imported by model_code), so they must fall through to
+      // the category match below; otherwise selecting a product hides every
+      // unlinked unit and the picker shows nothing ("none at the show" —
+      // Blake, May 2026 show floor).
+      if (productId && u.product?.id) return false;
       if (category) {
         if (u.product?.category === category) return true;
         if (getCategoryForModelCode(u.model_code) === category) return true;
         return false;
       }
+      // A product was selected but we have no category to constrain on (the
+      // selected product row has a null/blank category). Don't fall through to
+      // the match-everything `return true` below — that would surface every
+      // unlinked unit. Exclude instead; the rep can use "Show All Locations".
+      if (productId) return false;
       return true;
     });
   }

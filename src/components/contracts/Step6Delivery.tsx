@@ -308,6 +308,8 @@ const SCENARIOS: Scenario[] = [
 // already write timeframes in inventory_units.notes ("2-4 weeks from...").
 // "Custom" lets them type something specific like "Mid-June" or "After 6/15".
 const TIMEFRAME_PRESETS = [
+  "Same day",
+  "Next day",
   "1-2 weeks",
   "2-3 weeks",
   "3-4 weeks",
@@ -315,6 +317,9 @@ const TIMEFRAME_PRESETS = [
   "6-8 weeks",
   "8-10 weeks",
   "10-12 weeks",
+  "3-6 months",
+  "6-9 months",
+  "9 months+",
 ] as const;
 
 // ─── Component ────────────────────────────────────────────────────────────────

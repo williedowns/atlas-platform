@@ -71,7 +71,21 @@ export default function Step8Payment() {
   const [accountType, setAccountType] = useState<"PERSONAL_CHECKING" | "PERSONAL_SAVINGS" | "BUSINESS_CHECKING">("PERSONAL_CHECKING");
   const [accountName, setAccountName] = useState("");
 
-  const currentSplit = splits[currentSplitIdx];
+  // ── Check fields ──────────────────────────────────────────
+  // Collected here so a rep who switches a declined card to "check" (or any
+  // check split) can enter the number/bank on the payment screen.
+  const [checkNumber, setCheckNumber] = useState("");
+  const [bankName, setBankName] = useState("");
+
+  // Per-split method override: lets the rep switch payment method in place
+  // (e.g. after a card decline) without restarting the contract. Keyed by
+  // split index so each split in a multi-split deposit keeps its own choice.
+  const [methodOverride, setMethodOverride] = useState<Record<number, string>>({});
+
+  const rawSplit = splits[currentSplitIdx];
+  const currentSplit = rawSplit
+    ? { ...rawSplit, method: methodOverride[currentSplitIdx] ?? rawSplit.method }
+    : rawSplit;
   const isCard = currentSplit?.method === "credit_card" || currentSplit?.method === "debit_card" || currentSplit?.method === "financing";
   const isFinancing = currentSplit?.method === "financing";
   const isAch = currentSplit?.method === "ach";
@@ -94,6 +108,24 @@ export default function Step8Payment() {
     const digits = val.replace(/\D/g, "").slice(0, 4);
     setCardExpiry(digits.length >= 3 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : digits);
   };
+
+  // Switch the current split to a different payment method (e.g. after a
+  // decline). Clears any entered payment details and returns to a clean
+  // entry state so the rep can enter the new card / record cash, etc.
+  function switchMethod(method: string) {
+    setMethodOverride((m) => ({ ...m, [currentSplitIdx]: method }));
+    setCardNumber(""); setCardExpiry(""); setCardCvc(""); setCardZip("");
+    setRoutingNumber(""); setAccountNumber(""); setAccountName("");
+    setCheckNumber(""); setBankName("");
+    setSaveCardForBalance(false);
+    setErrorMessage(null);
+    setState("pending");
+  }
+
+  // The method actually used for split i, honoring any in-place switch. Used
+  // by the confirmation summary + progress list so they don't show the
+  // original method after a decline-driven switch.
+  const effectiveMethod = (i: number) => methodOverride[i] ?? splits[i]?.method;
 
   const cardReady = isCard &&
     cardNumber.replace(/\s/g, "").length >= 13 &&
@@ -152,12 +184,13 @@ export default function Step8Payment() {
     } else {
       // cash, check, financing, etc. — record only, no charge processing
       endpoint = "/api/payments/record-manual";
+      const isCheck = currentSplit.method === "check";
       body = {
         contract_id: cId,
         amount: currentSplit.amount,
         method: currentSplit.method,
-        check_number: currentSplit.check_number,
-        bank_name: currentSplit.bank_name,
+        check_number: isCheck ? (checkNumber || currentSplit.check_number) : currentSplit.check_number,
+        bank_name: isCheck ? (bankName || currentSplit.bank_name) : currentSplit.bank_name,
       };
     }
 
@@ -369,7 +402,7 @@ export default function Step8Payment() {
             </div>
             {splits.map((split, i) => (
               <div key={i} className="flex justify-between text-emerald-700">
-                <span>{METHOD_LABEL[split.method] ?? split.method}</span>
+                <span>{METHOD_LABEL[effectiveMethod(i)] ?? effectiveMethod(i)}</span>
                 <span className="font-semibold">{formatCurrency(split.amount)}</span>
               </div>
             ))}
@@ -460,7 +493,7 @@ export default function Step8Payment() {
                   ) : (
                     <span className="w-4 h-4 rounded-full border-2 border-current inline-block" />
                   )}
-                  <span>{METHOD_LABEL[split.method] ?? split.method}</span>
+                  <span>{METHOD_LABEL[effectiveMethod(i)] ?? effectiveMethod(i)}</span>
                   {split.check_number && <span className="text-xs opacity-70">#{split.check_number}</span>}
                 </div>
                 <span className="font-semibold">{formatCurrency(split.amount)}</span>
@@ -605,6 +638,27 @@ export default function Step8Payment() {
               </div>
             )}
 
+            {/* ── Check Fields ── */}
+            {currentSplit?.method === "check" && (
+              <div className="space-y-3 pt-1 border-t border-slate-100">
+                <Input
+                  label="Check Number"
+                  type="tel"
+                  inputMode="numeric"
+                  placeholder="1234"
+                  value={checkNumber}
+                  onChange={(e) => setCheckNumber(e.target.value.replace(/\D/g, "").slice(0, 12))}
+                />
+                <Input
+                  label="Bank Name (optional)"
+                  type="text"
+                  placeholder="Bank name"
+                  value={bankName}
+                  onChange={(e) => setBankName(e.target.value)}
+                />
+              </div>
+            )}
+
             {/* ── ACH Fields ── */}
             {isAch && (
               <div className="space-y-3 pt-1 border-t border-slate-100">
@@ -668,6 +722,31 @@ export default function Step8Payment() {
                     </Button>
                   </div>
                 )}
+                {/* Card declined? Let the rep switch to a different method
+                    in place — a new card, debit, check, cash, etc. — without
+                    restarting the contract. */}
+                <div className="rounded-md bg-white border border-slate-200 p-3 space-y-2">
+                  <p className="text-xs font-semibold text-slate-700">
+                    Declined? Use a different payment method:
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {Object.keys(METHOD_LABEL)
+                      .filter((m) => m !== currentSplit?.method)
+                      .map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => switchMethod(m)}
+                          className="rounded-lg border border-slate-300 bg-white py-2 px-2 text-xs font-semibold text-slate-700 hover:border-[#00929C] hover:text-[#00929C] transition-colors touch-manipulation"
+                        >
+                          {METHOD_LABEL[m]}
+                        </button>
+                      ))}
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    …or fix the details above and charge again.
+                  </p>
+                </div>
               </div>
             )}
 
