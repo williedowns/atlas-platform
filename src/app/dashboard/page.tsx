@@ -48,6 +48,30 @@ export default async function DashboardPage() {
   }
 
   const isAdmin = !viewAs.isImpersonatingUser && (effectiveRole === "admin" || effectiveRole === "manager");
+
+  // Show managers see metrics for the shows they manage (every rep's deals), not
+  // just their own sales. Resolve their managed show_ids and scope each
+  // contracts/leads query by show_id. Done in app code so it's correct both on a
+  // real show_manager login (redundant with RLS 108) AND in an admin's
+  // "View As → user" preview (where RLS runs as the admin, not the manager).
+  const isShowManager = effectiveRole === "show_manager";
+  let managedShowIds: string[] = [];
+  if (isShowManager) {
+    const { data: managedRows } = await supabase
+      .from("show_managers")
+      .select("show_id")
+      .eq("user_id", effectiveUserId);
+    managedShowIds = (managedRows ?? []).map((r) => r.show_id as string);
+  }
+  // Sentinel matching nothing — a manager assigned to no shows sees zero rows.
+  const NO_MATCH = "00000000-0000-0000-0000-000000000000";
+  // Apply the right viewer scope to a contracts query builder (mutates + returns).
+  const scopeContracts = (q: any) => {
+    if (isAdmin) return q;
+    if (isShowManager) return q.in("show_id", managedShowIds.length > 0 ? managedShowIds : [NO_MATCH]);
+    return q.eq("sales_rep_id", effectiveUserId);
+  };
+
   // All day boundaries computed in Atlas's local tz (America/Chicago) and
   // expressed as UTC instants. UTC-day math previously kept late-evening
   // Central contracts in "today's revenue" until UTC rolled over the next
@@ -76,7 +100,7 @@ export default async function DashboardPage() {
     .not("status", "in", '("quote","draft","cancelled")')
     .eq("is_contingent", false);
 
-  if (!isAdmin) todayStatsQuery.eq("sales_rep_id", effectiveUserId);
+  scopeContracts(todayStatsQuery);
 
   // Yesterday's stats for trend comparison
   const yesterdayStatsQuery = supabase
@@ -86,7 +110,7 @@ export default async function DashboardPage() {
     .lt("created_at", todayStart)
     .not("status", "in", '("quote","draft","cancelled")')
     .eq("is_contingent", false);
-  if (!isAdmin) yesterdayStatsQuery.eq("sales_rep_id", effectiveUserId);
+  scopeContracts(yesterdayStatsQuery);
 
   const [{ data: todayStats }, { data: yesterdayStats }] = await Promise.all([
     todayStatsQuery,
@@ -132,7 +156,7 @@ export default async function DashboardPage() {
     .gte("created_at", thirtyDaysAgoStart)
     .not("status", "in", '("quote","draft","cancelled")')
     .eq("is_contingent", false);
-  if (!isAdmin) trendStatsQuery.eq("sales_rep_id", effectiveUserId);
+  scopeContracts(trendStatsQuery);
   const { data: trendRows } = await trendStatsQuery;
 
   // Bucket by day (inclusive of today). Days are computed in Central Time so
@@ -205,7 +229,7 @@ export default async function DashboardPage() {
     .order("created_at", { ascending: false })
     .limit(10);
 
-  if (!isAdmin) confirmedQuery.eq("sales_rep_id", effectiveUserId);
+  scopeContracts(confirmedQuery);
 
   // ── Recent contingent contracts ───────────────────────────────────────────
   // Same BF- exclusion as confirmedQuery — only surface contracts run through this system.
@@ -218,7 +242,7 @@ export default async function DashboardPage() {
     .order("created_at", { ascending: false })
     .limit(5);
 
-  if (!isAdmin) contingentQuery.eq("sales_rep_id", effectiveUserId);
+  scopeContracts(contingentQuery);
 
   // ── Recent quotes ─────────────────────────────────────────────────────────
   // Over-fetch (20) so the converted-quote filter below has headroom before
@@ -231,7 +255,7 @@ export default async function DashboardPage() {
     .order("created_at", { ascending: false })
     .limit(20);
 
-  if (!isAdmin) quotesQuery.eq("sales_rep_id", effectiveUserId);
+  scopeContracts(quotesQuery);
 
   // ── Leads pipeline ────────────────────────────────────────────────────────
   const leadsQuery = supabase
@@ -241,7 +265,11 @@ export default async function DashboardPage() {
     .order("created_at", { ascending: false })
     .limit(30);
 
-  if (!isAdmin) leadsQuery.eq("assigned_to", effectiveUserId);
+  if (isShowManager) {
+    leadsQuery.in("show_id", managedShowIds.length > 0 ? managedShowIds : [NO_MATCH]);
+  } else if (!isAdmin) {
+    leadsQuery.eq("assigned_to", effectiveUserId);
+  }
 
   // ── Monthly stats for goal progress ──────────────────────────────────────
   const monthStatsQuery = supabase
@@ -250,7 +278,7 @@ export default async function DashboardPage() {
     .gte("created_at", monthStart)
     .not("status", "in", '("quote","draft","cancelled")')
     .eq("is_contingent", false);
-  if (!isAdmin) monthStatsQuery.eq("sales_rep_id", effectiveUserId);
+  scopeContracts(monthStatsQuery);
 
   // ── Goal for current user this month ──────────────────────────────────────
   // sales_goals.period_start is a date column — pass the local-tz "first
@@ -319,7 +347,7 @@ export default async function DashboardPage() {
       .select("customer_id, customer:customers(first_name, last_name)")
       .in("customer_id", quoteCustomerIds)
       .not("status", "in", '("quote","draft","cancelled")');
-    if (!isAdmin) convertedQuery.eq("sales_rep_id", effectiveUserId);
+    scopeContracts(convertedQuery);
     const { data: convertedRows } = await convertedQuery;
     for (const row of (convertedRows ?? []) as { customer_id: string | null; customer?: unknown }[]) {
       if (row.customer_id) convertedCustomerIds.add(row.customer_id);
@@ -348,7 +376,7 @@ export default async function DashboardPage() {
     .is("parent_contract_id", null)
     .order("created_at", { ascending: true })
     .limit(50);
-  if (!isAdmin) siteVisitsQuery.eq("sales_rep_id", effectiveUserId);
+  scopeContracts(siteVisitsQuery);
   const { data: siteVisitsRaw } = await siteVisitsQuery;
   const siteVisits = (siteVisitsRaw ?? []) as any[];
 
