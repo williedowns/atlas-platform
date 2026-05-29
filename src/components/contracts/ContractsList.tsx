@@ -130,7 +130,8 @@ export function ContractsList({
 
     return (
       has(c.contract_number) ||
-      has(`${c.customer?.first_name} ${c.customer?.last_name}`) ||
+      has([c.customer?.first_name, c.customer?.last_name].filter(Boolean).join(" ")) ||
+      has([c.customer?.co_buyer_first_name, c.customer?.co_buyer_last_name].filter(Boolean).join(" ")) ||
       has(c.customer?.phone) ||
       hasPhone(c.customer?.phone) ||
       has(c.customer?.email) ||
