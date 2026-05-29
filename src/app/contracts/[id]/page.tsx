@@ -12,6 +12,7 @@ import { DeleteContractButton } from "@/components/contracts/DeleteContractButto
 import { SendForSignatureButton } from "@/components/contracts/SendForSignatureButton";
 import { TaxRefundButton } from "@/components/contracts/TaxRefundButton";
 import { CertViewButton } from "@/components/contracts/CertViewButton";
+import { RxViewButton } from "@/components/contracts/RxViewButton";
 import { StatusTimeline } from "@/components/contracts/StatusTimeline";
 import { DeliveryConfirmDialog } from "@/components/contracts/DeliveryConfirmDialog";
 import CustomerFileVault from "@/components/contracts/CustomerFileVault";
@@ -659,12 +660,25 @@ export default async function ContractDetailPage({
                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                     </svg>
-                    {contract.customer?.has_prescription
-                      ? "TX Exemption Cert & Rx Received"
-                      : "TX Exemption Cert Received"}
+                    TX Exemption Cert Received
                   </span>
                   {contract.tax_exempt_cert_url ? (
                     <CertViewButton contractId={id} />
+                  ) : (
+                    <span className="text-xs text-slate-400">No file attached</span>
+                  )}
+                </div>
+              )}
+              {contract.customer?.has_prescription && (
+                <div className="flex justify-between items-center text-sm">
+                  <span className="flex items-center gap-1.5 text-emerald-700">
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                    Rx Received
+                  </span>
+                  {contract.customer?.prescription_url ? (
+                    <RxViewButton customerId={contract.customer.id} />
                   ) : (
                     <span className="text-xs text-slate-400">No file attached</span>
                   )}
