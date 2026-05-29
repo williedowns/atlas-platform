@@ -29,7 +29,16 @@ export default function Step1Show({ onNext }: Step1ShowProps) {
   useEffect(() => {
     async function fetchData() {
       const supabase = createClient();
-      const today = new Date().toISOString().split("T")[0];
+      // Only show the current weekend's shows: ones that haven't ended yet AND
+      // start on or before this week's upcoming Sunday. Once a weekend's shows
+      // end they drop off and the next weekend's cohort appears automatically.
+      const now = new Date();
+      const ymd = (d: Date) =>
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const today = ymd(now);
+      const sunday = new Date(now);
+      sunday.setDate(now.getDate() + ((7 - now.getDay()) % 7));
+      const weekendEnd = ymd(sunday);
 
       const [showsResult, locationsResult] = await Promise.all([
         supabase
@@ -37,6 +46,7 @@ export default function Step1Show({ onNext }: Step1ShowProps) {
           .select("*, location:locations(*)")
           .eq("active", true)
           .gte("end_date", today)
+          .lte("start_date", weekendEnd)
           .order("start_date", { ascending: true }),
         supabase
           .from("locations")
