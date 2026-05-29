@@ -14,6 +14,12 @@ export async function POST(req: Request) {
     method,
     check_number,
     bank_name,
+    // Credit-card-terminal fields — the card was run on an external terminal,
+    // so we record (not charge) the payment and keep the last 4 for the
+    // contract record. card_brand defaults to "Card" client-side so the
+    // contract page's "<brand> ending in <last4>" line renders.
+    card_last4,
+    card_brand,
     // ACH office-processing fields — saved on the payment row so the office can
     // run the ACH manually after the contract is signed. Only required when
     // method === "ach".
@@ -66,6 +72,8 @@ export async function POST(req: Request) {
       processed_at: new Date().toISOString(),
       ...(check_number ? { check_number } : {}),
       ...(bank_name ? { bank_name } : {}),
+      ...(card_last4 ? { card_last4 } : {}),
+      ...(card_brand ? { card_brand } : {}),
       ...(isOfficeProcessedAch
         ? {
             ach_routing_number,
