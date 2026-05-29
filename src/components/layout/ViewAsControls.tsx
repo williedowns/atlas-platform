@@ -12,6 +12,7 @@ interface UserOption {
 const ROLE_OPTIONS: { value: string; label: string }[] = [
   { value: "manager", label: "Manager" },
   { value: "sales_rep", label: "Sales Rep" },
+  { value: "show_manager", label: "Show Manager" },
   { value: "bookkeeper", label: "Bookkeeper" },
   { value: "field_crew", label: "Field Crew" },
   { value: "customer", label: "Customer" },
