@@ -180,7 +180,11 @@ export default async function ContractDetailPage({
   }
 
   // Currently-assigned inventory unit (for the ModifyContractCard).
-  const canModifyContract = ["admin", "manager"].includes(profile?.role ?? "");
+  // show_manager edits are scope-checked per-contract by the backend guard
+  // (auth-guard.ts requireAdminOrManager) + RLS (migration 108/109); RLS also
+  // only lets a show_manager LOAD contracts at their managed shows, so showing
+  // the edit controls here can't expose contracts outside their scope.
+  const canModifyContract = ["admin", "manager", "show_manager"].includes(profile?.role ?? "");
   let currentUnit: { inventory_unit_id: string; serial_number: string | null; model: string | null; stock_assigned_at: string | null } | null = null;
   if (canModifyContract) {
     const { data: unitRow } = await supabase

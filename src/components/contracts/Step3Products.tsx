@@ -1139,16 +1139,28 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-2">
                 <span className="text-base text-slate-600">Document Fee</span>
+                {/* Discrete waive control: a small checkbox + lowercase "w"
+                    so a customer glancing at the iPad doesn't read "Waive".
+                    The rep knows what it is; toggle still flips doc_fee_waived. */}
                 <button
                   type="button"
                   onClick={() => setDocFeeWaived(!draft.doc_fee_waived)}
-                  className={`text-[11px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full border transition-colors ${
-                    draft.doc_fee_waived
-                      ? "bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200"
-                      : "bg-slate-100 text-slate-600 border-slate-300 hover:bg-slate-200"
-                  }`}
+                  title={draft.doc_fee_waived ? "Doc fee waived — tap to restore" : "Waive doc fee"}
+                  aria-label={draft.doc_fee_waived ? "Doc fee waived, tap to restore" : "Waive doc fee"}
+                  className="flex items-center gap-1 text-slate-400 hover:text-slate-600 transition-colors touch-manipulation"
                 >
-                  {draft.doc_fee_waived ? "Waived · Restore" : "Waive"}
+                  <span
+                    className={`w-3.5 h-3.5 rounded-[3px] border flex items-center justify-center ${
+                      draft.doc_fee_waived ? "bg-slate-400 border-slate-400" : "bg-white border-slate-300"
+                    }`}
+                  >
+                    {draft.doc_fee_waived && (
+                      <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={4} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                      </svg>
+                    )}
+                  </span>
+                  <span className="text-[11px] lowercase text-slate-400">w</span>
                 </button>
               </div>
               {/* Fee + tax combined into a single Document Fee line per
