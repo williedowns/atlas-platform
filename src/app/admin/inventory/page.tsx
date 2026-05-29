@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent } from "@/components/ui/card";
 import { INVENTORY_STATUSES } from "@/lib/inventory-constants";
 import { InventorySearchTable } from "@/components/inventory/InventorySearchTable";
+import { SyncSheetButton } from "@/components/inventory/SyncSheetButton";
 
 export default async function AdminInventoryPage({
   searchParams,
@@ -51,6 +52,15 @@ export default async function AdminInventoryPage({
     supabase.from("locations").select("id, name").eq("active", true).order("name"),
     supabase.from("shows").select("id, name").eq("active", true).order("name"),
   ]);
+
+  // Last sync time for the Sync button. Tolerant of the table not existing yet
+  // (before migration 107 is applied) — falls back to "Never synced".
+  const { data: syncState } = await supabase
+    .from("inventory_sync_state")
+    .select("last_synced_at")
+    .eq("id", "inventory")
+    .maybeSingle();
+  const lastSynced = (syncState as { last_synced_at: string | null } | null)?.last_synced_at ?? null;
 
   const allUnits = units ?? [];
 
@@ -112,15 +122,18 @@ export default async function AdminInventoryPage({
               <p className="text-white/60 text-xs">{filtered.length} of {allUnits.length} units</p>
             </div>
           </div>
-          <Link
-            href="/admin/inventory/new"
-            className="flex items-center gap-1.5 bg-[#00929C] text-white text-sm font-semibold px-4 py-2 rounded-lg"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-            </svg>
-            Add Unit
-          </Link>
+          <div className="flex items-center gap-2">
+            <SyncSheetButton lastSynced={lastSynced} />
+            <Link
+              href="/admin/inventory/new"
+              className="flex items-center gap-1.5 bg-[#00929C] text-white text-sm font-semibold px-4 py-2 rounded-lg"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+              Add Unit
+            </Link>
+          </div>
         </div>
       </header>
 
