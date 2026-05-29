@@ -47,15 +47,28 @@ export default async function ContractsPage({
     !viewAs.isImpersonatingUser &&
     ["admin", "manager", "bookkeeper"].includes(effectiveRole ?? "");
 
-  // Show managers are scoped to their managed shows' deals by RLS (migration
-  // 108). Skip the per-rep filter so they see every deal at their shows, not
-  // just the ones they personally sold — RLS still hides everything else.
-  const isShowManager =
-    !viewAs.isImpersonatingUser && effectiveRole === "show_manager";
-
+  // The effective user we scope to — the impersonated user, or the logged-in one.
   const filterUserId = viewAs.isImpersonatingUser
     ? viewAs.effectiveUserId
     : user.id;
+
+  // Show managers see EVERY deal at the shows they manage (whoever sold it), not
+  // just their own sales. Scope by managed show_ids in app code so this is right
+  // both on a real show_manager login (redundant with RLS migration 108) AND when
+  // an admin previews via "View As → user" (there RLS runs as the admin, not the
+  // impersonated manager, so the app must do the scoping).
+  const isShowManager = effectiveRole === "show_manager";
+  let managedShowIds: string[] = [];
+  if (isShowManager && filterUserId) {
+    const { data: managedRows } = await supabase
+      .from("show_managers")
+      .select("show_id")
+      .eq("user_id", filterUserId);
+    managedShowIds = (managedRows ?? []).map((r) => r.show_id as string);
+  }
+  // Sentinel that matches nothing — used when a show manager is assigned to no
+  // shows, so we return zero rows instead of accidentally returning everything.
+  const NO_MATCH = "00000000-0000-0000-0000-000000000000";
 
   // PostgREST caps each request at 1000 rows on this project, so we paginate
   // in 1000-row chunks fetched in parallel after a fast count() query.
@@ -70,7 +83,7 @@ export default async function ContractsPage({
       total, subtotal, discount_total, tax_amount, deposit_paid, balance_due,
       payment_method, notes, line_items, financing, created_at,
       show_id, customer_id,
-      customer:customers(first_name, last_name, phone, email, address, city, state, zip),
+      customer:customers(first_name, last_name, co_buyer_first_name, co_buyer_last_name, phone, email, address, city, state, zip),
       show:shows(name),
       location:locations(name)
     `;
@@ -80,7 +93,9 @@ export default async function ContractsPage({
     .from("contracts")
     .select("id", { count: "exact", head: true })
     .not("idempotency_key", "is", null);
-  if (!isAdminEffective && !isShowManager && filterUserId) {
+  if (isShowManager) {
+    countQuery = countQuery.in("show_id", managedShowIds.length > 0 ? managedShowIds : [NO_MATCH]);
+  } else if (!isAdminEffective && filterUserId) {
     countQuery = countQuery.eq("sales_rep_id", filterUserId);
   }
   const { count } = await countQuery;
@@ -96,7 +111,9 @@ export default async function ContractsPage({
         .order("created_at", { ascending: false })
         .order("id", { ascending: false })
         .range(i * PAGE_SIZE, (i + 1) * PAGE_SIZE - 1);
-      if (!isAdminEffective && !isShowManager && filterUserId) {
+      if (isShowManager) {
+        q = q.in("show_id", managedShowIds.length > 0 ? managedShowIds : [NO_MATCH]);
+      } else if (!isAdminEffective && filterUserId) {
         q = q.eq("sales_rep_id", filterUserId);
       }
       return q;
