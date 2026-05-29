@@ -200,6 +200,9 @@ export function ContractsList({
           <div className="flex-1 min-w-0">
             <p className="font-semibold text-slate-900 truncate">
               {c.customer?.first_name} {c.customer?.last_name}
+              {(c.customer?.co_buyer_first_name || c.customer?.co_buyer_last_name) && (
+                <> & {[c.customer?.co_buyer_first_name, c.customer?.co_buyer_last_name].filter(Boolean).join(" ")}</>
+              )}
             </p>
             <p className="text-sm text-slate-500 truncate">
               {c.contract_number} · {c.show?.name ?? c.location?.name ?? ""}
