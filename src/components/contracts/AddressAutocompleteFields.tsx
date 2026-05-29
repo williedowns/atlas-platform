@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { cn } from "@/lib/utils";
 
 // Lazy-load Mapbox's AddressAutofill on the client only — the package
@@ -74,6 +74,8 @@ const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_PUBLIC_TOKEN ?? "";
 interface MapboxAddressProperties {
   feature_name?: string;
   address_line1?: string;
+  address_line2?: string;
+  address_line3?: string;
   address_level1?: string;
   address_level2?: string;
   postcode?: string;
@@ -91,6 +93,8 @@ export function AddressAutocompleteFields({
   variant = "labeled",
   disabled = false,
 }: Props) {
+  const addressInputRef = useRef<HTMLInputElement>(null);
+
   const update = useCallback(
     <K extends keyof AddressFields>(key: K, value: string) => {
       onChange({ ...values, [key]: value });
@@ -102,12 +106,27 @@ export function AddressAutocompleteFields({
     (res: RetrieveResponse) => {
       const props = res.features?.[0]?.properties;
       if (!props) return;
+      // Mapbox returns the secondary unit/suite (e.g. "STE 448") in address_line2,
+      // so join the address lines to keep the unit number on selection.
+      const street = [props.address_line1, props.address_line2, props.address_line3]
+        .filter(Boolean)
+        .join(", ");
+      const fullAddress = street || props.feature_name || values.address;
       onChange({
-        address: props.address_line1 ?? props.feature_name ?? values.address,
+        address: fullAddress,
         city: props.address_level2 ?? values.city,
         state: toStateCode(props.address_level1) || values.state,
         zip: props.postcode ?? values.zip,
       });
+      // Mapbox's AddressAutofill writes only address_line1 back into the input after
+      // this callback (our form has a single address field, not separate line1/line2
+      // inputs), which drops the unit. Re-assert the full address once Mapbox is done.
+      if (street) {
+        requestAnimationFrame(() => {
+          const el = addressInputRef.current;
+          if (el && el.value !== fullAddress) el.value = fullAddress;
+        });
+      }
     },
     [values, onChange],
   );
@@ -118,6 +137,7 @@ export function AddressAutocompleteFields({
   // of <Input> (variant="labeled") or the compact <input> style (variant="compact").
   const addressInput = (
     <input
+      ref={addressInputRef}
       name="address"
       autoComplete="address-line1"
       placeholder="123 Main St"
