@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { logAction } from "@/lib/audit";
+import { userManagesContractShow } from "@/lib/auth-guard";
+import { canActOnContract } from "@/lib/contract-access";
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -9,8 +11,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
-  const allowedRoles = ["admin", "manager", "bookkeeper"];
-  if (!allowedRoles.includes(profile?.role ?? "")) {
+
+  // "Full, except delete": admin/manager (any deal) + bookkeeper (financial) +
+  // show_manager scoped to the show this deal was sold at. Cancelling is allowed;
+  // only DELETE stays admin-only (enforced in the DELETE handler in ../route.ts).
+  // The show-membership lookup runs only for show_manager; others decide by role.
+  const role = profile?.role ?? "";
+  const managesThisShow =
+    role === "show_manager" ? await userManagesContractShow(supabase, user.id, id) : false;
+  if (!canActOnContract({ role, managesThisShow, allowBookkeeper: true })) {
     return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
   }
 
