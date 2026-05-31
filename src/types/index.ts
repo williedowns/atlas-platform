@@ -315,6 +315,10 @@ export interface ContractLineItem {
   // they were generated for so the UI can render them as locked dependents
   // and the cascade can remove them when the spa line is removed.
   linked_spa_product_id?: string;
+  // Excluded from the out-the-door discount solve. Set on site-prep lines
+  // (granite base) that are sold separately and must not absorb — or inflate —
+  // a discount the customer negotiated on the spa itself.
+  discount_excluded?: boolean;
   // Blem snapshot — populated at sale time when unit_type='blem'. Frozen
   // copy of the inventory record so the contract still renders the exact
   // photos & description the customer reviewed even if inventory is later

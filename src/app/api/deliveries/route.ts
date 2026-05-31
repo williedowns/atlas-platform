@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { evaluateReadiness, blockerLabels } from "@/lib/readiness";
 import { detectCrewConflicts, conflictSummary } from "@/lib/work-order-conflicts";
+import { userManagesContractShow } from "@/lib/auth-guard";
+import { canActOnContract } from "@/lib/contract-access";
 
 // POST /api/deliveries
 // Body: {
@@ -49,9 +51,18 @@ export async function POST(req: Request) {
       .eq("id", contract_id)
       .single(),
   ]);
-  const isAdminOrManager = ["admin", "manager"].includes(callerProfile?.role ?? "");
 
   if (!contract) return NextResponse.json({ error: "Contract not found" }, { status: 404 });
+
+  // Who may override the readiness gate: admin/manager (any contract) or a
+  // show_manager scoped to the show this deal was sold at. No bookkeeper —
+  // overriding readiness is an ops decision, not a financial one. The DB lookup
+  // only runs for show_manager. RLS on delivery_work_orders (migration 112) is
+  // the second enforcement layer on the insert below.
+  const role = callerProfile?.role ?? "";
+  const managesThisShow =
+    role === "show_manager" ? await userManagesContractShow(supabase, user.id, contract_id) : false;
+  const canOverride = canActOnContract({ role, managesThisShow });
 
   let dlPresent = false;
   if (contract.customer_id) {
@@ -71,16 +82,16 @@ export async function POST(req: Request) {
       {
         error: "Readiness check failed",
         blockers: blockerLabels(readiness),
-        can_override: isAdminOrManager,
+        can_override: canOverride,
       },
       { status: 409 },
     );
   }
 
   // Role gate on the override path
-  if (override_readiness && !isAdminOrManager) {
+  if (override_readiness && !canOverride) {
     return NextResponse.json(
-      { error: "Only admins and managers can override the readiness gate." },
+      { error: "You do not have permission to override the readiness gate for this contract." },
       { status: 403 },
     );
   }

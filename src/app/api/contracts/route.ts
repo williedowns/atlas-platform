@@ -9,6 +9,7 @@ import {
 } from "@/lib/delivery-diagram-requirement";
 import { assignConcretePadEstimate } from "@/lib/concrete-pad-assignment";
 import { countOutTheDoorDiscounts } from "@/lib/discounts";
+import { normalizeMarketingFeedback } from "@/lib/marketing-feedback";
 
 export async function POST(req: Request) {
   const supabase = await createClient();
@@ -39,6 +40,7 @@ export async function POST(req: Request) {
     payment_method,
     notes,
     external_notes,
+    marketing_feedback,
     needs_permit,
     needs_hoa,
     permit_jurisdiction,
@@ -181,6 +183,8 @@ export async function POST(req: Request) {
       signed_at: new Date().toISOString(),
       notes,
       external_notes: external_notes ?? null,
+      // Validation boundary: drop unknown channels, trim text, NULL when untouched.
+      marketing_feedback: normalizeMarketingFeedback(marketing_feedback),
       needs_permit: !!needs_permit,
       needs_hoa: !!needs_hoa,
       permit_jurisdiction: permit_jurisdiction ?? null,

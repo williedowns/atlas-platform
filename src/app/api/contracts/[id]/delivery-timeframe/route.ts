@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { requireAdminOrManager } from "@/lib/auth-guard";
 import { logAction } from "@/lib/audit";
 
 // Edit policy:
 //   - sales_rep can only set delivery_timeframe at contract creation time
 //     (handled by POST /api/contracts).
-//   - After the contract exists, only admin/manager can change it.
+//   - After the contract exists, admin/manager (any contract in their org) or a
+//     show_manager scoped to the show this deal was sold at may change it.
+//     requireAdminOrManager(id) enforces that scope; RLS (108/109) is the second
+//     layer on the write itself.
 // Customer-visible: this value drives the "Expected Delivery" card in the
 // portal until a firm delivery_work_orders.scheduled_date is set.
 export async function PATCH(
@@ -13,23 +16,9 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  const role = profile?.role ?? "";
-  if (!["admin", "manager"].includes(role)) {
-    return NextResponse.json(
-      { error: "Only admin or manager can change the delivery timeframe after contract creation." },
-      { status: 403 }
-    );
-  }
+  const auth = await requireAdminOrManager(id);
+  if (auth instanceof NextResponse) return auth;
+  const { user, supabase } = auth;
 
   const body = await req.json().catch(() => ({}));
   const raw: unknown = (body as { delivery_timeframe?: unknown }).delivery_timeframe;

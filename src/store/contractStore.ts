@@ -12,6 +12,7 @@ import type {
 } from "@/types";
 import { buildGraniteLineItem, isSpaWithDimensions } from "@/lib/granite";
 import { buildConcreteLineItem } from "@/lib/concrete";
+import type { MarketingFeedback } from "@/lib/marketing-feedback";
 import type { Contract } from "@/types";
 
 export interface ContractDraft {
@@ -73,6 +74,12 @@ export interface ContractDraft {
   // Notes — internal: staff-only audit trail. external: printed on customer PDF/email.
   notes?: string;
   external_notes?: string;
+
+  // Internal lead-attribution checklist captured in Step 5 (how they heard about
+  // the show, what drew them to the booth, first-time visitor). Validated by
+  // normalizeMarketingFeedback at /api/contracts. INTERNAL ONLY — never on the
+  // customer PDF. Optional so drafts persisted before this field rehydrate clean.
+  marketing_feedback?: MarketingFeedback;
 
   // Contingencies — hard-stop gates for delivery
   needs_permit?: boolean;
@@ -261,6 +268,7 @@ interface ContractStore {
   removeDepositSplit: (index: number) => void;
   setNotes: (notes: string) => void;
   setExternalNotes: (external_notes: string) => void;
+  setMarketingFeedback: (marketing_feedback: MarketingFeedback) => void;
   setNeedsPermit: (needs_permit: boolean) => void;
   setNeedsHoa: (needs_hoa: boolean) => void;
   setPermitJurisdiction: (permit_jurisdiction: string) => void;
@@ -693,6 +701,9 @@ export const useContractStore = create<ContractStore>()(
 
       setExternalNotes: (external_notes) =>
         set((state) => ({ draft: { ...state.draft, external_notes } })),
+
+      setMarketingFeedback: (marketing_feedback) =>
+        set((state) => ({ draft: { ...state.draft, marketing_feedback } })),
 
       setNeedsPermit: (needs_permit) =>
         set((state) => ({ draft: { ...state.draft, needs_permit } })),

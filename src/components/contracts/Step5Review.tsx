@@ -18,6 +18,7 @@ import {
   calculateMinDeposit,
 } from "@/lib/utils";
 import { GRANITE_PRICE_TIERS } from "@/lib/granite";
+import { MARKETING_CHANNELS } from "@/lib/marketing-feedback";
 
 const PAYMENT_METHODS = [
   { value: "credit_card", label: "Credit Card" },
@@ -70,7 +71,7 @@ function downscaleImageToDataUrl(file: File, maxDim: number, quality: number): P
 
 export default function Step5Review({ onNext }: Step5ReviewProps) {
   const router = useRouter();
-  const { draft, addDepositSplit, removeDepositSplit, updateLineItemSerial, updateLineItemPrice, removeLineItem, setNotes, setExternalNotes, setNeedsPermit, setNeedsHoa, setPermitJurisdiction, setTaxExempt, setDocFeeWaived, setTaxExemptCert, setRxFile, setConcreteEstimatePending, setConcreteEstimateNotes, markLineItemAsBlem } = useContractStore();
+  const { draft, addDepositSplit, removeDepositSplit, updateLineItemSerial, updateLineItemPrice, removeLineItem, setNotes, setExternalNotes, setMarketingFeedback, setNeedsPermit, setNeedsHoa, setPermitJurisdiction, setTaxExempt, setDocFeeWaived, setTaxExemptCert, setRxFile, setConcreteEstimatePending, setConcreteEstimateNotes, markLineItemAsBlem } = useContractStore();
 
   // Sale-time damage capture state — when a line item index is set, the
   // SaleTimeDamageDialog opens for that line. On confirm we flip the line
@@ -1501,6 +1502,105 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
               className="w-full rounded-lg border border-amber-200 bg-amber-50/40 px-4 py-3 text-base placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-transparent touch-manipulation resize-none"
             />
           </div>
+        </CardContent>
+      </Card>
+
+      {/* ── Marketing / lead attribution — INTERNAL ONLY (never on customer PDF) ── */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">
+            How&apos;d they find us?{" "}
+            <span className="text-xs font-normal text-slate-500">(internal only — never shown to the customer)</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4 pt-0">
+          <div>
+            <p className="text-sm font-semibold text-slate-700 mb-2">How they heard about the show</p>
+            <div className="flex flex-wrap gap-2">
+              {MARKETING_CHANNELS.map((ch) => {
+                const heard = draft.marketing_feedback?.heard_about ?? [];
+                const selected = heard.includes(ch.key);
+                return (
+                  <button
+                    key={ch.key}
+                    type="button"
+                    onClick={() =>
+                      setMarketingFeedback({
+                        ...(draft.marketing_feedback ?? { heard_about: [] }),
+                        heard_about: selected
+                          ? heard.filter((k) => k !== ch.key)
+                          : [...heard, ch.key],
+                      })
+                    }
+                    className={`px-3 py-2 rounded-full border-2 text-sm font-medium transition-all touch-manipulation ${
+                      selected
+                        ? "border-[#00929C] bg-[#00929C] text-white"
+                        : "border-slate-200 bg-white text-slate-700"
+                    }`}
+                  >
+                    {ch.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {(draft.marketing_feedback?.heard_about ?? []).includes("other") && (
+            <div>
+              <label className="text-sm font-semibold text-slate-700 block mb-1">
+                Other — please specify
+              </label>
+              <Input
+                value={draft.marketing_feedback?.heard_about_other ?? ""}
+                onChange={(e) =>
+                  setMarketingFeedback({
+                    ...(draft.marketing_feedback ?? { heard_about: [] }),
+                    heard_about_other: e.target.value,
+                  })
+                }
+                placeholder="e.g. saw the truck, hotel flyer..."
+              />
+            </div>
+          )}
+
+          <div>
+            <label className="text-sm font-semibold text-slate-700 block mb-1">
+              What drew them to the booth? <span className="text-xs font-normal text-slate-500">(optional)</span>
+            </label>
+            <Input
+              value={draft.marketing_feedback?.booth_draw ?? ""}
+              onChange={(e) =>
+                setMarketingFeedback({
+                  ...(draft.marketing_feedback ?? { heard_about: [] }),
+                  booth_draw: e.target.value,
+                })
+              }
+              placeholder="The swim spa, a specific model, the display..."
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={() =>
+              setMarketingFeedback({
+                ...(draft.marketing_feedback ?? { heard_about: [] }),
+                first_time_visitor: !draft.marketing_feedback?.first_time_visitor,
+              })
+            }
+            className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl border-2 text-left transition-all touch-manipulation ${
+              draft.marketing_feedback?.first_time_visitor ? "border-[#00929C] bg-[#00929C]/10" : "border-slate-200 bg-white"
+            }`}
+          >
+            <div className={`w-10 h-6 rounded-full flex items-center px-1 transition-all flex-shrink-0 ${
+              draft.marketing_feedback?.first_time_visitor ? "bg-[#00929C] justify-end" : "bg-slate-200 justify-start"
+            }`}>
+              <div className="w-4 h-4 rounded-full bg-white shadow-sm" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-slate-900">First time at an Atlas show</p>
+              <p className="text-xs text-slate-500">Toggle on if this is their first Atlas show visit</p>
+            </div>
+          </button>
         </CardContent>
       </Card>
 

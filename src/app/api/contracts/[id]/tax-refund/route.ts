@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { logAction } from "@/lib/audit";
 import { refundCharge } from "@/lib/payments/intuit";
+import { userManagesContractShow } from "@/lib/auth-guard";
+import { canActOnContract } from "@/lib/contract-access";
 
 export async function POST(
   req: Request,
@@ -19,7 +21,13 @@ export async function POST(
     .eq("id", user.id)
     .single();
 
-  if (!["admin", "manager", "bookkeeper"].includes(profile?.role ?? "")) {
+  // admin/manager (any contract) + bookkeeper (financial action, org-wide) +
+  // show_manager scoped to the show this deal was sold at. The DB lookup only
+  // runs for show_manager; everyone else is decided by role alone.
+  const role = profile?.role ?? "";
+  const managesThisShow =
+    role === "show_manager" ? await userManagesContractShow(supabase, user.id, id) : false;
+  if (!canActOnContract({ role, managesThisShow, allowBookkeeper: true })) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

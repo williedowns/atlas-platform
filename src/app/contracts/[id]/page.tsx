@@ -103,8 +103,13 @@ export default async function ContractDetailPage({
 
   if (!contract) notFound();
 
-  const canViewAudit = ["admin", "manager", "bookkeeper"].includes(profile?.role ?? "");
-  const canRecordRefund = ["admin", "manager", "bookkeeper"].includes(profile?.role ?? "");
+  // show_manager is added to these UI gates role-only (no per-contract scope
+  // check here): RLS only lets a show_manager LOAD a contract sold at a show
+  // they manage, so if this page rendered for them at all the deal is in scope.
+  // The backends re-check scope — refund routes via userManagesContractShow,
+  // audit_logs via its own show_manager RLS policy (migration 112).
+  const canViewAudit = ["admin", "manager", "bookkeeper", "show_manager"].includes(profile?.role ?? "");
+  const canRecordRefund = ["admin", "manager", "bookkeeper", "show_manager"].includes(profile?.role ?? "");
 
   // Find the first completed CC payment that can receive a refund
   const ccPayment = (payments ?? []).find(
@@ -139,7 +144,7 @@ export default async function ContractDetailPage({
   ]);
   const dlPresent = (dlRows ?? []).length > 0;
   const readiness = evaluateReadiness(contract, dlPresent);
-  const canOverrideReadiness = ["admin", "manager"].includes(profile?.role ?? "");
+  const canOverrideReadiness = ["admin", "manager", "show_manager"].includes(profile?.role ?? "");
 
   // Concrete-pad addon link: any child contract whose parent_contract_id
   // points to this one. Used to render the link under the concrete badge
@@ -164,7 +169,7 @@ export default async function ContractDetailPage({
       .maybeSingle();
     timeframeEditorName = editor?.full_name ?? null;
   }
-  const canEditTimeframe = ["admin", "manager"].includes(profile?.role ?? "");
+  const canEditTimeframe = ["admin", "manager", "show_manager"].includes(profile?.role ?? "");
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let auditLogs: any[] = [];
