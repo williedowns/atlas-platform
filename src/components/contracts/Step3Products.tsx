@@ -11,7 +11,7 @@ import type { Product, DiscountType, ContractDiscount } from "@/types";
 import { isSpaProduct, isOptionAvailableForModel } from "@/lib/inventory-constants";
 import { InventoryUnitPicker } from "@/components/contracts/InventoryUnitPicker";
 import { GRANITE_PRICE_TIERS, GRANITE_PRODUCT_ID, isSpaWithDimensions } from "@/lib/granite";
-import { isOutTheDoorDiscount } from "@/lib/discounts";
+import { isOutTheDoorDiscount, solveOutTheDoorDiscount, discountableSubtotal } from "@/lib/discounts";
 import { decideShipToAddress } from "@/lib/tax/sourcingDecision";
 
 interface Step3ProductsProps {
@@ -425,24 +425,21 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
     setShowDiscountForm(false);
   }
 
-  // Discount Calculator: rep enters the items subtotal target — the price
-  // before doc fees and before tax (matches the "Subtotal after discount"
-  // row in the cart). We solve for the discount that lands there.
-  // Per Alex 2026-05-24: reps think in pre-tax subtotal, not all-in OTD.
+  // Discount Calculator: rep enters the DISCOUNTABLE subtotal target — the spa
+  // price before site prep, doc fees, and tax. We solve for the discount that
+  // lands the spa there. Per Alex 2026-05-24: reps think in pre-tax subtotal,
+  // not all-in OTD.
   //
-  //   I = items subtotal, F = doc fee (0 if waived), S = I + F = draft.subtotal
-  //   D = discount, target = desired items subtotal after discount
+  //   Ds = discountable items subtotal (spa; excludes the granite base and any
+  //        other discount_excluded site-prep line)
+  //   target = desired discountable subtotal after discount
+  //   D = Ds − target
   //
-  //   D = I − target = (S − F) − target
-  //
-  // Same formula for taxable and tax-exempt — target is pre-tax pre-fee.
+  // Site prep, doc fee, and tax all sit OUTSIDE Ds and add on top, so the
+  // discount never ropes in — or discounts — the granite base (the bug Blake
+  // hit 2026-05-30). Same formula for taxable and tax-exempt: target is pre-tax.
   function computeCalculatedDiscount(target: number): number | null {
-    if (isNaN(target) || target <= 0) return null;
-    const F = draft.doc_fee_waived ? 0 : (draft.doc_fee_amount ?? 0);
-    const itemsSubtotal = draft.subtotal - F;
-    const discountAmt = Math.round((itemsSubtotal - target) * 100) / 100;
-    if (discountAmt <= 0 || discountAmt >= itemsSubtotal) return null;
-    return discountAmt;
+    return solveOutTheDoorDiscount(draft.line_items, target);
   }
 
   function handleApplyCalculatedDiscount() {
@@ -458,12 +455,15 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
     }
     const discount: ContractDiscount = {
       type: "show_special",
-      label: `Calculated to $${target.toFixed(2)} out-the-door`,
+      // Keep the "Calculated to … out-the-door" shape: isOutTheDoorDiscount()
+      // keys off it, and changing the prefix/suffix would unlink the detector
+      // from already-signed contracts that carry the old label.
+      label: `Calculated to $${target.toFixed(2)} out-the-door (spa, pre-tax)`,
       amount: discountAmt,
       requires_approval: false,
     };
     addDiscount(discount);
-    setCalcConfirmation(`Applied $${discountAmt.toFixed(2)} discount → subtotal after discount $${target.toFixed(2)}`);
+    setCalcConfirmation(`Applied $${discountAmt.toFixed(2)} discount → spa subtotal $${target.toFixed(2)} (site prep, doc fee & tax add on top)`);
     setTargetPrice("");
     setCalcError(null);
     setTimeout(() => setCalcConfirmation(null), 2500);
@@ -940,8 +940,14 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
         const targetNum = parseFloat(targetPrice);
         const previewDiscount = computeCalculatedDiscount(targetNum);
         const hasInvalidTarget = targetPrice !== "" && !isNaN(targetNum) && targetNum > 0 && previewDiscount === null;
-        const docFeeForPreview = draft.doc_fee_waived ? 0 : (draft.doc_fee_amount ?? 0);
-        const currentItemsAfterDiscount = Math.max(0, draft.subtotal - docFeeForPreview - draft.discount_total);
+        // Basis = discountable items only (the spa). Site prep (granite base) is
+        // excluded and adds on top — it is never discounted.
+        const discountableBase = discountableSubtotal(draft.line_items);
+        const sitePrepSubtotal = draft.line_items.reduce(
+          (sum, item) => (item.discount_excluded ? sum + (item.sell_price ?? 0) * (item.quantity ?? 0) : sum),
+          0,
+        );
+        const currentDiscountableAfterDiscount = Math.max(0, discountableBase - draft.discount_total);
         const surchargeNote = draft.surcharge_enabled
           ? ` CC surcharge (${(draft.surcharge_rate * 100).toFixed(1)}%) is charged separately at swipe.`
           : "";
@@ -949,16 +955,16 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
           <div className="border-t border-slate-200 pt-4">
             <h3 className="text-lg font-semibold text-slate-700 mb-1">Discount Calculator</h3>
             <p className="text-sm text-slate-500 mb-3">
-              Enter the subtotal you want after the discount — before doc fees and tax. We'll work out the discount so "Subtotal after discount" lands exactly there. Doc fee and tax add on top.{surchargeNote}
+              Enter the <strong>spa</strong> subtotal you want after the discount — before site prep, doc fees, and tax. We'll work out the discount so the spa lands exactly there. Site prep (granite base), doc fee, and tax add on top.{surchargeNote}
             </p>
             <Card className="mb-4">
               <CardContent className="p-4 space-y-3">
                 <div className="flex justify-between items-center text-sm">
-                  <span className="text-slate-600">Current subtotal after discount</span>
-                  <span className="font-semibold text-slate-900">{formatCurrency(currentItemsAfterDiscount)}</span>
+                  <span className="text-slate-600">Current spa subtotal after discount</span>
+                  <span className="font-semibold text-slate-900">{formatCurrency(currentDiscountableAfterDiscount)}</span>
                 </div>
                 <Input
-                  label="Subtotal target ($, before tax & doc fees)"
+                  label="Spa subtotal target ($, before site prep, tax & doc fees)"
                   type="number"
                   min="0"
                   step="0.01"
@@ -967,15 +973,22 @@ export default function Step3Products({ onNext }: Step3ProductsProps) {
                   onChange={(e) => setTargetPrice(e.target.value)}
                 />
                 {previewDiscount !== null && (
-                  <div className="p-3 rounded-lg bg-[#00929C]/10 border border-[#00929C]/30 flex justify-between items-center">
-                    <span className="text-sm font-medium text-slate-700">Required discount:</span>
-                    <span className="text-base font-bold text-[#00929C]">
-                      {formatCurrency(previewDiscount)}
-                      <span className="text-xs text-slate-500 ml-2 font-normal">
-                        ({((previewDiscount / draft.subtotal) * 100).toFixed(1)}% off subtotal)
+                  <>
+                    <div className="p-3 rounded-lg bg-[#00929C]/10 border border-[#00929C]/30 flex justify-between items-center">
+                      <span className="text-sm font-medium text-slate-700">Required discount:</span>
+                      <span className="text-base font-bold text-[#00929C]">
+                        {formatCurrency(previewDiscount)}
+                        <span className="text-xs text-slate-500 ml-2 font-normal">
+                          ({((previewDiscount / discountableBase) * 100).toFixed(1)}% off spa)
+                        </span>
                       </span>
-                    </span>
-                  </div>
+                    </div>
+                    {sitePrepSubtotal > 0 && (
+                      <p className="text-xs text-slate-500">
+                        + {formatCurrency(sitePrepSubtotal)} site prep added on top (not discounted).
+                      </p>
+                    )}
+                  </>
                 )}
                 {hasInvalidTarget && (
                   <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
