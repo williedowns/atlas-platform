@@ -20,11 +20,14 @@ export function isSpaWithDimensions(p: Product): boolean {
   return p.length_ft != null && p.width_ft != null;
 }
 
-/** Granite quantity is the longest side of the spa, in feet. */
+/** Granite quantity is the longest side of the spa, rounded UP to a whole foot.
+ * The pad must fully cover the spa footprint, so a 7.83 ft (94") spa needs a
+ * full 8 ft of base — never 7.83 ft. Fractional feet under-sized the pad and
+ * under-charged the customer. */
 export function getGraniteLength(p: Product): number {
   const length = p.length_ft ?? 0;
   const width = p.width_ft ?? 0;
-  return Math.max(length, width);
+  return Math.ceil(Math.max(length, width));
 }
 
 /** Build the granite line item that gets pushed alongside a spa line item. */
@@ -39,5 +42,8 @@ export function buildGraniteLineItem(
     sell_price: price,
     quantity: getGraniteLength(spa),
     linked_spa_product_id: spa.id,
+    // Site prep is sold separately — an out-the-door discount on the spa must
+    // never rope in (or discount) the granite base. See Step3 OTD solver.
+    discount_excluded: true,
   };
 }
