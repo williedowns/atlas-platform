@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
 import { logAction } from "@/lib/audit";
+import { requireAdminOrManager } from "@/lib/auth-guard";
 import { DEFAULT_LOW_DEPOSIT_THRESHOLD } from "@/lib/low-deposit";
 
 interface AssignBody {
@@ -15,7 +15,7 @@ interface ReleaseBody {
 // POST /api/contracts/[id]/inventory-unit
 // Body: { inventory_unit_id: string }
 // Assigns a specific stock unit (by serial) to this contract. Admin/manager
-// only.
+// (any deal) + show_manager scoped to a show they manage.
 //
 // 30% deposit guardrail (Natalie's transcript 2026-05-20): a stock unit can
 // only be tagged to a contract when the customer has at least 30% down
@@ -29,21 +29,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
-  if (!["admin", "manager"].includes(profile?.role ?? "")) {
-    return NextResponse.json(
-      { error: "Only admin or manager can assign an inventory unit after contract creation." },
-      { status: 403 }
-    );
-  }
+  const ctx = await requireAdminOrManager(id);
+  if (ctx instanceof NextResponse) return ctx;
+  const { user, supabase } = ctx;
 
   const body = (await req.json().catch(() => ({}))) as AssignBody;
   let unitId = typeof body.inventory_unit_id === "string" && body.inventory_unit_id.length > 0
@@ -172,28 +160,17 @@ export async function POST(
 
 // DELETE /api/contracts/[id]/inventory-unit
 // Body: { reason?: string }
-// Releases whichever unit is currently assigned to this contract. Admin/manager only.
+// Releases whichever unit is currently assigned to this contract. Admin/manager
+// (any deal) + show_manager scoped to a show they manage.
 // The DB trigger closes the open inventory_unit_assignments row.
 export async function DELETE(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
-  if (!["admin", "manager"].includes(profile?.role ?? "")) {
-    return NextResponse.json(
-      { error: "Only admin or manager can release an inventory unit." },
-      { status: 403 }
-    );
-  }
+  const ctx = await requireAdminOrManager(id);
+  if (ctx instanceof NextResponse) return ctx;
+  const { user, supabase } = ctx;
 
   const body = (await req.json().catch(() => ({}))) as ReleaseBody;
   const reason = typeof body.reason === "string" && body.reason.trim().length > 0

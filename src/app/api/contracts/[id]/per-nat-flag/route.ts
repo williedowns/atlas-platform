@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
 import { logAction } from "@/lib/audit";
+import { requireAdminOrManager } from "@/lib/auth-guard";
 
 const VALID_REASONS = new Set([
   "low_deposit",
@@ -12,8 +12,8 @@ const VALID_REASONS = new Set([
 // PATCH /api/contracts/[id]/per-nat-flag
 // Body: { is_per_nat: boolean, reason?: 'low_deposit'|'future_delivery'|'special_order'|'manual' }
 //
-// Toggles the Per Nat flag on a contract. Admin/manager only — matches
-// the edit policy chosen for post-sale contract modifications.
+// Toggles the Per Nat flag on a contract. Admin/manager (any deal) + show_manager
+// scoped to a show they manage — the "Full, except delete" post-sale edit surface.
 //
 // When is_per_nat=true, `reason` is required.
 // When is_per_nat=false, `reason` must be omitted/null and is cleared on the row.
@@ -22,22 +22,9 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (!["admin", "manager"].includes(profile?.role ?? "")) {
-    return NextResponse.json(
-      { error: "Only admin or manager can change the Per Nat flag after contract creation." },
-      { status: 403 }
-    );
-  }
+  const ctx = await requireAdminOrManager(id);
+  if (ctx instanceof NextResponse) return ctx;
+  const { user, supabase } = ctx;
 
   const body = await req.json().catch(() => ({}));
   const isPerNat: unknown = (body as { is_per_nat?: unknown }).is_per_nat;
