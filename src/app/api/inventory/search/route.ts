@@ -8,12 +8,17 @@ export async function GET(req: Request) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  // Inventory typeahead for tagging a stock unit to a contract. admin/manager +
+  // show_manager (so they can tag stock at a show they manage). Results are
+  // org-scoped by RLS (inventory_read, migration 109) — a show_manager only sees
+  // their own org's unassigned units. Not contract-scoped: the search spans all
+  // unassigned org stock, which is what the assign flow needs.
   const { data: profile } = await supabase
     .from("profiles")
     .select("role")
     .eq("id", user.id)
     .maybeSingle();
-  if (!["admin", "manager"].includes(profile?.role ?? "")) {
+  if (!["admin", "manager", "show_manager"].includes(profile?.role ?? "")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

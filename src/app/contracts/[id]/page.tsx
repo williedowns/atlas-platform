@@ -876,7 +876,8 @@ export default async function ContractDetailPage({
         />
 
         {/* Post-sale modification card — Per Nat flag, inventory unit, balance-to-financing.
-            Visible only to admin/manager. Every change writes audit_logs. */}
+            Gated by canModifyContract: admin/manager + show_manager scoped to shows
+            they manage (the route guards re-check scope). Every change writes audit_logs. */}
         {canModifyContract && (
           <ModifyContractCard
             contractId={contract.id}
