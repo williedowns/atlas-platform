@@ -3,7 +3,11 @@
 import { useState } from "react";
 
 interface Props {
-  contractId: string;
+  /** Single-contract shorthand — fetches /api/contracts/{contractId}/pdf. */
+  contractId?: string;
+  /** Explicit PDF endpoint. Takes precedence over contractId (e.g. the bulk
+   *  /api/shows/{id}/contracts-pdf endpoint). */
+  url?: string;
   filename: string;
   children: React.ReactNode;
   className?: string;
@@ -32,6 +36,7 @@ function isIOS(): boolean {
 
 export function PdfDownloadButton({
   contractId,
+  url,
   filename,
   children,
   className,
@@ -39,12 +44,13 @@ export function PdfDownloadButton({
   ariaLabel,
 }: Props) {
   const [busy, setBusy] = useState(false);
+  const endpoint = url ?? `/api/contracts/${contractId}/pdf`;
 
   async function handleClick() {
     if (busy) return;
     setBusy(true);
     try {
-      const res = await fetch(`/api/contracts/${contractId}/pdf`);
+      const res = await fetch(endpoint);
       if (!res.ok) throw new Error(`PDF fetch failed: ${res.status}`);
       const blob = await res.blob();
       const file = new File([blob], filename, { type: "application/pdf" });

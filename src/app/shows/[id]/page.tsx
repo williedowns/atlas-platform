@@ -13,6 +13,7 @@ import { getActiveShow } from "@/lib/active-show";
 import { getDisplayStatus } from "@/lib/contract-status";
 import SetActiveShowButton from "./_components/SetActiveShowButton";
 import VerificationDashboard from "@/components/shows/VerificationDashboard";
+import { PdfDownloadButton } from "@/components/contracts/PdfDownloadButton";
 
 const STATUS_COLORS: Record<string, "default" | "success" | "warning" | "destructive" | "secondary"> = {
   draft: "secondary",
@@ -85,6 +86,12 @@ export default async function ShowDetailPage({
 
   const totalRevenue = contracts.reduce((s, c) => s + (c.total ?? 0), 0);
   const totalDeposits = contracts.reduce((s, c) => s + (c.deposit_paid ?? 0), 0);
+
+  // Matches the sanitization in /api/shows/[id]/contracts-pdf so the saved file
+  // name is identical whether the OS uses the <a download> attr or the iOS
+  // share sheet (which carries the client-side filename).
+  const showFileSafe =
+    (show.name ?? "Show").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "Show";
 
   // Daily trend — bucket contracts by day between show start and end (capped at today)
   const trendMap = new Map<string, { revenue: number; contracts: number }>();
@@ -238,8 +245,22 @@ export default async function ShowDetailPage({
 
         {/* Contracts list */}
         <Card>
-          <CardHeader className="pb-2">
+          <CardHeader className="pb-2 flex-row items-center justify-between space-y-0">
             <CardTitle>Contracts ({contracts?.length ?? 0})</CardTitle>
+            {canExportSpreadsheet && !!contracts?.length && (
+              <PdfDownloadButton
+                url={`/api/shows/${id}/contracts-pdf`}
+                filename={`Contracts-${showFileSafe}.pdf`}
+                ariaLabel="Download all contracts as one PDF"
+                title="Download all contracts as one PDF"
+                className="shrink-0 inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-60"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0 0l-4-4m4 4l4-4" />
+                </svg>
+                Download all
+              </PdfDownloadButton>
+            )}
           </CardHeader>
           <CardContent className="p-0">
             {!contracts?.length ? (
