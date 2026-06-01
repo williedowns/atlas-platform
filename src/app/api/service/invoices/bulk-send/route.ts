@@ -33,7 +33,7 @@ export async function POST() {
 
     try {
       await resend.emails.send({
-        from: process.env.INVITE_FROM_EMAIL ?? "team@atlasswimspas.com",
+        from: process.env.INVITE_FROM_EMAIL ?? "hello@atlasspas.com",
         to: customer.email,
         subject: `Invoice for your recent service — ${(inv as any).job?.title ?? "Service Visit"}`,
         html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">

@@ -58,7 +58,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
       if (customer?.email) {
         await resend.emails.send({
-          from: process.env.INVITE_FROM_EMAIL ?? "team@atlasswimspas.com",
+          from: process.env.INVITE_FROM_EMAIL ?? "hello@atlasspas.com",
           to: customer.email,
           subject: `Invoice for your recent service — ${job?.title ?? "Service Visit"}`,
           html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">

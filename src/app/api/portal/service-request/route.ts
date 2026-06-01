@@ -53,7 +53,7 @@ export async function POST(req: Request) {
   if (adminEmail) {
     const urgencyLabel = urgency === "emergency" ? "EMERGENCY" : urgency === "urgent" ? "Urgent" : "Routine";
     await resend.emails.send({
-      from: process.env.INVITE_FROM_EMAIL ?? "team@atlasswimspas.com",
+      from: process.env.INVITE_FROM_EMAIL ?? "hello@atlasspas.com",
       to: adminEmail,
       subject: `[${urgencyLabel}] New Service Request — ${customer.first_name} ${customer.last_name}`,
       html: `

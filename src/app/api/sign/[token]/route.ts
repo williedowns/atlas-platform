@@ -2,6 +2,7 @@ import { NextResponse, after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logAction } from "@/lib/audit";
 import { generateAndAttachExemptionCert } from "@/lib/exemption-cert";
+import { provisionAndSendWelcome } from "@/lib/email/welcome";
 import {
   isDeliveryDiagramFilled,
   isDeliveryDiagramRequired,
@@ -332,12 +333,15 @@ export async function POST(
     }
   });
 
-  // Fire-and-forget welcome email — same side effect as in-person flow.
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
-  if (appUrl) {
-    fetch(`${appUrl}/api/contracts/${contract.id}/welcome-email`, { method: "POST" }).catch(
-      () => {/* non-fatal */}
-    );
+  // Provision the customer's portal account + send the welcome email (one-click
+  // set-password link + attached signed contract PDF). Awaited on purpose:
+  // Vercel kills un-awaited work once the response returns, so the old
+  // env-gated self-fetch silently sent nothing. Non-fatal — a mail hiccup must
+  // never undo a completed signature.
+  try {
+    await provisionAndSendWelcome(contract.id);
+  } catch (welcomeErr) {
+    console.error(`[sign] welcome send failed (non-fatal) for ${contract.id}:`, welcomeErr);
   }
 
   return NextResponse.json({

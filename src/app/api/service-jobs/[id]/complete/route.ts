@@ -52,7 +52,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
     if (customer?.email) {
       await resend.emails.send({
-        from: process.env.INVITE_FROM_EMAIL ?? "team@atlasswimspas.com",
+        from: process.env.INVITE_FROM_EMAIL ?? "hello@atlasspas.com",
         to: customer.email,
         subject: `Your service visit is complete — ${(updated as any).title}`,
         html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">

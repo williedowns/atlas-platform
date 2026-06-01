@@ -34,7 +34,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const timeStr = job.scheduled_time_start ? ` at ${job.scheduled_time_start.slice(0, 5)}` : "";
 
   await resend.emails.send({
-    from: process.env.INVITE_FROM_EMAIL ?? "team@atlasswimspas.com",
+    from: process.env.INVITE_FROM_EMAIL ?? "hello@atlasspas.com",
     to: customer.email,
     subject: `Your service appointment is confirmed — ${job.title}`,
     html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
@@ -51,7 +51,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           <tr><td style="padding:6px 8px;color:#64748b;font-weight:500;">Type</td><td style="padding:6px 8px;">${job.job_type.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())}</td></tr>
         </table>
         ${message ? `<div style="background:#f8fafc;padding:12px 16px;border-left:3px solid #00929C;border-radius:4px;margin:16px 0;color:#475569;">${message}</div>` : ""}
-        <p style="color:#94a3b8;font-size:13px;margin-top:24px;">Questions? Contact us at ${process.env.INVITE_FROM_EMAIL ?? "team@atlasswimspas.com"}</p>
+        <p style="color:#94a3b8;font-size:13px;margin-top:24px;">Questions? Contact us at ${process.env.INVITE_FROM_EMAIL ?? "hello@atlasspas.com"}</p>
       </div>
     </div>`,
   });

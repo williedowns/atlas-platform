@@ -1,11 +1,25 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
+// Only allow internal, single-leading-slash paths — blocks open-redirect
+// abuse via a crafted ?next=//evil.com or ?next=https://evil.com.
+function safeNext(raw: string | null): string | null {
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return null;
+  return raw;
+}
+
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
   const tokenHash = searchParams.get("token_hash");
   const type = searchParams.get("type");
+
+  // Customers carry next=/portal/dashboard so they land in the portal after
+  // setting a password. Staff invites/resets omit it and fall back to /dashboard.
+  const next = safeNext(searchParams.get("next"));
+  const setPasswordUrl = next
+    ? `${origin}/auth/set-password?next=${encodeURIComponent(next)}`
+    : `${origin}/auth/set-password`;
 
   const supabase = await createClient();
 
@@ -15,7 +29,7 @@ export async function GET(request: Request) {
     if (!error) {
       // Recovery and invite both need the user to set a password
       if (type === "recovery" || type === "invite") {
-        return NextResponse.redirect(`${origin}/auth/set-password`);
+        return NextResponse.redirect(setPasswordUrl);
       }
       return NextResponse.redirect(`${origin}/dashboard`);
     }
@@ -32,7 +46,7 @@ export async function GET(request: Request) {
     if (!error) {
       // Invite and password recovery both need the set-password page
       if (type === "invite" || type === "recovery") {
-        return NextResponse.redirect(`${origin}/auth/set-password`);
+        return NextResponse.redirect(setPasswordUrl);
       }
       return NextResponse.redirect(`${origin}/dashboard`);
     }

@@ -38,7 +38,13 @@ export default function SetPasswordPage() {
       return;
     }
 
-    router.push("/dashboard");
+    // Customers arrive with ?next=/portal/dashboard; staff invites/resets have
+    // no next and fall back to the staff dashboard. Guard against open redirects.
+    const nextParam = new URLSearchParams(window.location.search).get("next");
+    const dest = nextParam && nextParam.startsWith("/") && !nextParam.startsWith("//")
+      ? nextParam
+      : "/dashboard";
+    router.push(dest);
   }
 
   return (

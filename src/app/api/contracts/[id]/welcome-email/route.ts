@@ -1,75 +1,33 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { buildWelcomeEmailHtml } from "@/lib/email/welcome-template";
+import { provisionAndSendWelcome } from "@/lib/email/welcome";
 
+// Manual welcome-email (re)send — the "resend welcome" button for staff.
+// The AUTOMATIC sends happen server-side inside the signing flows
+// (POST /api/contracts and POST /api/sign/[token]) by calling
+// provisionAndSendWelcome() directly. Staff-only: customers have no profiles
+// row, so requiring one keeps this endpoint from being an anonymous
+// account-creation / email-trigger vector.
 export async function POST(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+
   const supabase = await createClient();
-
-  const { data: contract, error } = await supabase
-    .from("contracts")
-    .select(`
-      id, contract_number, total, deposit_paid, balance_due, line_items,
-      customer:customers(first_name, last_name, email)
-    `)
-    .eq("id", id)
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("id", user.id)
     .single();
+  if (!profile) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  if (error || !contract) {
-    return NextResponse.json({ error: "Contract not found" }, { status: 404 });
+  const result = await provisionAndSendWelcome(id);
+  if (!result.sent) {
+    // skipped (no email / no key) is a benign 200; a real failure is a 500.
+    return NextResponse.json(result, { status: result.skipped ? 200 : 500 });
   }
-
-  const customer = (contract as any).customer;
-  if (!customer?.email) {
-    return NextResponse.json({ error: "No customer email" }, { status: 400 });
-  }
-
-  const lineItems: any[] = Array.isArray((contract as any).line_items) ? (contract as any).line_items : [];
-  const productNames = lineItems
-    .filter((i) => !i.waived && i.product_name)
-    .map((i) => i.product_name as string);
-
-  const portalUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://app.atlasswimspas.com";
-
-  const html = buildWelcomeEmailHtml({
-    customerFirstName: customer.first_name,
-    customerEmail: customer.email,
-    contractNumber: (contract as any).contract_number,
-    productNames: productNames.length > 0 ? productNames : ["your new spa"],
-    total: (contract as any).total ?? 0,
-    depositPaid: (contract as any).deposit_paid ?? 0,
-    balanceDue: (contract as any).balance_due ?? 0,
-    portalUrl,
-  });
-
-  const resendKey = process.env.RESEND_API_KEY;
-  if (!resendKey) {
-    console.warn("[welcome-email] RESEND_API_KEY not set — skipping send");
-    return NextResponse.json({ skipped: true, reason: "RESEND_API_KEY not configured" });
-  }
-
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${resendKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from: "Atlas Spas <welcome@atlasswimspas.com>",
-      to: customer.email,
-      subject: `Welcome to the Atlas Family, ${customer.first_name}!`,
-      html,
-    }),
-  });
-
-  if (!res.ok) {
-    const body = await res.text();
-    console.error("[welcome-email] Resend error:", body);
-    return NextResponse.json({ error: "Email send failed" }, { status: 500 });
-  }
-
-  return NextResponse.json({ sent: true });
+  return NextResponse.json(result);
 }
