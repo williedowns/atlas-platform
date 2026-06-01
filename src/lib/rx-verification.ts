@@ -199,7 +199,9 @@ export async function verifyPrescriptionDocument(
         source: { type: "base64", media_type: mediaType, data: base64Data },
       };
 
-  const model = process.env.RX_VERIFY_MODEL || "claude-3-5-sonnet-20241022";
+  // Current vision-capable model (claude-3-5-sonnet was retired Jan 2026).
+  // Override with RX_VERIFY_MODEL — e.g. "claude-haiku-4-5" for lower cost.
+  const model = process.env.RX_VERIFY_MODEL || "claude-sonnet-4-6";
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
