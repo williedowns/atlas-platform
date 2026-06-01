@@ -9,14 +9,6 @@ export const dynamic = "force-dynamic";
 // allow more headroom than the default serverless budget.
 export const maxDuration = 60;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function customerNameKey(c: any): string {
-  const cust = Array.isArray(c.customer) ? c.customer[0] : c.customer;
-  const first = (cust?.first_name ?? "").trim().toLowerCase();
-  const last = (cust?.last_name ?? "").trim().toLowerCase();
-  return `${first}|${last}`;
-}
-
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -34,35 +26,24 @@ export async function GET(
 
   // Same select shape as /api/contracts/[id]/pdf so the shared renderer has
   // every field it needs. The user-scoped client means RLS returns exactly
-  // the contracts this user is allowed to see — identical to the on-screen
-  // "Contracts (N)" list on the show page.
+  // the contracts this user is allowed to see.
   const { data: contractsRaw } = await supabase
     .from("contracts")
     .select("*, customer:customers(*), location:locations(*), show:shows(name, venue_name), sales_rep:profiles!contracts_sales_rep_id_fkey(full_name)")
     .eq("show_id", id)
     .order("created_at", { ascending: true });
 
-  // Mirror the show page's converted-quote dedup: hide quotes whose customer
-  // already has a non-quote contract on this show (matched by customer_id OR
-  // name, since rebuild-from-scratch makes a new customer row with same name).
-  const convertedCustomerIds = new Set<string>();
-  const convertedNameKeys = new Set<string>();
-  for (const r of contractsRaw ?? []) {
-    if (r.status === "quote" || r.status === "draft" || r.status === "cancelled") continue;
-    if (r.customer_id) convertedCustomerIds.add(r.customer_id);
-    const key = customerNameKey(r);
-    if (key !== "|") convertedNameKeys.add(key);
-  }
-  const contracts = (contractsRaw ?? []).filter((c) => {
-    if (c.status !== "quote") return true;
-    if (c.customer_id && convertedCustomerIds.has(c.customer_id)) return false;
-    const key = customerNameKey(c);
-    if (key !== "|" && convertedNameKeys.has(key)) return false;
-    return true;
-  });
+  // Purchase-agreements packet: include only executed agreements. Exclude
+  // quotes, unfinished drafts, and voided (cancelled) contracts — the same
+  // trio the show page treats as "not a real contract." Dropping every quote
+  // also makes the converted-quote dedup unnecessary (no duplicate can remain).
+  const NON_AGREEMENT_STATUSES = new Set(["quote", "draft", "cancelled"]);
+  const contracts = (contractsRaw ?? []).filter(
+    (c) => !NON_AGREEMENT_STATUSES.has(c.status)
+  );
 
   if (contracts.length === 0) {
-    return NextResponse.json({ error: "No contracts for this show" }, { status: 404 });
+    return NextResponse.json({ error: "No purchase agreements for this show" }, { status: 404 });
   }
 
   // Batch the CC-card detail for every contract in one query, then group —
