@@ -254,73 +254,29 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
     }
   }
 
-  // Auto-default tax_exempt = true for any TX customer the first time this
-  // step renders with their address. Rep can still flip the toggle off. Uses
-  // a ref to track manual interaction so we don't fight the user — once the
-  // rep touches the toggle (in either direction), we leave it alone.
+  // Texas contracts MUST collect an exemption certificate (Form 01-339) on
+  // every sale — no exceptions (Willie 2026-06-01). tax_exempt is forced on
+  // for any TX contract and cannot be turned off; signing the cert is then
+  // mandatory before the rep can advance past this step. Tax still only
+  // zeroes when an Rx is also on file (the Rx gate is unchanged).
   const isTexas =
     ((draft.location?.state ?? "").toUpperCase() === "TX") ||
     ((draft.show?.state ?? "").toUpperCase() === "TX") ||
     ((draft.customer?.state ?? "").toUpperCase() === "TX");
-  const taxExemptManuallyTouched = useRef<boolean>(draft.tax_exempt === true);
   useEffect(() => {
-    if (isTexas && !draft.tax_exempt && !taxExemptManuallyTouched.current) {
+    if (isTexas && !draft.tax_exempt) {
       setTaxExempt(true);
     }
   }, [isTexas, draft.tax_exempt, setTaxExempt]);
-  function handleTaxExemptToggle() {
-    taxExemptManuallyTouched.current = true;
-    setTaxExempt(!draft.tax_exempt);
-  }
-
-  // Capture or pick the customer's Texas tax-exemption certificate. The
-  // contract row doesn't exist yet at Step 5, so we stage the file as a
-  // data URL in the persisted draft. Step 7's submit handler does the real
-  // upload to /api/portal/upload-cert once the contract has been created.
-  // Image is downscaled to keep the data URL well under localStorage limits.
-  async function handleCertFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setCertError(null);
-    // Hard cap at 10MB. PDFs up to that size pass through; images get downscaled.
-    if (file.size > 10 * 1024 * 1024) {
-      setCertError("File too large — max 10MB.");
-      return;
-    }
-    try {
-      const isImage = file.type.startsWith("image/");
-      let dataUrl: string;
-      if (isImage) {
-        dataUrl = await downscaleImageToDataUrl(file, 1600, 0.85);
-      } else {
-        dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = () => reject(new Error("Could not read file"));
-          reader.readAsDataURL(file);
-        });
-      }
-      setTaxExemptCert({
-        dataUrl,
-        filename: file.name || (isImage ? "tax-cert.jpg" : "tax-cert.pdf"),
-        mime: file.type || (isImage ? "image/jpeg" : "application/pdf"),
-      });
-    } catch (err: any) {
-      setCertError(err?.message ?? "Could not read file. Please try again.");
-    } finally {
-      // Reset the input so picking the same file again still fires onChange
-      e.target.value = "";
-    }
-  }
 
   function handleClearCert() {
     setTaxExemptCert(null);
     setCertError(null);
   }
 
-  // Capture the customer's hydrotherapy Rx. Mirrors handleCertFile — stage as
-  // a data URL in the draft and let Step 7 upload to customers.prescription_url
-  // once the contract is committed.
+  // Capture the customer's hydrotherapy Rx — stage as a data URL in the draft
+  // and let Step 7 upload to customers.prescription_url once the contract is
+  // committed. Image is downscaled to keep the data URL under localStorage limits.
   async function handleRxFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -446,7 +402,10 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
   const dlSatisfied =
     (!primaryDlRequired || hasPrimaryDL) &&
     (!secondaryDlRequired || hasSecondaryDL);
-  const canProceed = hasCommitment && dlSatisfied;
+  // TX contracts cannot advance without a signed exemption cert staged in the
+  // draft (Willie 2026-06-01 — mandatory on every Texas sale, no exceptions).
+  const certSatisfied = !isTexas || !!draft.tax_exempt_cert_data_url;
+  const canProceed = hasCommitment && dlSatisfied && certSatisfied;
 
   // Upload a captured check photo against the customer (no contract_id yet —
   // contract is created at Step 7). The bookkeeper can later filter
@@ -1002,7 +961,7 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
         </Card>
       )}
 
-      {/* ── Texas Tax Exemption toggle ─────────────────────── */}
+      {/* ── Texas Tax Exemption Certificate (mandatory on TX) ─ */}
       {(() => {
         if (!isTexas) return null;
         const rxOnFile = !!draft.customer?.has_prescription || !!draft.rx_data_url;
@@ -1010,31 +969,27 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
         return (
           <Card className={`border-2 transition-all ${draft.tax_exempt ? "border-emerald-400 bg-emerald-50" : "border-slate-200"}`}>
             <CardContent className="p-4 space-y-3">
-              <button
-                type="button"
-                onClick={handleTaxExemptToggle}
-                className="flex items-center gap-4 w-full text-left touch-manipulation"
-              >
-                <div className={`w-12 h-7 rounded-full flex items-center px-1 transition-all flex-shrink-0 ${
-                  draft.tax_exempt ? "bg-emerald-500 justify-end" : "bg-slate-200 justify-start"
-                }`}>
-                  <div className="w-5 h-5 rounded-full bg-white shadow-sm" />
+              <div className="flex items-center gap-4 w-full text-left">
+                <div className="w-7 h-7 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0">
+                  <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
                 </div>
                 <div>
-                  <p className="font-semibold text-slate-900 text-sm">Texas Tax Exemption Certificate</p>
+                  <p className="font-semibold text-slate-900 text-sm">
+                    Texas Tax Exemption Certificate <span className="text-red-600">*</span>
+                  </p>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    {!draft.tax_exempt
-                      ? "Toggle on to collect a Texas exemption certificate (Form 01-339)"
-                      : isEffectivelyExempt
-                        ? "Cert + Rx on file — tax zeroed out."
-                        : "Cert collected. Tax still applies until an Rx is on file."}
+                    {isEffectivelyExempt
+                      ? "Cert + Rx on file — tax zeroed out."
+                      : "Required on every Texas contract. Sign Form 01-339 below to continue."}
                   </p>
                 </div>
-              </button>
+              </div>
 
-              {/* Cert capture — only when toggle is ON. File is staged in
-                  the persisted draft and uploaded to /api/portal/upload-cert
-                  in Step 7 after the contract row is created. */}
+              {/* Cert capture. The signed 01-339 is staged in the persisted
+                  draft and uploaded to /api/portal/upload-cert in Step 7 after
+                  the contract row is created. */}
               {draft.tax_exempt && (
                 <div className="rounded-xl bg-white border border-emerald-200 p-3">
                   {draft.tax_exempt_cert_data_url ? (
@@ -1053,7 +1008,7 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
                       )}
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-semibold text-emerald-800 truncate">
-                          ✓ Certificate attached
+                          ✓ Certificate signed
                         </p>
                         {draft.tax_exempt_cert_filename && (
                           <p className="text-[11px] text-slate-500 truncate">
@@ -1065,15 +1020,13 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
                         </p>
                       </div>
                       <div className="flex flex-col gap-1 flex-shrink-0">
-                        <label className="text-xs font-semibold text-[#00929C] hover:underline cursor-pointer">
-                          Replace
-                          <input
-                            type="file"
-                            accept="image/*,application/pdf"
-                            className="hidden"
-                            onChange={handleCertFile}
-                          />
-                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setShowExemptionSignModal(true)}
+                          className="text-xs font-semibold text-[#00929C] hover:underline cursor-pointer text-left"
+                        >
+                          Re-sign
+                        </button>
                         <button
                           type="button"
                           onClick={handleClearCert}
@@ -1086,7 +1039,7 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
                   ) : (
                     <>
                       <p className="text-xs font-semibold text-slate-700 mb-2">
-                        Attach certificate (Form 01-339)
+                        Sign certificate (Form 01-339) — required
                       </p>
                       <button
                         type="button"
@@ -1096,45 +1049,11 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
                         <svg className="w-3.5 h-3.5 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
                         </svg>
-                        Sign Form 01-339 Now (Recommended)
+                        Sign Form 01-339 Now
                       </button>
-                      <p className="text-[11px] text-slate-500 mb-3 px-1">
+                      <p className="text-[11px] text-slate-500 px-1">
                         Generates the Texas form with Atlas info prefilled and captures
-                        the customer signature on this iPad.
-                      </p>
-                      <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-2">
-                        Or attach an existing certificate
-                      </p>
-                      <div className="grid grid-cols-2 gap-2">
-                        <label className="inline-flex items-center justify-center px-3 py-2 rounded-lg border border-emerald-500 bg-emerald-500 text-white text-xs font-semibold hover:bg-emerald-600 cursor-pointer touch-manipulation">
-                          <svg className="w-3.5 h-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                          </svg>
-                          Take Photo
-                          <input
-                            type="file"
-                            accept="image/*"
-                            capture="environment"
-                            className="hidden"
-                            onChange={handleCertFile}
-                          />
-                        </label>
-                        <label className="inline-flex items-center justify-center px-3 py-2 rounded-lg border border-emerald-500 bg-white text-emerald-600 text-xs font-semibold hover:bg-emerald-50 cursor-pointer touch-manipulation">
-                          <svg className="w-3.5 h-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                          </svg>
-                          Upload File
-                          <input
-                            type="file"
-                            accept="image/*,application/pdf"
-                            className="hidden"
-                            onChange={handleCertFile}
-                          />
-                        </label>
-                      </div>
-                      <p className="text-[11px] text-slate-400 mt-2">
-                        Image or PDF · max 10MB · uploaded with the signed contract.
+                        the customer signature on this iPad. Required before continuing.
                       </p>
                     </>
                   )}
@@ -2021,7 +1940,9 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
         <p className="text-center text-sm text-slate-400">
           {!hasCommitment
             ? "Add a deposit or financing to sign \u0026 pay, or save as a quote to print"
-            : `Driver's license required before sign \u2014 upload ${secondaryDlRequired ? "primary + co-borrower DLs" : "DL"} above`}
+            : !certSatisfied
+              ? "Sign the Texas exemption certificate (Form 01-339) above before continuing"
+              : `Driver's license required before sign \u2014 upload ${secondaryDlRequired ? "primary + co-borrower DLs" : "DL"} above`}
         </p>
       )}
 
