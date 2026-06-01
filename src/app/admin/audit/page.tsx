@@ -36,6 +36,7 @@ const ACTION_LABELS: Record<AuditAction, { label: string; variant: "default" | "
   "contract.tax_auto_exempted":{ label: "Tax Auto-Exempted",      variant: "success" },
   "cert.uploaded":             { label: "Cert Uploaded",          variant: "secondary" },
   "cert.marked_received":      { label: "Cert Received",          variant: "success" },
+  "contract.exemption_cert_generated": { label: "Cert Auto-Generated", variant: "success" },
   "contract.refund_marked":    { label: "Refund Marked",          variant: "warning" },
   "contract.tax_refund_issued":{ label: "Tax Refund Issued",      variant: "warning" },
   "contract.delivery_timeframe_updated": { label: "Delivery Timeframe", variant: "secondary" },

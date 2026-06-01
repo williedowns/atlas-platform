@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logAction } from "@/lib/audit";
+import { generateAndAttachExemptionCert } from "@/lib/exemption-cert";
 import {
   isDeliveryDiagramFilled,
   isDeliveryDiagramRequired,
@@ -304,6 +305,32 @@ export async function POST(
       req,
     });
   }
+
+  // Auto-generate the TX Form 01-339 for this remotely-signed sale — same
+  // post-sign side effect as the in-person flow. after() + service-role
+  // client; TX-gated + signature-gated inside the helper; never touches tax
+  // (that stays Rx-gated); failure is non-fatal to the signing.
+  after(async () => {
+    try {
+      const admin = createAdminClient();
+      const result = await generateAndAttachExemptionCert(admin, contract.id);
+      if (result.generated && contract.sales_rep_id) {
+        logAction({
+          userId: contract.sales_rep_id,
+          action: "contract.exemption_cert_generated",
+          entityType: "contract",
+          entityId: contract.id,
+          metadata: {
+            contract_number: result.contractNumber,
+            cert_url: result.certUrl,
+            trigger: "remote_signed",
+          },
+        });
+      }
+    } catch (e) {
+      console.error("[cert-gen] post-remote-sign generation failed:", (e as Error).message);
+    }
+  });
 
   // Fire-and-forget welcome email — same side effect as in-person flow.
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";

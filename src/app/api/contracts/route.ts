@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { generateContractNumber } from "@/lib/utils";
 import { createQBOEstimate, createQBOCustomer } from "@/lib/qbo/client";
@@ -10,6 +10,8 @@ import {
 import { assignConcretePadEstimate } from "@/lib/concrete-pad-assignment";
 import { countOutTheDoorDiscounts } from "@/lib/discounts";
 import { normalizeMarketingFeedback } from "@/lib/marketing-feedback";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { generateAndAttachExemptionCert } from "@/lib/exemption-cert";
 
 export async function POST(req: Request) {
   const supabase = await createClient();
@@ -264,6 +266,36 @@ export async function POST(req: Request) {
       ...(packagesAdded.length > 0 ? { packages_added: packagesAdded } : {}),
     },
     req,
+  });
+
+  // Auto-generate the TX Form 01-339 for this signed sale. Per the product
+  // decision, the cert is prepared for every signed TX sale (Rx-independent);
+  // whether tax is actually exempted stays a separate, Rx-gated step. Runs in
+  // after() so it never adds latency to the sales-floor POST, under a
+  // service-role client so it doesn't depend on the rep's session surviving the
+  // response. TX-gated + signature-gated inside the helper, which attaches the
+  // cert document only and never touches tax. A failure here never affects the
+  // created contract.
+  after(async () => {
+    try {
+      const admin = createAdminClient();
+      const result = await generateAndAttachExemptionCert(admin, contract.id);
+      if (result.generated) {
+        logAction({
+          userId: user.id,
+          action: "contract.exemption_cert_generated",
+          entityType: "contract",
+          entityId: contract.id,
+          metadata: {
+            contract_number: result.contractNumber,
+            cert_url: result.certUrl,
+            trigger: "contract_signed",
+          },
+        });
+      }
+    } catch (e) {
+      console.error("[cert-gen] post-sign generation failed:", (e as Error).message);
+    }
   });
 
   // Addon link bookkeeping: when this contract is a concrete (or other) addon
