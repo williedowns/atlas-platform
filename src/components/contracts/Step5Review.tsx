@@ -4,6 +4,9 @@ import { Fragment, useState, useMemo, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useContractStore } from "@/store/contractStore";
 import type { DepositSplit } from "@/store/contractStore";
+import type { Customer } from "@/types";
+import { createClient } from "@/lib/supabase/client";
+import { decideShipToAddress } from "@/lib/tax/sourcingDecision";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import CustomerFileVault from "@/components/contracts/CustomerFileVault";
 import ExemptionCertSignModal from "@/components/contracts/ExemptionCertSignModal";
 import { SaleTimeDamageDialog } from "@/components/contracts/SaleTimeDamageDialog";
+import { AddressAutocompleteFields } from "@/components/contracts/AddressAutocompleteFields";
 import {
   formatCurrency,
   formatDate,
@@ -71,7 +75,7 @@ function downscaleImageToDataUrl(file: File, maxDim: number, quality: number): P
 
 export default function Step5Review({ onNext }: Step5ReviewProps) {
   const router = useRouter();
-  const { draft, addDepositSplit, removeDepositSplit, updateLineItemSerial, updateLineItemPrice, removeLineItem, setNotes, setExternalNotes, setMarketingFeedback, setNeedsPermit, setNeedsHoa, setPermitJurisdiction, setTaxExempt, setDocFeeWaived, setTaxExemptCert, setRxFile, setConcreteEstimatePending, setConcreteEstimateNotes, markLineItemAsBlem } = useContractStore();
+  const { draft, setCustomer, setTax, addDepositSplit, removeDepositSplit, updateLineItemSerial, updateLineItemPrice, removeLineItem, setNotes, setExternalNotes, setMarketingFeedback, setNeedsPermit, setNeedsHoa, setPermitJurisdiction, setTaxExempt, setDocFeeWaived, setTaxExemptCert, setRxFile, setConcreteEstimatePending, setConcreteEstimateNotes, markLineItemAsBlem } = useContractStore();
 
   // Sale-time damage capture state — when a line item index is set, the
   // SaleTimeDamageDialog opens for that line. On confirm we flip the line
@@ -82,6 +86,173 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
   const [certError, setCertError] = useState<string | null>(null);
   const [rxError, setRxError] = useState<string | null>(null);
   const [showExemptionSignModal, setShowExemptionSignModal] = useState(false);
+
+  // Inline customer editing on the review step. Reps previously could not fix
+  // customer info (email/phone/address) mid-quote — only after the contract was
+  // submitted. Writes straight to the customers row via the browser client
+  // (no contract exists yet), then refreshes the draft via setCustomer.
+  const [editingCustomer, setEditingCustomer] = useState(false);
+  const [savingCustomer, setSavingCustomer] = useState(false);
+  const [customerError, setCustomerError] = useState<string | null>(null);
+  const [customerForm, setCustomerForm] = useState({
+    first_name: "",
+    last_name: "",
+    co_buyer_first_name: "",
+    co_buyer_last_name: "",
+    email: "",
+    phone: "",
+    secondary_phone: "",
+    address: "",
+    city: "",
+    state: "",
+    zip: "",
+  });
+
+  function beginEditCustomer() {
+    const c = draft.customer;
+    if (!c) return;
+    setCustomerForm({
+      first_name: c.first_name ?? "",
+      last_name: c.last_name ?? "",
+      co_buyer_first_name: c.co_buyer_first_name ?? "",
+      co_buyer_last_name: c.co_buyer_last_name ?? "",
+      email: c.email ?? "",
+      phone: c.phone ?? "",
+      secondary_phone: c.secondary_phone ?? "",
+      address: c.address ?? "",
+      city: c.city ?? "",
+      state: c.state ?? "",
+      zip: c.zip ?? "",
+    });
+    setCustomerError(null);
+    setEditingCustomer(true);
+  }
+
+  function cancelEditCustomer() {
+    setEditingCustomer(false);
+    setCustomerError(null);
+  }
+
+  function updateCustomerField(key: keyof typeof customerForm, value: string) {
+    setCustomerForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  async function saveCustomer() {
+    const c = draft.customer;
+    if (!c) return;
+    // Guard the four required columns so a rep can't accidentally blank them.
+    if (
+      !customerForm.first_name.trim() ||
+      !customerForm.last_name.trim() ||
+      !customerForm.email.trim() ||
+      !customerForm.phone.trim()
+    ) {
+      setCustomerError("First name, last name, email, and phone are required.");
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerForm.email.trim())) {
+      setCustomerError("Enter a valid email address.");
+      return;
+    }
+    setCustomerError(null);
+    setSavingCustomer(true);
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("customers")
+        .update({
+          first_name: customerForm.first_name.trim(),
+          last_name: customerForm.last_name.trim(),
+          co_buyer_first_name: customerForm.co_buyer_first_name.trim() || null,
+          co_buyer_last_name: customerForm.co_buyer_last_name.trim() || null,
+          email: customerForm.email.trim(),
+          phone: customerForm.phone.trim(),
+          secondary_phone: customerForm.secondary_phone.trim() || null,
+          address: customerForm.address.trim(),
+          city: customerForm.city.trim(),
+          state: customerForm.state.trim(),
+          zip: customerForm.zip.trim(),
+        })
+        .eq("id", c.id)
+        .select("*")
+        .single();
+      if (error || !data) {
+        setCustomerError(error?.message ?? "Could not save customer info. Please try again.");
+        return;
+      }
+      const updated = data as Customer;
+      // Tax is sourced from the customer's address (cross-state sourcing — see
+      // Step3Products.calculateTax). Step 5 has no tax re-fetch of its own, so
+      // an address change here would otherwise leave tax_rate/tax_amount stale
+      // and the displayed total wrong. Detect the change against the pre-edit
+      // row, then recompute after refreshing the draft.
+      const addressChanged =
+        (c.address ?? "") !== (updated.address ?? "") ||
+        (c.city ?? "") !== (updated.city ?? "") ||
+        (c.state ?? "") !== (updated.state ?? "") ||
+        (c.zip ?? "") !== (updated.zip ?? "");
+      setCustomer(updated);
+      setEditingCustomer(false);
+      if (addressChanged && draft.line_items.length > 0) {
+        await refreshTaxForCustomer(updated);
+      }
+    } catch (err) {
+      setCustomerError(err instanceof Error ? err.message : "Could not save customer info.");
+    } finally {
+      setSavingCustomer(false);
+    }
+  }
+
+  // Mirror of Step3Products.calculateTax for the Step-5 address-edit path.
+  // Re-queries /api/tax with the corrected address (incl. cross-state sourcing
+  // + audit-field capture for migration 098) so a mid-review address fix can't
+  // leave the tax figure stale. Failures are non-fatal: the save already
+  // succeeded; the existing rate stands and Step 3 can recompute on back-nav.
+  async function refreshTaxForCustomer(customer: Customer) {
+    try {
+      const shipTo = decideShipToAddress({
+        customer,
+        show: draft.show ?? null,
+        location: draft.location ?? null,
+      });
+      const response = await fetch("/api/tax", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          line_items: draft.line_items,
+          discounts: draft.discounts,
+          show_id: draft.show_id,
+          location_id: draft.location_id,
+          ship_to_address: shipTo,
+          customer_state: customer.state ?? null,
+          customer_address: customer.address ?? null,
+          customer_city: customer.city ?? null,
+          customer_zip: customer.zip ?? null,
+        }),
+      });
+      if (!response.ok) return;
+      const result = await response.json();
+      const hasAudit =
+        typeof result.tax_rate_source === "string" ||
+        Array.isArray(result.tax_rate_jurisdictions);
+      if (hasAudit) {
+        setTax(result.total_tax ?? 0, result.tax_rate ?? 0, {
+          source: typeof result.tax_rate_source === "string" ? result.tax_rate_source : null,
+          effective_date:
+            typeof result.tax_rate_effective_date === "string"
+              ? result.tax_rate_effective_date
+              : null,
+          jurisdictions: Array.isArray(result.tax_rate_jurisdictions)
+            ? result.tax_rate_jurisdictions
+            : null,
+        });
+      } else {
+        setTax(result.total_tax ?? 0, result.tax_rate ?? 0);
+      }
+    } catch (err) {
+      console.error("[tax] recompute after customer edit failed:", err);
+    }
+  }
 
   // Auto-default tax_exempt = true for any TX customer the first time this
   // step renders with their address. Rep can still flip the toggle off. Uses
@@ -407,10 +578,19 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
       {/* ── Customer ───────────────────────────────────────── */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-lg">Customer</CardTitle>
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle className="text-lg">Customer</CardTitle>
+            {draft.customer && !editingCustomer ? (
+              <Button type="button" variant="outline" size="sm" onClick={beginEditCustomer}>
+                Edit
+              </Button>
+            ) : null}
+          </div>
         </CardHeader>
         <CardContent>
-          {draft.customer ? (
+          {!draft.customer ? (
+            <p className="text-sm text-slate-400">No customer selected</p>
+          ) : !editingCustomer ? (
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
                 <span className="text-slate-500">Name</span>
@@ -446,7 +626,105 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
               </div>
             </div>
           ) : (
-            <p className="text-sm text-slate-400">No customer selected</p>
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="text-xs font-semibold text-slate-600">First name</span>
+                  <Input
+                    className="mt-1"
+                    value={customerForm.first_name}
+                    onChange={(e) => updateCustomerField("first_name", e.target.value)}
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-semibold text-slate-600">Last name</span>
+                  <Input
+                    className="mt-1"
+                    value={customerForm.last_name}
+                    onChange={(e) => updateCustomerField("last_name", e.target.value)}
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-semibold text-slate-600">Co-buyer first name</span>
+                  <Input
+                    className="mt-1"
+                    placeholder="optional"
+                    value={customerForm.co_buyer_first_name}
+                    onChange={(e) => updateCustomerField("co_buyer_first_name", e.target.value)}
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-semibold text-slate-600">Co-buyer last name</span>
+                  <Input
+                    className="mt-1"
+                    placeholder="optional"
+                    value={customerForm.co_buyer_last_name}
+                    onChange={(e) => updateCustomerField("co_buyer_last_name", e.target.value)}
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-semibold text-slate-600">Email</span>
+                  <Input
+                    className="mt-1"
+                    type="email"
+                    value={customerForm.email}
+                    onChange={(e) => updateCustomerField("email", e.target.value)}
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-semibold text-slate-600">Phone</span>
+                  <Input
+                    className="mt-1"
+                    type="tel"
+                    value={customerForm.phone}
+                    onChange={(e) => updateCustomerField("phone", e.target.value)}
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-semibold text-slate-600">Secondary phone</span>
+                  <Input
+                    className="mt-1"
+                    type="tel"
+                    placeholder="optional"
+                    value={customerForm.secondary_phone}
+                    onChange={(e) => updateCustomerField("secondary_phone", e.target.value)}
+                  />
+                </label>
+                <AddressAutocompleteFields
+                  variant="compact"
+                  values={{
+                    address: customerForm.address,
+                    city: customerForm.city,
+                    state: customerForm.state,
+                    zip: customerForm.zip,
+                  }}
+                  onChange={(next) => setCustomerForm((prev) => ({ ...prev, ...next }))}
+                />
+              </div>
+              {customerError ? (
+                <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                  {customerError}
+                </p>
+              ) : null}
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  onClick={saveCustomer}
+                  disabled={savingCustomer}
+                  className="flex-1"
+                >
+                  {savingCustomer ? "Saving…" : "Save"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={cancelEditCustomer}
+                  disabled={savingCustomer}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
           )}
         </CardContent>
       </Card>
