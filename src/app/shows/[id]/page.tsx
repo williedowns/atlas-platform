@@ -84,6 +84,13 @@ export default async function ShowDetailPage({
     return true;
   });
 
+  // The "Download all" button hits the bulk-PDF route, which bundles only
+  // executed purchase agreements (excludes quotes/drafts/cancelled). Show it
+  // only when at least one such agreement exists, so it never 404s.
+  const hasAgreements = contracts.some(
+    (c) => !["quote", "draft", "cancelled"].includes(c.status)
+  );
+
   const totalRevenue = contracts.reduce((s, c) => s + (c.total ?? 0), 0);
   const totalDeposits = contracts.reduce((s, c) => s + (c.deposit_paid ?? 0), 0);
 
@@ -247,7 +254,7 @@ export default async function ShowDetailPage({
         <Card>
           <CardHeader className="pb-2 flex-row items-center justify-between space-y-0">
             <CardTitle>Contracts ({contracts?.length ?? 0})</CardTitle>
-            {canExportSpreadsheet && !!contracts?.length && (
+            {canExportSpreadsheet && hasAgreements && (
               <PdfDownloadButton
                 url={`/api/shows/${id}/contracts-pdf`}
                 filename={`Contracts-${showFileSafe}.pdf`}
