@@ -23,6 +23,7 @@ export type AuditAction =
   | "contract.tax_auto_exempted"
   | "cert.uploaded"
   | "cert.marked_received"
+  | "contract.exemption_cert_generated"
   | "contract.refund_marked"
   | "contract.tax_refund_issued"
   | "contract.delivery_timeframe_updated"

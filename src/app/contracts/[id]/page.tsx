@@ -609,19 +609,25 @@ export default async function ContractDetailPage({
                   </div>
                 );
               })()}
-              {/* Items tax. Three display states to avoid hiding that tax
-                  was paid:
-                  - Refund owed: cert received + tax_amount > 0 + no refund issued yet
+              {/* Items tax. Display states (the TX hydrotherapy exemption is
+                  only valid with a doctor's Rx on file — a cert alone is not
+                  enough):
+                  - Refund owed: exempt (cert + Rx) + tax_amount > 0 + no refund yet
                   - Refunded: tax_refund_amount is set
-                  - Exempt clean: exempt and tax_amount = 0 (never collected)
+                  - Exempt clean: exempt + tax_amount = 0 + Rx on file
+                  - Exempt pending Rx: tax zeroed but no Rx — not valid, flag it
                   - Standard: just the tax amount, taxable contract */}
               {(() => {
                 const taxAmount = Number(contract.tax_amount ?? 0);
                 const refundAmount = (contract as { tax_refund_amount?: number | null }).tax_refund_amount;
                 const refundIssued = refundAmount != null;
                 const certReceived = !!contract.tax_exempt_cert_received;
-                const refundOwed = !refundIssued && certReceived && taxAmount > 0;
-                const exemptClean = contract.tax_exempt && taxAmount === 0;
+                // The TX hydrotherapy exemption requires a doctor's Rx on file,
+                // not just the cert. Gate every "exempt" display on it.
+                const hasRx = !!contract.customer?.has_prescription;
+                const refundOwed = !refundIssued && certReceived && hasRx && taxAmount > 0;
+                const exemptClean = contract.tax_exempt && taxAmount === 0 && hasRx;
+                const exemptNoRx = contract.tax_exempt && taxAmount === 0 && !hasRx;
 
                 if (refundOwed) {
                   return (
@@ -648,6 +654,16 @@ export default async function ContractDetailPage({
                     <div className="flex justify-between text-emerald-700">
                       <span>
                         Tax ({((contract.tax_rate ?? 0) * 100).toFixed(2)}%) — Exempt (Rx)
+                      </span>
+                      <span>{formatCurrency(0)}</span>
+                    </div>
+                  );
+                }
+                if (exemptNoRx) {
+                  return (
+                    <div className="flex justify-between text-amber-700">
+                      <span>
+                        Tax ({((contract.tax_rate ?? 0) * 100).toFixed(2)}%) — Exemption pending Rx
                       </span>
                       <span>{formatCurrency(0)}</span>
                     </div>

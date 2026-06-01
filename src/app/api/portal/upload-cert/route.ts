@@ -50,15 +50,34 @@ export async function POST(req: Request) {
     }
   }
 
-  // ── Upload to Supabase Storage ─────────────────────────────────────────────
-  const ext = file.name.split(".").pop() ?? "pdf";
-  const path = `${contractId}/tax-exemption-cert-${Date.now()}.${ext}`;
+  // ── Validate the file is actually a PDF ────────────────────────────────────
+  // The exemption cert must be a Form 01-339 PDF. Reject anything else (a
+  // driver's-license photo, etc.) by checking the file's magic bytes — never
+  // trust the filename extension or a spoofable MIME type. This is what stops
+  // a non-cert file from being stored in the cert slot.
   const arrayBuffer = await file.arrayBuffer();
   const buffer = new Uint8Array(arrayBuffer);
+  const isPdf =
+    buffer.length >= 5 &&
+    buffer[0] === 0x25 && // %
+    buffer[1] === 0x50 && // P
+    buffer[2] === 0x44 && // D
+    buffer[3] === 0x46 && // F
+    buffer[4] === 0x2d && // -
+    (!file.type || file.type === "application/pdf");
+  if (!isPdf) {
+    return NextResponse.json(
+      { error: "The exemption certificate must be a PDF (Form 01-339). The uploaded file was not a valid PDF." },
+      { status: 400 },
+    );
+  }
+
+  // ── Upload to Supabase Storage ─────────────────────────────────────────────
+  const path = `${contractId}/tax-exemption-cert-${Date.now()}.pdf`;
 
   const { error: uploadError } = await supabase.storage
     .from("tax-certs")
-    .upload(path, buffer, { contentType: file.type, upsert: false });
+    .upload(path, buffer, { contentType: "application/pdf", upsert: false });
 
   if (uploadError) return NextResponse.json({ error: uploadError.message }, { status: 500 });
 

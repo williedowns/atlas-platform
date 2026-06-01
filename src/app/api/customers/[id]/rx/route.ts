@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { logAction } from "@/lib/audit";
 import { applyAutoExemptionForCustomer } from "@/lib/auto-exemption";
+import { generateExemptionCertsForCustomer } from "@/lib/exemption-cert";
 
 // POST /api/customers/[id]/rx
 // Uploads a doctor's prescription (Rx) to the customer's record. Rx is
@@ -81,6 +82,27 @@ export async function POST(
     req,
   });
 
+  // Auto-generate the TX Form 01-339 for this customer's signed, still-taxed
+  // contracts now that the Rx is on file. The cert is built from the contract
+  // data + the signature captured at signing — never uploaded by hand. Each
+  // contract is Rx-gated inside the helper. Runs BEFORE auto-exemption so the
+  // cert is on file when the exemption check looks for it.
+  const generatedCerts = await generateExemptionCertsForCustomer(supabase, customerId);
+  for (const gc of generatedCerts.filter((g) => g.generated)) {
+    logAction({
+      userId: user.id,
+      action: "contract.exemption_cert_generated",
+      entityType: "contract",
+      entityId: gc.contractId,
+      metadata: {
+        contract_number: gc.contractNumber,
+        cert_url: gc.certUrl,
+        trigger: "rx_uploaded",
+      },
+      req,
+    });
+  }
+
   // Auto-apply tax-exempt status on any of this customer's contracts where:
   //   - cert is already on file
   //   - tax is still owed (balance_due >= tax_amount)
@@ -107,6 +129,9 @@ export async function POST(
   return NextResponse.json({
     success: true,
     url: rxUrl,
+    generated_certs: generatedCerts
+      .filter((g) => g.generated)
+      .map((g) => ({ contract_number: g.contractNumber, cert_url: g.certUrl })),
     auto_exempted: applied.map((e) => ({
       contract_number: e.contractNumber,
       tax_amount: e.taxAmount,
