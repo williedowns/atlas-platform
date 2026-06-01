@@ -37,6 +37,9 @@ interface ContractRow {
   tax_refund_amount: number | null;
   contract_pdf_url: string | null;
   contract_pdf_archive_urls: string[] | null;
+  // Joined from customers — the hydrotherapy Rx gate. Supabase returns an
+  // embedded relationship as either an object or a single-element array.
+  customer: { has_prescription: boolean | null } | { has_prescription: boolean | null }[] | null;
 }
 
 async function applyToOne(
@@ -54,6 +57,13 @@ async function applyToOne(
   }
   if (!c.tax_exempt_cert_received) {
     return { contractId: c.id, contractNumber: c.contract_number, applied: false, taxAmount, reason: "Cert not on file" };
+  }
+  // Rx gate: the TX hydrotherapy exemption requires a doctor's prescription on
+  // file in addition to the cert. Without it, leave the tax in place — a cert
+  // upload alone must never zero tax.
+  const cust = Array.isArray(c.customer) ? c.customer[0] : c.customer;
+  if (!cust?.has_prescription) {
+    return { contractId: c.id, contractNumber: c.contract_number, applied: false, taxAmount, reason: "No Rx on file" };
   }
   if (balanceDue + 0.01 < taxAmount) {
     // Tax has been paid (at least partially). Caller should route to the
@@ -93,7 +103,7 @@ export async function applyAutoExemptionForCustomer(
   const { data: contracts, error } = await supabase
     .from("contracts")
     .select(
-      "id, contract_number, tax_amount, total, balance_due, tax_exempt, tax_exempt_cert_received, tax_refund_amount, contract_pdf_url, contract_pdf_archive_urls",
+      "id, contract_number, tax_amount, total, balance_due, tax_exempt, tax_exempt_cert_received, tax_refund_amount, contract_pdf_url, contract_pdf_archive_urls, customer:customers(has_prescription)",
     )
     .eq("customer_id", customerId)
     .eq("tax_exempt_cert_received", true)
@@ -117,7 +127,7 @@ export async function applyAutoExemptionForContract(
   const { data: contract, error } = await supabase
     .from("contracts")
     .select(
-      "id, contract_number, tax_amount, total, balance_due, tax_exempt, tax_exempt_cert_received, tax_refund_amount, contract_pdf_url, contract_pdf_archive_urls",
+      "id, contract_number, tax_amount, total, balance_due, tax_exempt, tax_exempt_cert_received, tax_refund_amount, contract_pdf_url, contract_pdf_archive_urls, customer:customers(has_prescription)",
     )
     .eq("id", contractId)
     .maybeSingle();
