@@ -7,6 +7,15 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric" });
 }
 
+// Long, human day label for the per-day band, e.g. "Saturday, May 30, 2026".
+// Derived from the same instant as formatDate(), so the weekday/date always
+// matches the MM/DD/YYYY shown in each row's Date column (no timezone drift).
+function formatDayLong(iso: string) {
+  return new Date(iso).toLocaleDateString("en-US", {
+    weekday: "long", month: "long", day: "numeric", year: "numeric",
+  });
+}
+
 // "First Last" or "First Last & CoFirst CoLast" when both co-buyer fields set.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function formatBuyerName(customer: any): string {
@@ -301,11 +310,14 @@ export async function GET(req: Request) {
       }));
   }
 
-  // Financing filter renders one lender per page (each financier on its own
-  // sheet for delivery to GreenSky, Wells Fargo, etc.). Every other filter
-  // renders a single section containing all show groups (unchanged behavior).
-  type Section = { lenderHeader: string | null; groups: ShowGroup[] };
+  // Financing filter renders one lender PER DAY per page: each financier's
+  // contracts are split onto a separate sheet for every calendar day, so a
+  // printed stack reads GreenSky-Sat, GreenSky-Sun, WellsFargo-Sat, … — each
+  // sheet self-identifies its lender + date. Every other filter renders a
+  // single section containing all show groups (unchanged behavior).
+  type Section = { lenderHeader: string | null; dayLabel: string | null; groups: ShowGroup[] };
   const sections: Section[] = [];
+  let lenderCount = 0;
   if (method === "financing") {
     const lenderMap = new Map<string, PdfRow[]>();
     for (const r of filtered) {
@@ -319,11 +331,28 @@ export async function GET(req: Request) {
       if (b === "Unspecified Lender") return -1;
       return a.localeCompare(b);
     });
+    lenderCount = lenderNames.length;
     for (const lender of lenderNames) {
-      sections.push({ lenderHeader: lender, groups: buildShowGroups(lenderMap.get(lender)!) });
+      // Within a lender, split by calendar day. `filtered` is already sorted
+      // ascending by date (above), and the per-lender array preserves that
+      // order, so Map insertion order yields days oldest-first for free.
+      const dayMap = new Map<string, PdfRow[]>();
+      for (const r of lenderMap.get(lender)!) {
+        const key = formatDate(r.date);
+        const arr = dayMap.get(key) ?? [];
+        arr.push(r);
+        dayMap.set(key, arr);
+      }
+      for (const dayRows of dayMap.values()) {
+        sections.push({
+          lenderHeader: lender,
+          dayLabel: formatDayLong(dayRows[0].date),
+          groups: buildShowGroups(dayRows),
+        });
+      }
     }
   } else {
-    sections.push({ lenderHeader: null, groups: buildShowGroups(filtered) });
+    sections.push({ lenderHeader: null, dayLabel: null, groups: buildShowGroups(filtered) });
   }
 
   const totalGroupCount = sections.reduce((s, sec) => s + sec.groups.length, 0);
@@ -443,6 +472,19 @@ export async function GET(req: Request) {
       );
       doc.setTextColor(30, 30, 30);
       y += 14;
+    }
+
+    if (section.dayLabel) {
+      // Day band — brand teal with white text, sits between the navy lender
+      // band and the light-teal show groups (3-tier visual hierarchy).
+      doc.setFillColor(0, 146, 156);
+      doc.rect(6, y - 5, W - 12, 9, "F");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(255, 255, 255);
+      doc.text(section.dayLabel, 9, y + 1);
+      doc.setTextColor(30, 30, 30);
+      y += 11;
     }
 
   for (const group of section.groups) {
@@ -570,7 +612,7 @@ export async function GET(req: Request) {
     doc.setFontSize(10);
     doc.setTextColor(1, 15, 33);
     const acrossLabel = method === "financing"
-      ? `${sections.length} lender${sections.length !== 1 ? "s" : ""}`
+      ? `${lenderCount} lender${lenderCount !== 1 ? "s" : ""}`
       : `${totalGroupCount} show${totalGroupCount !== 1 ? "s" : ""}`;
     doc.text(
       `${hasRefunds ? "NET TOTAL" : `GRAND TOTAL — ${filtered.length} transaction${filtered.length !== 1 ? "s" : ""} across ${acrossLabel}`}`,
