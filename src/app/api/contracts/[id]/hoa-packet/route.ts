@@ -72,7 +72,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
   const portalUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://app.atlasswimspas.com";
   const customerPortalUrl = `${portalUrl}/portal`;
-  const fromEmail = process.env.HOA_PACKET_FROM_EMAIL ?? "Atlas Spas <welcome@atlasswimspas.com>";
+  const fromEmail = `Atlas Spas <${process.env.INVITE_FROM_EMAIL ?? "hello@atlasspas.com"}>`;
 
   const html = buildHoaPacketHtml({
     customerFirstName: customer.first_name,

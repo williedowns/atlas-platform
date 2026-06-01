@@ -70,7 +70,7 @@ export async function POST(
     return NextResponse.json({ error: updateError.message }, { status: 500 });
   }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://app.atlasswimspas.com";
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://getsalta.com";
   const signingUrl = `${appUrl}/sign/${token}`;
 
   // Look up the rep's display name for the greeting line.
@@ -108,7 +108,7 @@ export async function POST(
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          from: "Atlas Spas <noreply@atlasswimspas.com>",
+          from: `Atlas Spas <${process.env.INVITE_FROM_EMAIL ?? "hello@atlasspas.com"}>`,
           to: customer.email,
           subject: `Sign your Atlas Spas contract #${contract.contract_number}`,
           html,

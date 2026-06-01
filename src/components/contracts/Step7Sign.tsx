@@ -294,8 +294,9 @@ export default function Step7Sign({ onNext }: Step7SignProps) {
         );
       }
       setCreatedContractId(createdId);
-      fetch(`/api/contracts/${createdId}/welcome-email`, { method: "POST" })
-        .catch(() => {/* non-fatal */});
+      // Welcome email + portal provisioning is sent server-side (awaited) by
+      // POST /api/contracts so it reliably completes on Vercel — no client
+      // fire-and-forget here (that would double-send).
       const hasInHouse = (draft.financing ?? []).some((f) => f?.type === "in_house");
       if (hasInHouse) {
         fetch(`/api/contracts/${createdId}/inhouse-application`, { method: "POST" })

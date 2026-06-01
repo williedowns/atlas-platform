@@ -11,7 +11,7 @@ import { Resend } from "resend";
 import { createClient } from "@supabase/supabase-js";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
-const FROM = process.env.INVITE_FROM_EMAIL ?? "team@atlasswimspas.com";
+const FROM = process.env.INVITE_FROM_EMAIL ?? "hello@atlasspas.com";
 const STAFF_DIGEST_RECIPIENTS = (process.env.DELIVERY_DIGEST_RECIPIENTS ?? "")
   .split(",")
   .map((s) => s.trim())

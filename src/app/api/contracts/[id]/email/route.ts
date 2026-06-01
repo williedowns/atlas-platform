@@ -82,7 +82,7 @@ export async function POST(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      from: "Atlas Spas <contracts@atlasspas.com>",
+      from: `Atlas Spas <${process.env.INVITE_FROM_EMAIL ?? "hello@atlasspas.com"}>`,
       to: [customer.email],
       subject: `Your Atlas Spas Contract - ${contract.contract_number}`,
       html,

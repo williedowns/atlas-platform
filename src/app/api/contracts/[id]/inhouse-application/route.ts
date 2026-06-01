@@ -123,7 +123,7 @@ export async function POST(
     return NextResponse.json({ skipped: true, reason: "RESEND_API_KEY not configured" });
   }
 
-  const fromEmail = process.env.INHOUSE_APP_FROM_EMAIL ?? "Atlas Spas <noreply@atlasswimspas.com>";
+  const fromEmail = `Atlas Spas <${process.env.INVITE_FROM_EMAIL ?? "hello@atlasspas.com"}>`;
 
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",

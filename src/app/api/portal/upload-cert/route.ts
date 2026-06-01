@@ -135,7 +135,7 @@ export async function POST(req: Request) {
   const refundOwed = contractTaxAmount > 0 && !contractRefundIssued && !autoExemption?.applied;
 
   const resendKey = process.env.RESEND_API_KEY;
-  const loriEmail = process.env.BOOKKEEPER_EMAIL ?? "lori@atlasswimspas.com";
+  const loriEmail = process.env.BOOKKEEPER_EMAIL ?? "lori@atlasspas.com";
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
 
   if (resendKey && refundOwed) {
@@ -143,7 +143,7 @@ export async function POST(req: Request) {
       method: "POST",
       headers: { Authorization: `Bearer ${resendKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        from: "Atlas Spas Platform <noreply@atlasswimspas.com>",
+        from: `Atlas Spas <${process.env.INVITE_FROM_EMAIL ?? "hello@atlasspas.com"}>`,
         to: loriEmail,
         subject: `⚠️ Tax Refund Needed — Contract ${(contract as any).contract_number}`,
         html: `

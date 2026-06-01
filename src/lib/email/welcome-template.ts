@@ -2,15 +2,21 @@ export interface WelcomeEmailData {
   customerFirstName: string;
   customerEmail: string;
   contractNumber: string;
+  contractId: string;
   productNames: string[];
   total: number;
   depositPaid: number;
   balanceDue: number;
   portalUrl: string;
+  // One-click Supabase recovery link that lets the customer set a password and
+  // land in the portal without a second email or a self-typed registration.
+  setupLink: string;
+  // Whether the signed contract PDF rode along as an attachment (copy adapts).
+  contractPdfAttached?: boolean;
 }
 
 export function buildWelcomeEmailHtml(data: WelcomeEmailData): string {
-  const { customerFirstName, contractNumber, productNames, total, depositPaid, balanceDue, portalUrl } = data;
+  const { customerFirstName, contractNumber, contractId, productNames, total, depositPaid, balanceDue, portalUrl, setupLink, contractPdfAttached } = data;
   const formatCurrency = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n);
 
   return `<!DOCTYPE html>
@@ -21,7 +27,7 @@ export function buildWelcomeEmailHtml(data: WelcomeEmailData): string {
 
     <!-- Header -->
     <div style="background:#010F21;padding:32px 40px;text-align:center;">
-      <img src="https://atlasswimspas.com/logo.png" alt="Atlas Spas & Swim Spas" style="height:48px;width:auto;" onerror="this.style.display='none'" />
+      <img src="${portalUrl}/logo.png" alt="Atlas Spas & Swim Spas" style="height:48px;width:auto;" onerror="this.style.display='none'" />
       <h1 style="color:#ffffff;font-size:22px;margin:16px 0 4px;font-weight:700;">Welcome to the Atlas Family!</h1>
       <p style="color:rgba(255,255,255,0.7);font-size:14px;margin:0;">Thank you for your purchase, ${customerFirstName}</p>
     </div>
@@ -46,15 +52,15 @@ export function buildWelcomeEmailHtml(data: WelcomeEmailData): string {
 
       <!-- Portal CTA -->
       <div style="background:#ffffff;border:2px solid #e2e8f0;border-radius:12px;padding:24px;margin-bottom:24px;text-align:center;">
-        <h3 style="color:#111827;font-size:16px;font-weight:700;margin:0 0 8px;">Track Your Order Online</h3>
+        <h3 style="color:#111827;font-size:16px;font-weight:700;margin:0 0 8px;">Access Your Customer Portal</h3>
         <p style="color:#6b7280;font-size:14px;margin:0 0 20px;line-height:1.5;">
-          Create your customer account to view your contract, track your order status in real time, and make payments toward your balance.
+          Your account is ready. Tap below to set your password — then you can pay your balance, upload your prescription (Rx) form, download your contract, and track your order anytime.
         </p>
-        <a href="${portalUrl}/register" style="display:inline-block;background:#00929C;color:#ffffff;font-weight:700;font-size:16px;text-decoration:none;padding:14px 32px;border-radius:8px;">
-          Create Your Account →
+        <a href="${setupLink}" style="display:inline-block;background:#00929C;color:#ffffff;font-weight:700;font-size:16px;text-decoration:none;padding:14px 32px;border-radius:8px;">
+          Set Password &amp; Access Portal →
         </a>
-        <p style="color:#9ca3af;font-size:12px;margin:12px 0 0;">
-          Already have an account? <a href="${portalUrl}/login" style="color:#00929C;">Sign in here</a>
+        <p style="color:#9ca3af;font-size:12px;margin:16px 0 0;line-height:1.5;">
+          ${contractPdfAttached ? 'A copy of your signed contract is attached to this email. ' : ''}You can also <a href="${portalUrl}/portal/contract/${contractId}" style="color:#00929C;">view your contract in the portal</a> at any time.
         </p>
       </div>
 

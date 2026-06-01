@@ -12,6 +12,7 @@ import { countOutTheDoorDiscounts } from "@/lib/discounts";
 import { normalizeMarketingFeedback } from "@/lib/marketing-feedback";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { generateAndAttachExemptionCert } from "@/lib/exemption-cert";
+import { provisionAndSendWelcome } from "@/lib/email/welcome";
 
 export async function POST(req: Request) {
   const supabase = await createClient();
@@ -375,13 +376,15 @@ export async function POST(req: Request) {
     // Contract still created — QBO sync can be retried
   }
 
-  // Send confirmation email (best-effort)
+  // Provision the customer's portal account + send ONE welcome email (one-click
+  // set-password link, purchase summary, and attached signed contract PDF).
+  // Awaited so the send actually completes on Vercel; non-fatal so a mail
+  // failure never blocks contract creation. This supersedes the old basic
+  // confirmation email so the customer receives a single, complete message.
   try {
-    await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/contracts/${contract.id}/email`, {
-      method: "POST",
-    });
-  } catch {
-    console.error("Email send failed (non-fatal)");
+    await provisionAndSendWelcome(contract.id);
+  } catch (welcomeErr) {
+    console.error(`[contracts] welcome send failed (non-fatal) for ${contract.id}:`, welcomeErr);
   }
 
   return NextResponse.json({ contract_id: contract.id, contract_number: contractNumber }, { status: 201 });
