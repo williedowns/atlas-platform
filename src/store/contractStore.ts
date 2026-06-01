@@ -157,6 +157,14 @@ export interface ContractDraft {
   rx_data_url?: string;
   rx_filename?: string;
   rx_mime?: string;
+  // AI verification of the staged Rx (Claude vision via /api/rx/verify). The
+  // staged Rx only counts toward the exemption (rxOnFile) once it's been
+  // verified as a real prescription OR a salesperson has explicitly overridden
+  // an AI rejection. rx_verify_reason/rx_doc_type drive the Step 5 message.
+  rx_verified?: boolean;
+  rx_override?: boolean;
+  rx_verify_reason?: string;
+  rx_doc_type?: string;
 
   // Concrete pad estimate — toggled at Step 5 when the customer wants
   // concrete instead of crushed granite. No line item, no money collected.
@@ -291,6 +299,9 @@ interface ContractStore {
   ) => void;
   setTaxExemptCert: (cert: { dataUrl: string; filename: string; mime: string } | null) => void;
   setRxFile: (rx: { dataUrl: string; filename: string; mime: string } | null) => void;
+  setRxVerification: (
+    v: { verified: boolean; override?: boolean; reason?: string; docType?: string } | null,
+  ) => void;
   setConcreteEstimatePending: (pending: boolean) => void;
   setConcreteEstimateNotes: (notes: string) => void;
   prefillForConcreteAddon: (parentContract: Contract) => void;
@@ -343,7 +354,14 @@ function computeTotalsFromDraft(draft: ContractDraft): Partial<ContractDraft> {
   // file. Cert + Rx = exempt; cert only = tax still applies (Atlas keeps the
   // cert on file alongside the contract for audit, and Lori can refund later
   // if the Rx arrives within 30 days).
-  const rxOnFile = !!draft.customer?.has_prescription || !!draft.rx_data_url;
+  //
+  // A freshly staged Rx only counts once it's been AI-verified as a real
+  // prescription (or a salesperson overrode an AI rejection) — an unverified
+  // upload must not zero tax. A returning customer's existing has_prescription
+  // already cleared this bar previously.
+  const rxOnFile =
+    !!draft.customer?.has_prescription ||
+    (!!draft.rx_data_url && (!!draft.rx_verified || !!draft.rx_override));
   const effectiveItemsTax = (draft.tax_exempt && rxOnFile) ? 0 : (draft.tax_amount ?? 0);
   // Doc-fee tax is collected on EVERY contract regardless of tax_exempt
   // and is the portion that is never refunded when the Rx arrives.
@@ -766,9 +784,30 @@ export const useContractStore = create<ContractStore>()(
             rx_data_url: rx?.dataUrl,
             rx_filename: rx?.filename,
             rx_mime: rx?.mime,
+            // A newly staged (or cleared) Rx starts unverified. It must pass AI
+            // verification (or be overridden) before it can zero tax, so reset
+            // the verification flags here.
+            rx_verified: false,
+            rx_override: false,
+            rx_verify_reason: undefined,
+            rx_doc_type: undefined,
           };
-          // Staging an Rx flips the effective-exempt gate, so totals need to
-          // re-compute immediately to reflect the now-zeroed items tax.
+          // Re-compute now: replacing/clearing a previously-verified Rx must
+          // immediately restore tax until the new file is verified.
+          return { draft: { ...next, ...computeTotalsFromDraft(next) } };
+        }),
+
+      setRxVerification: (v) =>
+        set((state) => {
+          const next = {
+            ...state.draft,
+            rx_verified: !!v?.verified,
+            rx_override: !!v?.override,
+            rx_verify_reason: v?.reason,
+            rx_doc_type: v?.docType,
+          };
+          // The verdict flips the effective-exempt gate (verified/override →
+          // tax zeroes; rejection → tax stays), so totals must re-compute.
           return { draft: { ...next, ...computeTotalsFromDraft(next) } };
         }),
 

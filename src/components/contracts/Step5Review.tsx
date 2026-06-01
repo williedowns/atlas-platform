@@ -75,7 +75,7 @@ function downscaleImageToDataUrl(file: File, maxDim: number, quality: number): P
 
 export default function Step5Review({ onNext }: Step5ReviewProps) {
   const router = useRouter();
-  const { draft, setCustomer, setTax, addDepositSplit, removeDepositSplit, updateLineItemSerial, updateLineItemPrice, removeLineItem, setNotes, setExternalNotes, setMarketingFeedback, setNeedsPermit, setNeedsHoa, setPermitJurisdiction, setTaxExempt, setDocFeeWaived, setTaxExemptCert, setRxFile, setConcreteEstimatePending, setConcreteEstimateNotes, markLineItemAsBlem } = useContractStore();
+  const { draft, setCustomer, setTax, addDepositSplit, removeDepositSplit, updateLineItemSerial, updateLineItemPrice, removeLineItem, setNotes, setExternalNotes, setMarketingFeedback, setNeedsPermit, setNeedsHoa, setPermitJurisdiction, setTaxExempt, setDocFeeWaived, setTaxExemptCert, setRxFile, setRxVerification, setConcreteEstimatePending, setConcreteEstimateNotes, markLineItemAsBlem } = useContractStore();
 
   // Sale-time damage capture state — when a line item index is set, the
   // SaleTimeDamageDialog opens for that line. On confirm we flip the line
@@ -85,6 +85,10 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
   const [damageLineIdx, setDamageLineIdx] = useState<number | null>(null);
   const [certError, setCertError] = useState<string | null>(null);
   const [rxError, setRxError] = useState<string | null>(null);
+  // Ephemeral "AI is checking the Rx right now" flag. The verdict itself lives
+  // in the store (rx_verified / rx_override / rx_verify_reason / rx_doc_type)
+  // because it gates tax zeroing in computeTotals.
+  const [rxVerifying, setRxVerifying] = useState(false);
   const [showExemptionSignModal, setShowExemptionSignModal] = useState(false);
 
   // Inline customer editing on the review step. Reps previously could not fix
@@ -276,13 +280,16 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
 
   // Capture the customer's hydrotherapy Rx — stage as a data URL in the draft
   // and let Step 7 upload to customers.prescription_url once the contract is
-  // committed. Image is downscaled to keep the data URL under localStorage limits.
+  // committed. Image is downscaled to keep the data URL under localStorage
+  // limits. Right after staging, the file is sent to /api/rx/verify so Claude
+  // can confirm it's actually a prescription before it's allowed to zero tax.
   async function handleRxFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     setRxError(null);
     if (file.size > 10 * 1024 * 1024) {
       setRxError("File too large — max 10MB.");
+      e.target.value = "";
       return;
     }
     try {
@@ -298,11 +305,12 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
           reader.readAsDataURL(file);
         });
       }
-      setRxFile({
-        dataUrl,
-        filename: file.name || (isImage ? "rx.jpg" : "rx.pdf"),
-        mime: file.type || (isImage ? "image/jpeg" : "application/pdf"),
-      });
+      const filename = file.name || (isImage ? "rx.jpg" : "rx.pdf");
+      const mime = file.type || (isImage ? "image/jpeg" : "application/pdf");
+      // Stage first so the file shows immediately (setRxFile resets the
+      // verification flags → tax is NOT zeroed yet), then run AI verification.
+      setRxFile({ dataUrl, filename, mime });
+      await runRxVerification(dataUrl, filename, mime);
     } catch (err: any) {
       setRxError(err?.message ?? "Could not read file. Please try again.");
     } finally {
@@ -310,9 +318,67 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
     }
   }
 
+  // Send the staged Rx to the AI verifier and record the verdict in the store.
+  // The verdict gates tax zeroing: only a verified prescription (or an explicit
+  // override) flips rxOnFile. When the feature isn't configured server-side
+  // (no API key → ranAi=false), fall back to legacy behavior and count the Rx.
+  async function runRxVerification(dataUrl: string, filename: string, mime: string) {
+    setRxVerifying(true);
+    try {
+      const blob = await fetch(dataUrl).then((r) => r.blob());
+      const fd = new FormData();
+      fd.append("file", new File([blob], filename, { type: mime }));
+      const res = await fetch("/api/rx/verify", { method: "POST", body: fd });
+      const result = await res.json().catch(() => null);
+
+      if (!res.ok || !result) {
+        // Endpoint/auth error — treat as unverified so tax stays; the override
+        // path remains available to the salesperson.
+        setRxVerification({
+          verified: false,
+          reason: result?.error ?? "Couldn't verify the document. You can override.",
+        });
+        return;
+      }
+
+      if (!result.ranAi) {
+        // Feature inactive server-side (no API key). Legacy behavior: count the
+        // Rx as on-file so tax exempts exactly as it did before this feature.
+        setRxVerification({ verified: true, reason: "" });
+        return;
+      }
+
+      setRxVerification({
+        verified: !!result.verified,
+        reason: result.reason,
+        docType: result.documentType,
+      });
+    } catch {
+      setRxVerification({
+        verified: false,
+        reason: "Couldn't verify the document. Check your connection or override.",
+      });
+    } finally {
+      setRxVerifying(false);
+    }
+  }
+
+  // Salesperson vouches for the document despite an AI rejection. Recording the
+  // override flips rxOnFile (tax zeroes); Step 7 then passes override=true to
+  // the upload route so the decision is written to the audit log.
+  function handleOverrideRx() {
+    setRxVerification({
+      verified: false,
+      override: true,
+      reason: draft.rx_verify_reason,
+      docType: draft.rx_doc_type,
+    });
+  }
+
   function handleClearRx() {
     setRxFile(null);
     setRxError(null);
+    setRxVerifying(false);
   }
 
   const contractNumber = useMemo(() => generateContractNumber(), []);
@@ -964,8 +1030,16 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
       {/* ── Texas Tax Exemption Certificate (mandatory on TX) ─ */}
       {(() => {
         if (!isTexas) return null;
-        const rxOnFile = !!draft.customer?.has_prescription || !!draft.rx_data_url;
+        const rxOnFile =
+          !!draft.customer?.has_prescription ||
+          (!!draft.rx_data_url && (!!draft.rx_verified || !!draft.rx_override));
         const isEffectivelyExempt = !!draft.tax_exempt && rxOnFile;
+        const rxStaged = !!draft.rx_data_url;
+        const rxVerified = !!draft.rx_verified;
+        const rxOverride = !!draft.rx_override;
+        // Staged, finished verifying, and neither verified nor overridden → the
+        // AI rejected it (or verification failed). Tax stays; override offered.
+        const rxRejected = rxStaged && !rxVerifying && !rxVerified && !rxOverride;
         return (
           <Card className={`border-2 transition-all ${draft.tax_exempt ? "border-emerald-400 bg-emerald-50" : "border-slate-200"}`}>
             <CardContent className="p-4 space-y-3">
@@ -1093,6 +1167,7 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
                       </label>
                     </div>
                   ) : draft.rx_data_url ? (
+                    <>
                     <div className="flex items-center gap-3">
                       {draft.rx_mime?.startsWith("image/") ? (
                         // eslint-disable-next-line @next/next/no-img-element
@@ -1107,17 +1182,37 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
                         </div>
                       )}
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold text-emerald-800 truncate">
-                          ✓ Rx captured — tax zeroed
-                        </p>
+                        {rxVerifying ? (
+                          <p className="text-xs font-semibold text-slate-600 truncate flex items-center gap-1.5">
+                            <svg className="w-3.5 h-3.5 animate-spin text-slate-500" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                            </svg>
+                            Verifying prescription…
+                          </p>
+                        ) : rxVerified ? (
+                          <p className="text-xs font-semibold text-emerald-800 truncate">
+                            ✓ Rx verified — tax zeroed
+                          </p>
+                        ) : rxOverride ? (
+                          <p className="text-xs font-semibold text-amber-800 truncate">
+                            ⚠ Override applied — tax zeroed
+                          </p>
+                        ) : (
+                          <p className="text-xs font-semibold text-red-700 truncate">
+                            ✗ Not a verified prescription
+                          </p>
+                        )}
                         {draft.rx_filename && (
                           <p className="text-[11px] text-slate-500 truncate">
                             {draft.rx_filename}
                           </p>
                         )}
-                        <p className="text-[11px] text-slate-400 mt-0.5">
-                          Will save to customer record on contract sign.
-                        </p>
+                        {!rxVerifying && (rxVerified || rxOverride) && (
+                          <p className="text-[11px] text-slate-400 mt-0.5">
+                            Will save to customer record on contract sign.
+                          </p>
+                        )}
                       </div>
                       <div className="flex flex-col gap-1 flex-shrink-0">
                         <label className="text-xs font-semibold text-[#00929C] hover:underline cursor-pointer">
@@ -1138,6 +1233,25 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
                         </button>
                       </div>
                     </div>
+                    {rxRejected && (
+                      <div className="mt-2 rounded-lg bg-red-50 border border-red-200 p-2.5">
+                        <p className="text-[11px] font-semibold text-red-800">
+                          {draft.rx_verify_reason || "This doesn't look like a doctor's prescription."}
+                        </p>
+                        <p className="text-[11px] text-red-700 mt-1">
+                          Tax will still be charged. Replace it with a valid prescription,
+                          or override if you are certain this is a valid Rx.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={handleOverrideRx}
+                          className="mt-2 inline-flex items-center px-2.5 py-1.5 rounded-lg border border-red-400 bg-white text-red-700 text-[11px] font-semibold hover:bg-red-50 touch-manipulation"
+                        >
+                          Override — count as Rx anyway
+                        </button>
+                      </div>
+                    )}
+                    </>
                   ) : (
                     <>
                       <p className="text-xs font-semibold text-amber-900 mb-1">
@@ -1280,7 +1394,9 @@ export default function Step5Review({ onNext }: Step5ReviewProps) {
                 tax is still being charged (contractStore.ts effectiveItemsTax).
                 Granite breakdown still requires non-exempt + tax > 0. */}
             {(() => {
-              const rxOnFile = !!draft.customer?.has_prescription || !!draft.rx_data_url;
+              const rxOnFile =
+          !!draft.customer?.has_prescription ||
+          (!!draft.rx_data_url && (!!draft.rx_verified || !!draft.rx_override));
               const effectivelyExempt = draft.tax_exempt && rxOnFile;
               if (!(draft.tax_amount > 0 || effectivelyExempt)) return null;
               const graniteSubtotal = draft.line_items

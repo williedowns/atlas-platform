@@ -330,7 +330,17 @@ export default function Step7Sign({ onNext }: Step7SignProps) {
       // Rx captured at Step 5 — pushes to customers.prescription_url +
       // sets has_prescription = true so future purchases auto-qualify.
       // Fire-and-forget for the same reason as the cert above.
-      if (draft.rx_data_url && draft.customer?.id) {
+      //
+      // Only upload when the Rx actually counts toward the exemption: it was
+      // AI-verified as a prescription, or a salesperson explicitly overrode an
+      // AI rejection. A staged-but-rejected file (rep didn't override) is NOT a
+      // prescription and must never land on the customer record. When it was an
+      // override, pass override=true so the route proceeds and audit-logs it.
+      if (
+        draft.rx_data_url &&
+        draft.customer?.id &&
+        (draft.rx_verified || draft.rx_override)
+      ) {
         (async () => {
           try {
             const blob = await fetch(draft.rx_data_url!).then((r) => r.blob());
@@ -341,6 +351,7 @@ export default function Step7Sign({ onNext }: Step7SignProps) {
             );
             const fd = new FormData();
             fd.append("file", file);
+            if (draft.rx_override) fd.append("override", "true");
             await fetch(`/api/customers/${draft.customer!.id}/rx`, {
               method: "POST",
               body: fd,
